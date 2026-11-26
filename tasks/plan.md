@@ -43,6 +43,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T27 | B1 切片评估：确认测试 DC 参数（全是编译期内置）、打通代理、抓离线基线、实测登录（测试 DC 的码规则过期，改走生产 DC + 既有会话代读码 + 2FA） | F065–F074 | done（生产 DC 端到端登录成功、`logOut` 清场，基线 `work/prod_baseline.txt`；实现范围已探明） |
 | T28 | B1a 首启 lane：实现 `td_create_client_id`/`td_send`/`td_receive` 的最小客户端（收到 `setTdlibParameters` 后按序吐首启序列），option 表由 `tools/gen_client_options.py` 从 oracle 采集生成（3 个动态值运行时算）；判据 = `tools/client_diff.py` 两侧子进程采集的 raw 序列逐行对齐（白名单外零差异 + 变异自检 + A/A 地板） | F076, F074 | done（129 行逐行相同、`failures=0`；`verify.py` 九门禁全绿，`warnings=0`） |
 | T29 | B1b 第二次运行 lane：在 `database_directory` 下写初始化标记，第二次运行改吐 125 条最终值表（`tools/gen_client_options.py` 生成第二张表）；判据 = `tools/client_diff.py` 的 second-run 段按**集合**比较（顺序不参与，F078） | F078, F072 | done（两侧集合相等、127 行 / 125 option、`failures=0`；九门禁全绿） |
+| T30 | B1c 未授权状态机 lane：首个非 `setTdlibParameters` 请求补 6 条全局突发表 + 5 个请求的响应（空号码 / checkCode / checkPassword / getMe / logOut→Closed）；判据 = `tools/client_diff.py` 的 auth 段逐行比较（平铺 142 行） | F079 | done（142 行逐行相同、`failures=0`；九门禁全绿，17.5 s） |
 
 ## 变更记录
 

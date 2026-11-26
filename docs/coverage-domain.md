@@ -59,7 +59,7 @@
 | 畸形 JSON 文本的 `json_decode` 报错文案（12 条消息 + 深度上限 + 尾部内容） | measured（F054） | — |
 | 请求 / 字符串里的非法 UTF-8、孤立代理对（22 条 bytes cell，各 action 的拒绝文案逐条对齐） | measured（F063） | — |
 
-## 客户端 lane（B1a：首次运行）
+## 客户端 lane（首次运行、第二次运行、未授权状态机）
 
 | 项 | 状态 | blocker / 回流条件 |
 |---|---|---|
@@ -69,7 +69,10 @@
 | 同一进程里的第二个 client | unmeasured | 会多 6 条全局 update 且顺序错位（F077）；判据按「一个进程一个 client」设计 |
 | 第二次运行（同一 `database_directory`）：127 行 = 125 个 option + 2 状态，值取最终态（首启的 3/5 中间值不再出现） | measured（F078：`tools/client_diff.py` second-run 段，**按集合**比较 + A/A 集合地板 + 变异自检） | 逐行顺序见下一行 |
 | 第二次运行的 option 顺序 | unmeasured | oracle 的 run2/3/4 两两不同（首个差异在第 4 行），并发更新顺序不可判；Rust 侧按名字排序输出，判据只比集合 |
-| `waitPhoneNumber` 之后的登录状态机 | unmeasured | 需要实时验证码 + 2FA（F073），不可回归；回流条件 = 一次性实测记录 + 人工 |
+| 首个非 `setTdlibParameters` 请求的 6 条全局 update 突发（一次性） | measured（F079：auth 段，`getMe` 与空号码都触发） | — |
+| 未授权状态机的响应：空号码、`checkAuthenticationCode`、`checkAuthenticationPassword`、`getMe`、`logOut`→`Closed` | measured（F079：142 行逐行相同 + A/A 地板 + 变异自检） | — |
+| 非空号码的 `setAuthenticationPhoneNumber` | unmeasured | oracle 在 0.8 s 内无响应（联网挂起），没有可判输出 |
+| 真实登录（`waitCode` → `waitPassword` → `ready`） | unmeasured | 需实时验证码 + 2FA（F073），不可回归；回流条件 = 一次性实测记录 + 人工 |
 | 其它 `setTdlibParameters` 参数 lane（`use_test_dc:false`、加密 key、语言 / 设备字段） | unmeasured | 回流条件 = 该 lane 有独立判据时 |
 
 ## 边界之外（永久不在本仪器范围）

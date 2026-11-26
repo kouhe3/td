@@ -55,6 +55,14 @@ PARAMS = {
     "application_version": "1",
 }
 
+AUTH_REQUESTS = [
+    {"@type": "setAuthenticationPhoneNumber", "phone_number": ""},
+    {"@type": "checkAuthenticationCode", "code": "12345"},
+    {"@type": "checkAuthenticationPassword", "password": "x"},
+    {"@type": "getMe"},
+    {"@type": "logOut"},
+]
+
 DYNAMIC = [
     (
         re.compile(
@@ -91,7 +99,7 @@ def add_runtime_dirs() -> None:
             os.add_dll_directory(str(candidate))
 
 
-def worker(dll: str, db: str, out: str, fresh: bool) -> int:
+def worker(dll: str, db: str, out: str, fresh: bool, auth: bool) -> int:
     add_runtime_dirs()
     lib = ctypes.CDLL(dll)
     lib.td_create_client_id.restype = ctypes.c_int
@@ -126,6 +134,14 @@ def worker(dll: str, db: str, out: str, fresh: bool) -> int:
             and message["authorization_state"]["@type"] == "authorizationStateWaitPhoneNumber"
         ):
             break
+    if auth:
+        for request in AUTH_REQUESTS:
+            lib.td_send(client_id, json.dumps(request).encode())
+            end = time.time() + 0.8
+            while time.time() < end:
+                raw = lib.td_receive(0.2)
+                if raw:
+                    rows.append(raw.decode("utf-8", "replace"))
 
     Path(out).write_text("\n".join(rows), encoding="utf-8")
     print(json.dumps({"client_id": client_id, "lines": len(rows), "started": started}))
@@ -185,7 +201,7 @@ def mutate(rows: list[str]) -> list[str]:
     raise SystemExit("FAIL self-test: no version option to mutate")
 
 
-def capture(dll: Path, tag: str, database: str, fresh: bool = True) -> tuple[list[str], dict]:
+def capture(dll: Path, tag: str, database: str, fresh: bool = True, auth: bool = False) -> tuple[list[str], dict]:
     base = ROOT / "work" / "client" / tag
     database_path = ROOT / "work" / "client" / database / "db"
     out = base / "rows.jsonl"
@@ -193,6 +209,8 @@ def capture(dll: Path, tag: str, database: str, fresh: bool = True) -> tuple[lis
     command = [PYTHON, str(Path(__file__).resolve()), "--capture", str(dll), str(database_path), str(out)]
     if not fresh:
         command.append("--reuse")
+    if auth:
+        command.append("--auth")
     process = subprocess.run(
         command,
         capture_output=True,
@@ -207,7 +225,7 @@ def capture(dll: Path, tag: str, database: str, fresh: bool = True) -> tuple[lis
 
 def main(argv: list[str]) -> int:
     if argv[:1] == ["--capture"]:
-        return worker(argv[1], argv[2], argv[3], "--reuse" not in argv)
+        return worker(argv[1], argv[2], argv[3], "--reuse" not in argv, "--auth" in argv)
 
     failures: list[str] = []
     if not CPP.is_file():
@@ -278,6 +296,32 @@ def main(argv: list[str]) -> int:
     if not ok:
         failures.append("self-test failed: second-run mutation not detected")
     print(f"{'PASS' if ok else 'FAIL'} second-run mutation detected" + ("" if ok else ": 集合比较器对改过的 option 仍报相同"))
+
+    print("\n== auth: 未授权状态机的响应（逐行，142 行 = 129 首启 + 13 响应） ==")
+    cpp_auth, _ = capture(CPP, "cpp-auth", "cpp-auth", fresh=True, auth=True)
+    cpp_auth2, _ = capture(CPP, "cpp-auth2", "cpp-auth2", fresh=True, auth=True)
+    rs_auth, _ = capture(RS, "rs-auth", "rs-auth", fresh=True, auth=True)
+
+    ok = len(cpp_auth) == 142 and len(rs_auth) == 142
+    if not ok:
+        failures.append(f"auth shape: cpp={len(cpp_auth)} rs={len(rs_auth)}")
+    print(f"{'PASS' if ok else 'FAIL'} 两侧都是 142 行" + ("" if ok else f": cpp={len(cpp_auth)} rs={len(rs_auth)}"))
+
+    diff = compare(cpp_auth, cpp_auth2)
+    if diff:
+        failures.append("auth floor unstable: " + diff.split("\n")[0])
+    print(f"{'PASS' if diff is None else 'FAIL'} cpp-auth vs cpp-auth2" + ("" if diff is None else f"\n{diff}"))
+
+    diff = compare(cpp_auth, rs_auth)
+    if diff:
+        failures.append("auth lane differs: " + diff.split("\n")[0])
+    print(f"{'PASS' if diff is None else 'FAIL'} cpp vs rs (auth, 142 lines)" + ("" if diff is None else f"\n{diff}"))
+
+    diff = compare(cpp_auth, mutate(cpp_auth))
+    ok = diff is not None
+    if not ok:
+        failures.append("self-test failed: auth mutation not detected")
+    print(f"{'PASS' if ok else 'FAIL'} auth mutation detected" + ("" if ok else ": 比较器对一条改过的 response 仍报相同"))
 
     print("\n== self-test: 变异必须被检出 ==")
     diff = compare(cpp_a, mutate(cpp_a))

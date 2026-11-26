@@ -268,3 +268,13 @@ pub const SECOND_RUN_TEMPLATE: [&str; 127] = [
     r#"{"@type":"updateOption","name":"welcome_message_count_max","value":{"@type":"optionValueInteger","value":"5"},"@client_id":{CLIENT_ID}}"#,
     r#"{"@type":"updateAuthorizationState","authorization_state":{"@type":"authorizationStateWaitPhoneNumber"},"@client_id":{CLIENT_ID}}"#,
 ];
+
+// Emitted once, before the answer to the first non-setTdlibParameters request (F079).
+pub const GLOBAL_BURST_TEMPLATE: [&str; 6] = [
+    r#"{"@type":"updateGroupCallMessageLevels","levels":[{"@type":"groupCallMessageLevel","min_star_count":0,"pin_duration":0,"max_text_length":30,"max_custom_emoji_count":0,"first_color":9788635,"second_color":9788635,"background_color":4786075}],"@client_id":{CLIENT_ID}}"#,
+    r#"{"@type":"ok","@client_id":{CLIENT_ID}}"#,
+    r#"{"@type":"updateDefaultBackground","for_dark_theme":false,"@client_id":{CLIENT_ID}}"#,
+    r#"{"@type":"updateDefaultBackground","for_dark_theme":true,"@client_id":{CLIENT_ID}}"#,
+    r#"{"@type":"updateFileDownloads","total_size":0,"total_count":0,"downloaded_size":0,"@client_id":{CLIENT_ID}}"#,
+    r#"{"@type":"updateConnectionState","state":{"@type":"connectionStateConnecting"},"@client_id":{CLIENT_ID}}"#,
+];
