@@ -4,6 +4,7 @@
 **/auto/
 /docs/*
 !/docs/agents/
+!/docs/adr/
 !/docs/facts.md
 !/docs/coverage-domain.md
 !/docs/plans/

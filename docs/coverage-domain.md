@@ -29,7 +29,11 @@
 | `getCountryFlagEmoji` | measured（F017） | 非 ASCII 两字节输入（C++ 按**字节**判长度）：回流 T10 |
 | `testReturnError` | measured（F017, F018） | — |
 | `getOption` | unmeasured（Rust 未实现；CONTROL 靠它区分两实现） | 回流：T10（需先定可同步选项白名单） |
-| 同步 action 其余 16 项 | unmeasured（已枚举，见 F016） | 逐项建 corpus：T10 |
+| `getFileMimeType` | measured（F019） | 非 ASCII 文件名、无扩展名之外形态：回流 T10 |
+| `getFileExtension` | measured（F019） | 反向表未覆盖的 MIME：回流 T10 |
+| `cleanFileName` | measured（F021） | 超长（>64 stem / >16 ext）、纯符号名：回流 T10 |
+| `getTextEmojiRanges` | measured（F020） | 孤立 ZWJ、不完整序列、双肤色组合：回流 T10 |
+| 同步 action 其余 12 项 | unmeasured（已枚举，见 F016） | 逐项建 corpus：T10 |
 
 ## 边界之外（永久不在本仪器范围）
 

@@ -66,6 +66,22 @@ MATCH = [
     '{"@type":"getCountryFlagEmoji","country_code":"U1"}',
     '{"@type":"testReturnError","error":{"@type":"error","code":400,"message":"boom \\"quoted\\" \\u4f60\\u597d"}}',
     '{"@type":"testReturnError"}',
+    '{"@type":"getFileMimeType","file_name":"photo.JPG"}',
+    '{"@type":"getFileMimeType","file_name":"archive.tar.gz"}',
+    '{"@type":"getFileMimeType","file_name":".gitignore"}',
+    '{"@type":"getFileExtension","mime_type":"image/jpeg"}',
+    '{"@type":"getFileExtension","mime_type":"video/mp4"}',
+    '{"@type":"getFileExtension","mime_type":"application/x-unknown"}',
+    '{"@type":"cleanFileName","file_name":"bad<>name?.txt"}',
+    '{"@type":"cleanFileName","file_name":"../../etc/passwd"}',
+    '{"@type":"cleanFileName","file_name":"\\u00dcn\\u00efcode \\u2026 name.jpg"}',
+    '{"@type":"getTextEmojiRanges","text":"hi \\ud83d\\ude00"}',
+    '{"@type":"getTextEmojiRanges","text":"\\ud83d\\udc68\\u200d\\ud83d\\udc69\\u200d\\ud83d\\udc67"}',
+    '{"@type":"getTextEmojiRanges","text":"1\\ufe0f\\u20e3 x"}',
+    '{"@type":"getTextEmojiRanges","text":"\\ud83c\\uddfa\\ud83c\\uddf8"}',
+    '{"@type":"getTextEmojiRanges","text":"ok \\ud83d\\udc4d\\ud83c\\udffd go"}',
+    '{"@type":"getTextEmojiRanges","text":"\\u2764\\ufe0f"}',
+    '{"@type":"getTextEmojiRanges","text":"a\\ud83d\\ude00b\\ud83d\\udc68\\u200d\\ud83d\\udc69\\u200d\\ud83d\\udc67c"}',
 ]
 
 CONTROL = [
