@@ -56,8 +56,10 @@ GATES = [
 def run(name: str, command: list[str]) -> dict:
     env = dict(os.environ)
     env["PATH"] = UCrt + ";" + env.get("PATH", "")
-    result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True, text=True)
-    output = (result.stdout or "") + (result.stderr or "")
+    # TDLib 的日志会把请求里的原始字节写进 stderr（corpus 有非法 UTF-8 的 cell），
+    # 所以按字节收再宽松解码，别让 gate 自己因为解码炸掉
+    result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True)
+    output = ((result.stdout or b"") + (result.stderr or b"")).decode("utf-8", "replace")
     warnings = sum(1 for line in output.splitlines() if line.startswith("warning:"))
     return {
         "gate": name,
