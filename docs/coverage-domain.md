@@ -38,7 +38,8 @@
 | `getChatFolderDefaultIconName` | measured（F024） | 非白名单 icon 名与各 include 组合的交叉：回流 T10 |
 | `getPushReceiverId` | measured（F025） | `p` 解不出 9 字节、`data` 非对象、负 `user_id`：回流 T10 |
 | `getOption` | measured（F027：`version` 与两种拒绝） | `commit_hash` 绑定构建时 HEAD，两侧各自烘焙 → 仓库前进即不同，不构成可判 cell（unmeasured） |
-| 同步 action 其余 15 项（白名单共 29，见 F026） | unmeasured | 逐项建 corpus：T10 |
+| `parseTextEntities` | measured（F028, F029, F030） | 超出 int64 的 `version` 字面量走共享 JSON 层、错误文案不同（见 backlog B6）；`<tg-time>`、`<tg-emoji>` 等扩展标签未入 corpus：回流 T10 |
+| 同步 action 其余 14 项（白名单共 29，见 F026） | unmeasured | 逐项建 corpus：T10 |
 
 ## 边界之外（永久不在本仪器范围）
 

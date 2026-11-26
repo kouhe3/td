@@ -114,6 +114,21 @@ MATCH = [
     '{"@type":"getOption","name":"version"}',
     '{"@type":"getOption","name":"my_id"}',
     '{"@type":"getOption","name":""}',
+    '{"@type":"parseTextEntities","text":"<b>bold</b> <i>it</i> <code>c</code>","parse_mode":{"@type":"textParseModeHTML"}}',
+    '{"@type":"parseTextEntities","text":"<a href=\\"https://e.com/x\\">link</a> &amp; more","parse_mode":{"@type":"textParseModeHTML"}}',
+    '{"@type":"parseTextEntities","text":"plain <unknown>text</unknown>","parse_mode":{"@type":"textParseModeHTML"}}',
+    '{"@type":"parseTextEntities","text":"<pre><code class=\\"language-py\\">x=1</code></pre>","parse_mode":{"@type":"textParseModeHTML"}}',
+    '{"@type":"parseTextEntities","text":"*bold* _it_ `code`","parse_mode":{"@type":"textParseModeMarkdown","version":1}}',
+    '{"@type":"parseTextEntities","text":"**bold** __it__ `code` [link](https://e.com)","parse_mode":{"@type":"textParseModeMarkdown","version":2}}',
+    '{"@type":"parseTextEntities","text":"escaped \\\\*not bold\\\\*","parse_mode":{"@type":"textParseModeMarkdown","version":2}}',
+    '{"@type":"parseTextEntities","text":"~~strike~~ ||spoiler||","parse_mode":{"@type":"textParseModeMarkdown","version":2}}',
+    '{"@type":"parseTextEntities","text":"x","parse_mode":null}',
+    '{"@type":"parseTextEntities","text":"[https://e.com]","parse_mode":{"@type":"textParseModeMarkdown","version":1}}',
+    '{"@type":"parseTextEntities","text":"**b**","parse_mode":{"@type":"textParseModeMarkdown","version":2}}',
+    '{"@type":"parseTextEntities","text":"> quote\\nline","parse_mode":{"@type":"textParseModeMarkdown","version":2}}',
+    '{"@type":"parseTextEntities","text":"<code class=\\"language-py\\">x</code>","parse_mode":{"@type":"textParseModeHTML"}}',
+    '{"@type":"parseTextEntities","text":"x","parse_mode":{"@type":"textParseModeMarkdown","version":3}}',
+    '{"@type":"parseTextEntities","text":"&nbsp; &amp","parse_mode":{"@type":"textParseModeHTML"}}',
 ]
 
 CONTROL = [
