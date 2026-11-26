@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, HashSet};
 mod emoji_table;
 mod mime_tables;
 mod country_table;
+mod api_functions;
 
 use std::ffi::{c_char, c_double, c_int, c_void, CStr, CString};
 
@@ -1157,6 +1158,9 @@ enum Json {
     // integer fields are parsed from the literal with to_integer_safe
     Int(i64, String),
     Float(f64, String),
+    // literals that don't fit i64: TDLib keeps them and fails later with
+    // "Can't parse as an integer string"
+    Num(String),
     Str(String),
     Arr(Vec<Json>),
     Obj(Vec<(String, Json)>),
@@ -1192,6 +1196,7 @@ impl Json {
         match self {
             Json::Int(value, _) => Some(*value),
             Json::Float(value, _) => Some(*value as i64),
+            Json::Num(_) => None,
             _ => None,
         }
     }
@@ -1311,9 +1316,10 @@ fn parse_json_number(bytes: &[u8], pos: &mut usize) -> Option<Json> {
             .ok()
             .map(|value| Json::Float(value, text.to_string()))
     } else {
-        text.parse::<i64>()
-            .ok()
-            .map(|value| Json::Int(value, text.to_string()))
+        match text.parse::<i64>() {
+            Ok(value) => Some(Json::Int(value, text.to_string())),
+            Err(_) => Some(Json::Num(text.to_string())),
+        }
     }
 }
 
@@ -3000,14 +3006,6 @@ fn emoji_ranges_json(text: &str) -> String {
     )
 }
 
-fn number_value(value: Option<&Json>) -> f64 {
-    match value {
-        Some(Json::Float(number, _)) => *number,
-        Some(Json::Int(number, _)) => *number as f64,
-        _ => 0.0,
-    }
-}
-
 fn emit_typed_json_value(value: &Json, out: &mut String) {
     match value {
         Json::Null => out.push_str("{\"@type\":\"jsonValueNull\"}"),
@@ -3023,6 +3021,10 @@ fn emit_typed_json_value(value: &Json, out: &mut String) {
         Json::Float(number, _) => out.push_str(&format!(
             "{{\"@type\":\"jsonValueNumber\",\"value\":{:.6}}}",
             number
+        )),
+        Json::Num(literal) => out.push_str(&format!(
+            "{{\"@type\":\"jsonValueNumber\",\"value\":{:.6}}}",
+            literal.parse::<f64>().unwrap_or(0.0)
         )),
         Json::Str(text) => {
             out.push_str("{\"@type\":\"jsonValueString\",\"value\":\"");
@@ -3056,56 +3058,85 @@ fn emit_typed_json_value(value: &Json, out: &mut String) {
     }
 }
 
-fn emit_json_text(value: &Json, out: &mut String) {
-    match value.get("@type").and_then(Json::as_str) {
-        Some("jsonValueNull") => out.push_str("null"),
-        Some("jsonValueBoolean") => {
-            let flag = matches!(value.get("value"), Some(Json::Bool(true)));
+const JSON_VALUE_CONSTRUCTORS: [(i32, &str); 6] = [
+    (-92872499, "jsonValueNull"),
+    (-2142186576, "jsonValueBoolean"),
+    (-1010822033, "jsonValueNumber"),
+    (1597947313, "jsonValueString"),
+    (-322064168, "jsonValueArray"),
+    (-964952256, "jsonValueObject"),
+];
+
+/// getJsonString: JsonValue::to_string, with the JSON layer's typed field reads
+fn emit_json_text(value: &Json, out: &mut String) -> Result<(), String> {
+    if !matches!(value, Json::Obj(_)) {
+        return Err(expected_type_error("Object", value));
+    }
+    match json_class_name(value, &JSON_VALUE_CONSTRUCTORS)? {
+        "jsonValueNull" => out.push_str("null"),
+        "jsonValueBoolean" => {
+            let flag = request_bool(value, "value")?;
             out.push_str(if flag { "true" } else { "false" });
         }
-        Some("jsonValueNumber") => {
-            out.push_str(&format!("{:.6}", number_value(value.get("value"))));
+        "jsonValueNumber" => {
+            let number = match value.get("value") {
+                None | Some(Json::Null) => 0.0,
+                Some(Json::Int(number, _)) => *number as f64,
+                Some(Json::Float(number, _)) => *number,
+                Some(Json::Num(literal)) => literal.parse::<f64>().unwrap_or(0.0),
+                Some(other) => return Err(expected_type_error("Number", other)),
+            };
+            out.push_str(&format!("{:.6}", number));
         }
-        Some("jsonValueString") => {
+        "jsonValueString" => {
             out.push('"');
-            if let Some(text) = value.get("value").and_then(Json::as_str) {
-                json_escape(text, out);
-            }
+            json_escape(&request_string(value, "value")?, out);
             out.push('"');
         }
-        Some("jsonValueArray") => {
+        "jsonValueArray" => {
             out.push('[');
-            if let Some(Json::Arr(items)) = value.get("values") {
-                for (index, item) in items.iter().enumerate() {
-                    if index > 0 {
-                        out.push(',');
+            match value.get("values") {
+                None | Some(Json::Null) => {}
+                Some(Json::Arr(items)) => {
+                    for (index, item) in items.iter().enumerate() {
+                        if index > 0 {
+                            out.push(',');
+                        }
+                        emit_json_text(item, out)?;
                     }
-                    emit_json_text(item, out);
                 }
+                Some(other) => return Err(expected_type_error("Array", other)),
             }
             out.push(']');
         }
-        Some("jsonValueObject") => {
+        "jsonValueObject" => {
             out.push('{');
-            if let Some(Json::Arr(members)) = value.get("members") {
-                for (index, member) in members.iter().enumerate() {
-                    if index > 0 {
-                        out.push(',');
-                    }
-                    out.push('"');
-                    if let Some(key) = member.get("key").and_then(Json::as_str) {
-                        json_escape(key, out);
-                    }
-                    out.push_str("\":");
-                    if let Some(member_value) = member.get("value") {
-                        emit_json_text(member_value, out);
+            match value.get("members") {
+                None | Some(Json::Null) => {}
+                Some(Json::Arr(members)) => {
+                    for (index, member) in members.iter().enumerate() {
+                        if index > 0 {
+                            out.push(',');
+                        }
+                        if !matches!(member, Json::Obj(_)) {
+                            return Err(expected_type_error("Object", member));
+                        }
+                        out.push('"');
+                        json_escape(&request_string(member, "key")?, out);
+                        out.push_str("\":");
+                        match member.get("value") {
+                            None | Some(Json::Null) => out.push_str("null"),
+                            Some(member_value) => emit_json_text(member_value, out)?,
+                        }
                     }
                 }
+                Some(other) => return Err(expected_type_error("Array", other)),
             }
             out.push('}');
         }
-        _ => out.push_str("null"),
+        other => return Err(format!("Unknown class \"{}\"", other)),
     }
+    Ok(())
 }
 
 fn color_text(color: i64) -> String {
@@ -3225,21 +3256,39 @@ fn push_receiver_id(payload: &str) -> Result<i64, String> {
     if payload == "{}" {
         return Ok(0);
     }
-    let Some(Json::Obj(_)) = Json::parse(payload) else {
+    let Some(mut root) = Json::parse(payload) else {
         return Err("Failed to parse payload as JSON object".to_string());
     };
-    let mut root = Json::parse(payload).unwrap_or(Json::Null);
+    if !matches!(root, Json::Obj(_)) {
+        return Err("Expected JSON object".to_string());
+    }
     if let Some(data) = root.get("data") {
+        if !matches!(data, Json::Obj(_)) {
+            return Err("Field \"data\" must be of type Object".to_string());
+        }
         root = data.clone();
     }
-    if let Some(encrypted) = root.get("p").and_then(Json::as_str) {
+    if let Some(value) = root.get("p") {
+        let encrypted = match value {
+            Json::Str(text) => text.clone(),
+            Json::Int(_, literal) | Json::Float(_, literal) | Json::Num(literal) => literal.clone(),
+            _ => return Err("Field \"p\" must be of type String".to_string()),
+        };
         if encrypted.len() < 12 {
             return Err("Encrypted payload is too small".to_string());
         }
-        return base64url_prefix_value(encrypted)
+        return base64url_prefix_value(&encrypted)
             .ok_or_else(|| "Failed to base64url-decode payload".to_string());
     }
-    if let Some(user_id) = root.get("user_id").and_then(Json::as_i64) {
+    if let Some(value) = root.get("user_id") {
+        let literal = match value {
+            Json::Int(_, literal) | Json::Float(_, literal) | Json::Num(literal) => literal,
+            Json::Str(text) => text,
+            _ => return Err("Field \"user_id\" must be a Number".to_string()),
+        };
+        let Some(user_id) = to_integer_safe_i64(literal.as_bytes()) else {
+            return Err("Field \"user_id\" must be a valid Number".to_string());
+        };
         if user_id <= 0 {
             return Err(format!("Receive wrong user_id {}", user_id));
         }
@@ -6626,7 +6675,7 @@ fn json_type_name(value: &Json) -> &'static str {
     match value {
         Json::Null => "Null",
         Json::Bool(_) => "Boolean",
-        Json::Int(..) | Json::Float(..) => "Number",
+        Json::Int(..) | Json::Float(..) | Json::Num(_) => "Number",
         Json::Str(_) => "String",
         Json::Arr(_) => "Array",
         Json::Obj(_) => "Object",
@@ -6636,9 +6685,14 @@ fn json_type_name(value: &Json) -> &'static str {
 fn json_int64_field(value: &Json) -> Result<i64, String> {
     let literal = match value {
         Json::Null => return Ok(0),
-        Json::Int(_, literal) | Json::Float(_, literal) => literal,
+        Json::Int(_, literal) | Json::Float(_, literal) | Json::Num(literal) => literal,
         Json::Str(text) => text,
-        other => return Err(format!("Expected Number, but receive {}", json_type_name(other))),
+        other => {
+            return Err(format!(
+                "Expected String or Number, but receive {}",
+                json_type_name(other)
+            ))
+        }
     };
     match to_integer_safe_i64(literal.as_bytes()) {
         Some(number) => Ok(number),
@@ -6685,7 +6739,7 @@ const DATE_TIME_FORMATTING_CONSTRUCTORS: [(i32, &str); 5] = [
 fn json_class_name<'a>(value: &'a Json, constructors: &[(i32, &'static str)]) -> Result<&'a str, String> {
     match value.get("@type") {
         Some(Json::Str(name)) => Ok(name),
-        Some(Json::Int(_, literal)) | Some(Json::Float(_, literal)) => {
+        Some(Json::Int(_, literal)) | Some(Json::Float(_, literal)) | Some(Json::Num(literal)) => {
             let constructor = to_integer_i32(literal.as_bytes());
             match constructors.iter().find(|(id, _)| *id == constructor) {
                 Some((_, name)) => Ok(name),
@@ -6900,7 +6954,7 @@ fn get_message_entities(entities: Option<&Json>, allow_all: bool) -> Result<Vec<
 fn json_int32_field(value: &Json) -> Result<i32, String> {
     let literal = match value {
         Json::Null => return Ok(0),
-        Json::Int(_, literal) | Json::Float(_, literal) => literal,
+        Json::Int(_, literal) | Json::Float(_, literal) | Json::Num(literal) => literal,
         Json::Str(text) => text,
         other => return Err(format!("Expected Number, but receive {}", json_type_name(other))),
     };
@@ -7013,7 +7067,7 @@ fn parse_text_entities(request: &Json) -> String {
             "textParseModeMarkdown" => false,
             other => return format_error(format!("Unknown class \"{}\"", other)),
         },
-        Some(Json::Int(_, literal)) | Some(Json::Float(_, literal)) => {
+        Some(Json::Int(_, literal)) | Some(Json::Float(_, literal)) | Some(Json::Num(literal)) => {
             match to_integer_i32(literal.as_bytes()) {
                 TEXT_PARSE_MODE_HTML_ID => true,
                 TEXT_PARSE_MODE_MARKDOWN_ID => false,
@@ -7062,6 +7116,7 @@ struct LogState {
     stream: &'static str,
     stream_path: String,
     stream_max_file_size: i64,
+    stream_redirect_stderr: bool,
     tag_levels: [(&'static str, i32); 20],
 }
 
@@ -7070,6 +7125,7 @@ static LOG_STATE: std::sync::Mutex<LogState> = std::sync::Mutex::new(LogState {
     stream: "logStreamDefault",
     stream_path: String::new(),
     stream_max_file_size: 0,
+    stream_redirect_stderr: false,
     tag_levels: [
         ("actor", 14),
         ("binlog", 12),
@@ -7128,13 +7184,16 @@ fn tag_level(tag: &str) -> Option<i32> {
 }
 
 fn log_action(kind: &str, json: &Json) -> Option<String> {
-    let new_level = json.get("new_verbosity_level").and_then(Json::as_i64).unwrap_or(0) as i32;
     match kind {
         "getLogVerbosityLevel" => {
             let state = LOG_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             Some(log_verbosity_json(state.level))
         }
         "setLogVerbosityLevel" => {
+            let new_level = match request_int32(json, "new_verbosity_level") {
+                Ok(level) => level,
+                Err(message) => return Some(request_error(&message)),
+            };
             let mut state = LOG_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             state.level = new_level;
             Some(ok_object())
@@ -7144,24 +7203,44 @@ fn log_action(kind: &str, json: &Json) -> Option<String> {
             let body = match state.stream {
                 "logStreamEmpty" => "{\"@type\":\"logStreamEmpty\"}".to_string(),
                 "logStreamFile" => format!(
-                    "{{\"@type\":\"logStreamFile\",\"path\":\"{}\",\"max_file_size\":{}}}",
-                    state.stream_path, state.stream_max_file_size
+                    "{{\"@type\":\"logStreamFile\",\"path\":\"{}\",\"max_file_size\":{},\"redirect_stderr\":{}}}",
+                    state.stream_path,
+                    state.stream_max_file_size,
+                    if state.stream_redirect_stderr { "true" } else { "false" }
                 ),
                 _ => "{\"@type\":\"logStreamDefault\"}".to_string(),
             };
             Some(body)
         }
         "setLogStream" => {
-            let stream = json.get("log_stream");
-            let kind_name = stream
-                .and_then(|value| value.get("@type"))
-                .and_then(Json::as_str)
-                .unwrap_or("logStreamDefault");
-            let path = stream.and_then(|value| value.get("path")).and_then(Json::as_str).unwrap_or("");
-            let max_file_size = stream
-                .and_then(|value| value.get("max_file_size"))
-                .and_then(Json::as_i64)
-                .unwrap_or(0);
+            let stream = match request_object(json, "log_stream") {
+                Ok(stream) => stream,
+                Err(message) => return Some(request_error(&message)),
+            };
+            let mut kind_name = "logStreamDefault";
+            let mut path = String::new();
+            let mut max_file_size = 0i64;
+            let mut redirect_stderr = false;
+            if let Some(stream) = stream {
+                kind_name = match json_class_name(stream, &LOG_STREAM_CONSTRUCTORS) {
+                    Ok("logStreamEmpty") => "logStreamEmpty",
+                    Ok("logStreamFile") => "logStreamFile",
+                    Ok(_) => "logStreamDefault",
+                    Err(message) => return Some(request_error(&message)),
+                };
+                match request_string(stream, "path") {
+                    Ok(value) => path = value,
+                    Err(message) => return Some(request_error(&message)),
+                }
+                match request_int64(stream, "max_file_size") {
+                    Ok(value) => max_file_size = value,
+                    Err(message) => return Some(request_error(&message)),
+                }
+                match request_bool(stream, "redirect_stderr") {
+                    Ok(value) => redirect_stderr = value,
+                    Err(message) => return Some(request_error(&message)),
+                }
+            }
             let mut state = LOG_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             state.stream = match kind_name {
                 "logStreamEmpty" => "logStreamEmpty",
@@ -7174,6 +7253,7 @@ fn log_action(kind: &str, json: &Json) -> Option<String> {
                 String::new()
             };
             state.stream_max_file_size = if kind_name == "logStreamFile" { max_file_size } else { 0 };
+            state.stream_redirect_stderr = kind_name == "logStreamFile" && redirect_stderr;
             Some(ok_object())
         }
         "getLogTags" => {
@@ -7191,14 +7271,24 @@ fn log_action(kind: &str, json: &Json) -> Option<String> {
             Some(out)
         }
         "getLogTagVerbosityLevel" => {
-            let tag = json.get("tag").and_then(Json::as_str).unwrap_or("");
-            Some(match tag_level(tag) {
+            let tag = match request_string(json, "tag") {
+                Ok(tag) => tag,
+                Err(message) => return Some(request_error(&message)),
+            };
+            Some(match tag_level(&tag) {
                 Some(level) => log_verbosity_json(level),
                 None => error_object(400, "Log tag is not found"),
             })
         }
         "setLogTagVerbosityLevel" => {
-            let tag = json.get("tag").and_then(Json::as_str).unwrap_or("");
+            let tag = match request_string(json, "tag") {
+                Ok(tag) => tag,
+                Err(message) => return Some(request_error(&message)),
+            };
+            let new_level = match request_int32(json, "new_verbosity_level") {
+                Ok(level) => level,
+                Err(message) => return Some(request_error(&message)),
+            };
             let mut state = LOG_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             match state.tag_levels.iter_mut().find(|(name, _)| *name == tag) {
                 Some(entry) => {
@@ -7208,7 +7298,15 @@ fn log_action(kind: &str, json: &Json) -> Option<String> {
                 None => Some(error_object(400, "Log tag is not found")),
             }
         }
-        "addLogMessage" => Some(ok_object()),
+        "addLogMessage" => {
+            if let Err(message) = request_int32(json, "verbosity_level") {
+                return Some(request_error(&message));
+            }
+            if let Err(message) = request_string(json, "text") {
+                return Some(request_error(&message));
+            }
+            Some(ok_object())
+        }
         _ => None,
     }
 }
@@ -7308,7 +7406,10 @@ fn search_quote_request(json: &Json) -> String {
         Ok(value) => value,
         Err(message) => return error_object(400, &message),
     };
-    let quote_position = json.get("quote_position").and_then(Json::as_i64).unwrap_or(0) as i32;
+    let quote_position = match request_int32(json, "quote_position") {
+        Ok(position) => position,
+        Err(message) => return request_error(&message),
+    };
     let position = search_quote(&text, &quote, quote_position, &mut text_entities, &mut quote_entities);
     if position == -1 {
         return error_object(404, "Not Found");
@@ -7316,98 +7417,281 @@ fn search_quote_request(json: &Json) -> String {
     format!("{{\"@type\":\"foundPosition\",\"position\":{}}}", position)
 }
 
+/// td/telegram/SynchronousRequests.cpp: the actions `td_execute` runs without a client
+const SYNCHRONOUS_ACTIONS: [&str; 29] = [
+    "searchQuote",
+    "getTextEntities",
+    "getTextEmojiRanges",
+    "parseTextEntities",
+    "parseMarkdown",
+    "getMarkdownText",
+    "searchStringsByPrefix",
+    "checkQuickReplyShortcutName",
+    "getCountryFlagEmoji",
+    "getFileMimeType",
+    "getFileExtension",
+    "cleanFileName",
+    "getLanguagePackString",
+    "getPhoneNumberInfoSync",
+    "getChatFolderDefaultIconName",
+    "getJsonValue",
+    "getJsonString",
+    "getThemeParametersJsonString",
+    "getPushReceiverId",
+    "setLogStream",
+    "getLogStream",
+    "setLogVerbosityLevel",
+    "getLogVerbosityLevel",
+    "getLogTags",
+    "setLogTagVerbosityLevel",
+    "getLogTagVerbosityLevel",
+    "addLogMessage",
+    "testReturnError",
+    "getOption",
+];
+
+const LOG_STREAM_CONSTRUCTORS: [(i32, &str); 3] = [
+    (1390581436, "logStreamDefault"),
+    (1532136933, "logStreamFile"),
+    (-499912244, "logStreamEmpty"),
+];
+
+/// td/tl/tl_json.h: a missing or null field keeps its default, a wrong type is an error
+fn request_error(message: &str) -> String {
+    error_object(
+        400,
+        &format!("Failed to parse JSON object as TDLib request: {}", message),
+    )
+}
+
+fn expected_type_error(expected: &str, value: &Json) -> String {
+    format!("Expected {}, but receive {}", expected, json_type_name(value))
+}
+
+fn request_string(json: &Json, key: &str) -> Result<String, String> {
+    match json.get(key) {
+        None | Some(Json::Null) => Ok(String::new()),
+        Some(Json::Str(text)) => Ok(text.clone()),
+        Some(other) => Err(expected_type_error("String", other)),
+    }
+}
+
+fn request_int32(json: &Json, key: &str) -> Result<i32, String> {
+    match json.get(key) {
+        None => Ok(0),
+        Some(value) => json_int32_field(value),
+    }
+}
+
+fn request_int64(json: &Json, key: &str) -> Result<i64, String> {
+    match json.get(key) {
+        None => Ok(0),
+        Some(value) => json_int64_field(value),
+    }
+}
+
+fn request_object<'a>(json: &'a Json, key: &str) -> Result<Option<&'a Json>, String> {
+    match json.get(key) {
+        None | Some(Json::Null) => Ok(None),
+        Some(value @ Json::Obj(_)) => Ok(Some(value)),
+        Some(other) => Err(expected_type_error("Object", other)),
+    }
+}
+
+fn request_bool(json: &Json, key: &str) -> Result<bool, String> {
+    match json.get(key) {
+        None | Some(Json::Null) => Ok(false),
+        Some(Json::Bool(flag)) => Ok(*flag),
+        Some(value @ (Json::Int(..) | Json::Float(..) | Json::Num(_) | Json::Str(_))) => {
+            match json_int32_field(value) {
+                Ok(number) => Ok(number != 0),
+                Err(_) => Err(expected_type_error("Boolean", value)),
+            }
+        }
+        Some(other) => Err(expected_type_error("Boolean", other)),
+    }
+}
+
+macro_rules! req {
+    ($value:expr) => {
+        match $value {
+            Ok(value) => value,
+            Err(message) => return request_error(&message),
+        }
+    };
+}
+
+fn encode_json_text(value: &Json) -> String {
+    let mut out = String::new();
+    match value {
+        Json::Null => out.push_str("null"),
+        Json::Bool(flag) => out.push_str(if *flag { "true" } else { "false" }),
+        Json::Int(_, literal) | Json::Float(_, literal) | Json::Num(literal) => {
+            out.push_str(literal)
+        }
+        Json::Str(text) => {
+            out.push('"');
+            json_escape(text, &mut out);
+            out.push('"');
+        }
+        Json::Arr(items) => {
+            out.push('[');
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                out.push_str(&encode_json_text(item));
+            }
+            out.push(']');
+        }
+        Json::Obj(members) => {
+            out.push('{');
+            for (index, (name, member)) in members.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                out.push('"');
+                json_escape(name, &mut out);
+                out.push_str("\":");
+                out.push_str(&encode_json_text(member));
+            }
+            out.push('}');
+        }
+    }
+    out
+}
+
+/// td/telegram/ClientJson.cpp: "@extra" is echoed in every response, errors included
+fn append_extra(result: String, extra: &str) -> String {
+    let mut out = result;
+    if out.ends_with('}') {
+        out.pop();
+        out.push_str(",\"@extra\":");
+        out.push_str(extra);
+        out.push('}');
+    }
+    out
+}
+
 fn execute(request: &str) -> String {
     let Some(json) = Json::parse(request) else {
         return error_object(400, "tdjson_rs: malformed request");
     };
-    let Some(kind) = json.get("@type").and_then(Json::as_str) else {
-        return error_object(400, "tdjson_rs: malformed request");
+    if !matches!(json, Json::Obj(_)) {
+        return error_object(400, "Expected a JSON object");
+    }
+    let extra = json.get("@extra").map(encode_json_text);
+    let result = execute_object(&json);
+    match extra {
+        Some(extra) => append_extra(result, &extra),
+        None => result,
+    }
+}
+
+fn execute_object(json: &Json) -> String {
+    let kind = match json.get("@type") {
+        None => return request_error("Can't find field \"@type\""),
+        Some(Json::Str(name)) => {
+            if SYNCHRONOUS_ACTIONS.contains(&name.as_str()) {
+                name.as_str()
+            } else if api_functions::FUNCTIONS.iter().any(|(_, known)| *known == name) {
+                return error_object(400, "The method can't be executed synchronously");
+            } else {
+                return request_error(&format!("Unknown class \"{}\"", name));
+            }
+        }
+        Some(Json::Int(_, literal)) | Some(Json::Float(_, literal)) | Some(Json::Num(literal)) => {
+            let constructor = to_integer_i32(literal.as_bytes());
+            match api_functions::FUNCTIONS.iter().find(|(id, _)| *id == constructor) {
+                Some((_, name)) if SYNCHRONOUS_ACTIONS.contains(name) => *name,
+                Some(_) => return error_object(400, "The method can't be executed synchronously"),
+                None => {
+                    return request_error(&format!(
+                        "Unknown constructor 0x{:08x}",
+                        constructor as u32
+                    ))
+                }
+            }
+        }
+        Some(other) => {
+            return request_error(&format!(
+                "Expected String or Integer, but receive {}",
+                json_type_name(other)
+            ))
+        }
     };
-    if let Some(result) = log_action(kind, &json) {
+    if let Some(result) = log_action(kind, json) {
         return result;
     }
     match kind {
-        "searchQuote" => search_quote_request(&json),
-        "getTextEntities" => match json.get("text").and_then(Json::as_str) {
-            Some(text) => entities_json(text),
-            None => error_object(400, "Text must be encoded in UTF-8"),
-        },
-        "checkQuickReplyShortcutName" => match json.get("name").and_then(Json::as_str) {
-            Some(name) => check_shortcut_name(name),
-            None => error_object(400, "Strings must be encoded in UTF-8"),
-        },
-        "getCountryFlagEmoji" => match json.get("country_code").and_then(Json::as_str) {
-            Some(code) => text_object(&country_flag_emoji(code)),
-            None => text_object(""),
-        },
-        "getPhoneNumberInfoSync" => phone_number_info_json(
-            json.get("phone_number_prefix").and_then(Json::as_str).unwrap_or(""),
-        ),
-        "testReturnError" => match json.get("error") {
+        "searchQuote" => search_quote_request(json),
+        "getTextEntities" => entities_json(&req!(request_string(json, "text"))),
+        "getTextEmojiRanges" => emoji_ranges_json(&req!(request_string(json, "text"))),
+        "checkQuickReplyShortcutName" => check_shortcut_name(&req!(request_string(json, "name"))),
+        "getCountryFlagEmoji" => {
+            text_object(&country_flag_emoji(&req!(request_string(json, "country_code"))))
+        }
+        "getPhoneNumberInfoSync" => {
+            phone_number_info_json(&req!(request_string(json, "phone_number_prefix")))
+        }
+        "testReturnError" => match req!(request_object(json, "error")) {
             Some(error) => error_object(
-                error.get("code").and_then(Json::as_i64).unwrap_or(0),
-                error.get("message").and_then(Json::as_str).unwrap_or(""),
+                req!(request_int32(error, "code")) as i64,
+                &req!(request_string(error, "message")),
             ),
             None => error_object(404, "Not Found"),
         },
-        "getFileMimeType" => text_object(file_mime_type(
-            json.get("file_name").and_then(Json::as_str).unwrap_or(""),
-        )),
-        "getFileExtension" => text_object(mime_type_extension(
-            json.get("mime_type").and_then(Json::as_str).unwrap_or(""),
-        )),
-        "cleanFileName" => text_object(&clean_filename(
-            json.get("file_name").and_then(Json::as_str).unwrap_or(""),
-        )),
-        "getTextEmojiRanges" => match json.get("text").and_then(Json::as_str) {
-            Some(text) => emoji_ranges_json(text),
-            None => error_object(400, "Text must be encoded in UTF-8"),
-        },
-        "searchStringsByPrefix" => search_strings_by_prefix_request(&json),
-        "parseTextEntities" => parse_text_entities(&json),
-        "parseMarkdown" => parse_markdown_request(&json),
-        "getMarkdownText" => get_markdown_text_request(&json),
-        "getJsonValue" => match json.get("json").and_then(Json::as_str) {
-            Some(text) => match Json::parse(text) {
-                Some(value) => {
-                    let mut out = String::new();
-                    emit_typed_json_value(&value, &mut out);
-                    out
-                }
-                None => error_object(400, "Failed to parse JSON object"),
-            },
-            None => error_object(400, "Failed to parse JSON object"),
-        },
-        "getJsonString" => match json.get("json_value") {
+        "getFileMimeType" => text_object(file_mime_type(&req!(request_string(json, "file_name")))),
+        "getFileExtension" => {
+            text_object(mime_type_extension(&req!(request_string(json, "mime_type"))))
+        }
+        "cleanFileName" => text_object(&clean_filename(&req!(request_string(json, "file_name")))),
+        "searchStringsByPrefix" => search_strings_by_prefix_request(json),
+        "parseTextEntities" => parse_text_entities(json),
+        "parseMarkdown" => parse_markdown_request(json),
+        "getMarkdownText" => get_markdown_text_request(json),
+        "getJsonValue" => match Json::parse(&req!(request_string(json, "json"))) {
             Some(value) => {
                 let mut out = String::new();
-                emit_json_text(value, &mut out);
-                text_object(&out)
-            }
-            None => text_object(""),
-        },
-        "getThemeParametersJsonString" => {
-            text_object(&theme_parameters_json_string(json.get("theme")))
-        }
-        "getChatFolderDefaultIconName" => match chat_folder_default_icon_name(json.get("folder")) {
-            Some(name) => {
-                let mut out = String::from("{\"@type\":\"chatFolderIcon\",\"name\":\"");
-                json_escape(&name, &mut out);
-                out.push_str("\"}");
+                emit_typed_json_value(&value, &mut out);
                 out
             }
+            None => error_object(400, "Failed to parse JSON object"),
+        },
+        "getJsonString" => match req!(request_object(json, "json_value")) {
+            Some(value) => {
+                let mut out = String::new();
+                match emit_json_text(value, &mut out) {
+                    Ok(()) => text_object(&out),
+                    Err(message) => request_error(&message),
+                }
+            }
+            None => text_object("null"),
+        },
+        "getThemeParametersJsonString" => {
+            text_object(&theme_parameters_json_string(req!(request_object(json, "theme"))))
+        }
+        "getChatFolderDefaultIconName" => match req!(request_object(json, "folder")) {
+            Some(folder) => match chat_folder_default_icon_name(Some(folder)) {
+                Some(name) => {
+                    let mut out = String::from("{\"@type\":\"chatFolderIcon\",\"name\":\"");
+                    json_escape(&name, &mut out);
+                    out.push_str("\"}");
+                    out
+                }
+                None => error_object(400, "Chat folder must be non-empty"),
+            },
             None => error_object(400, "Chat folder must be non-empty"),
         },
         "getPushReceiverId" => {
-            let payload = json.get("payload").and_then(Json::as_str).unwrap_or("");
-            match push_receiver_id(payload) {
+            match push_receiver_id(&req!(request_string(json, "payload"))) {
                 Ok(id) => format!("{{\"@type\":\"pushReceiverId\",\"id\":\"{}\"}}", id),
                 Err(message) => error_object(400, &message),
             }
         }
         "getOption" => {
-            let name = json.get("name").and_then(Json::as_str).unwrap_or("");
-            let value = match name {
+            let name = req!(request_string(json, "name"));
+            let value = match name.as_str() {
                 "version" => "1.8.71",
                 "commit_hash" => env!("TD_GIT_COMMIT_HASH"),
                 _ => return error_object(400, "The option can't be get synchronously"),
@@ -7418,24 +7702,22 @@ fn execute(request: &str) -> String {
             body
         }
         "getLanguagePackString" => {
-            let pack = json.get("localization_target").and_then(Json::as_str).unwrap_or("");
-            let code = json.get("language_pack_id").and_then(Json::as_str).unwrap_or("");
-            let key = json.get("key").and_then(Json::as_str).unwrap_or("");
-            if pack.is_empty() || !check_language_pack_name(pack) {
+            req!(request_string(json, "language_pack_database_path"));
+            let pack = req!(request_string(json, "localization_target"));
+            let code = req!(request_string(json, "language_pack_id"));
+            let key = req!(request_string(json, "key"));
+            if pack.is_empty() || !check_language_pack_name(&pack) {
                 return error_object(400, "Localization target is invalid");
             }
-            if code.is_empty() || !check_language_code_name(code) {
+            if code.is_empty() || !check_language_code_name(&code) {
                 return error_object(400, "Language pack ID is invalid");
             }
-            if !is_valid_language_key(key) {
+            if !is_valid_language_key(&key) {
                 return error_object(400, "Key is invalid");
             }
             error_object(404, "Not Found")
         }
-        other => error_object(
-            400,
-            &format!("tdjson_rs: unimplemented request type {}", other),
-        ),
+        _ => error_object(400, "The method can't be executed synchronously"),
     }
 }
 

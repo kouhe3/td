@@ -16,7 +16,7 @@
 | 只读 oracle | `C:/tmp/td-build/libtdjson.dll`（md5 `0398814038978aaeef7f8d6ac62bb8ff`，97,185,382 B）；运行副本由 `tools/tdjson_diff.py` 直接加载，不改写 | — |
 | backlog 发布 | GitHub issues，仓库钉死 `kouhe3/td`（`docs/agents/issue-tracker.md`）；`tasks/backlog.md` 保留未成 issue 的条目 | — |
 | 配套文件 | `docs/agents/issue-tracker.md` / `triage-labels.md` / `domain.md` 已装（mattpocock-skills 1.3.2，project scope） | — |
-| 门禁 | `python tools/verify.py`（构建 + 差分仪器 + 四个生成器 `--check` 一条命令）；追加检查 `bash C:/Users/K/.omp/agent/skills/face-spaghetti/scripts/append-only-check.sh --worktree`（在 Git Bash 里跑） | — |
+| 门禁 | `python tools/verify.py`（构建 + 差分仪器 + 五个生成器 `--check` 一条命令）；追加检查 `bash C:/Users/K/.omp/agent/skills/face-spaghetti/scripts/append-only-check.sh --worktree`（在 Git Bash 里跑） | — |
 
 配套分工见 skill 的 `references/pairing.md`；本文件只记落点。
 
@@ -43,11 +43,13 @@
 
 | 项 | 值 |
 |---|---|
-| 快照日期 | 2026-11-26 |
-| 基线提交 | `6c4661eb4` |
+| 快照日期 | 2026-11-26（round 1 = `6c4661eb4`；round 2 = T19 + T15–T18，见 F052） |
+| 基线提交 | `6c4661eb4`（round 1） |
 | 机器记录 | `docs/gate-2026-11-26.json` |
 | 复跑命令 | `python tools/verify.py` |
-| 当时结果 | 六项门禁全绿、仪器 279 PASS、`failures=0` |
-| 已知缺口 | B1（有状态客户端，需测试 DC 账号）、B6（共享 JSON 层报错文案）、B7（语言包成功路径需 pack 数据） |
+| 当时结果 | round 1：六项门禁全绿、仪器 279 PASS、`failures=0`；round 2：七项全绿、573 PASS（MATCH 284）、`failures=0`（F052） |
+| 已知缺口 | B1（有状态客户端，需测试 DC 账号）、B7（语言包成功路径需 pack 数据）、B9（畸形 JSON 文案，兼作 CONTROL）、B10（超 DBL_MAX 浮点） |
 
-换目标或大改前先重跑 `tools/verify.py`；数字变了就更新 `docs/facts.md` 的 F044（旧行置 `过期`）。
+换目标或大改前先重跑 `tools/verify.py`；数字变了就把旧快照行置 `过期`，另起一行记新快照（round 1 是 F044，round 2 是 F052）。
+
+仪器自己加载运行时：`tools/tdjson_diff.py` 用 `os.add_dll_directory` 挂上 `C:/msys64/ucrt64/bin`——CPython 3.8+ 的 `CDLL` 走 `LOAD_LIBRARY_SEARCH_DEFAULT_DIRS`，`PATH` 不参与依赖查找，所以不必再导出 PATH。

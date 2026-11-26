@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import ctypes
 import hashlib
+import os
 import sys
 from pathlib import Path
 
@@ -175,11 +176,159 @@ MATCH = [
     '{"@type":"searchQuote","text":{"@type":"formattedText","text":"\\ud83d\\ude00x","entities":[]},"quote":{"@type":"formattedText","text":"x","entities":[]},"quote_position":0}',
     '{"@type":"searchQuote","text":{"@type":"formattedText","text":"abcdef","entities":[]},"quote":{"@type":"formattedText","text":"ab","entities":[{"@type":"textEntity","offset":0,"length":2,"type":{"@type":"textEntityTypeBold"}}]},"quote_position":0}',
     '{"@type":"searchQuote","text":null,"quote":{"@type":"formattedText","text":"a","entities":[]},"quote_position":0}',
+    '{"@type":"getTextEntities","text":123}',
+    '{"@type":"getTextEntities","text":null}',
+    '{"@type":"getTextEntities"}',
+    '{"@type":"getTextEntities","text":["a"]}',
+    '{"@type":"getTextEntities","text":"a","bogus":1}',
+    '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":123}',
+    '{"@type":"getPhoneNumberInfoSync","phone_number_prefix":"+1"}',
+    '{"@type":"getFileMimeType","file_name":99999999999999999999}',
+    '{"@type":"getFileMimeType","file_name":"a\\u4e2d\\u6587.txt"}',
+    '{"@type":"searchStringsByPrefix","strings":["a"],"query":"a","limit":99999999999999999999,"return_sorted":true}',
+    '{"@type":"searchQuote","text":{"@type":"formattedText","text":"ab","entities":[]},"quote":{"@type":"formattedText","text":"a","entities":[]},"quote_position":99999999999999999999}',
+    '{}',
+    '[]',
+    '{"@type":123}',
+    '{"@type":-341490693,"text":"@a"}',
+    '{"@type":"noSuchType"}',
+    '{"@type":null}',
+    '{"@type":"getMe"}',
+    '{"@type":"getTextEntities","text":"@a","@extra":7}',
+    '{"@type":"getTextEntities","text":123,"@extra":7}',
+    '{"@type":"getTextEntities","text":"a","@extra":{"k":[1,"x",null]}}',
+    '{"@type":"getTextEntities","text":"a","@extra":1e999}',
+    '{"@type":"getChatFolderDefaultIconName","folder":null}',
+    '{"@type":"setLogVerbosityLevel","new_verbosity_level":"3x"}',
+    '{"@type":"getJsonValue","json":123}',
+    '{"@type":"getThemeParametersJsonString","theme":123}',
+    '{"@type":"getTextEmojiRanges","text":123}',
+    '{"@type":"testReturnError","error":123}',
+    '{"@type":"getLanguagePackString","language_pack_database_path":123,"localization_target":"android","language_pack_id":"en","key":"Continue"}',
+    '{"@type":"getOption","name":true}',
+    '{"@type":"getTextEntities","text":"/start@somebot"}',
+    '{"@type":"getTextEntities","text":"/help@бот"}',
+    '{"@type":"getTextEntities","text":"/启动"}',
+    '{"@type":"getTextEntities","text":"$USDT"}',
+    '{"@type":"getTextEntities","text":"$USD@somebot"}',
+    '{"@type":"getTextEntities","text":"$1INCH"}',
+    '{"@type":"getTextEntities","text":"$btc"}',
+    '{"@type":"getTextEntities","text":"$ABCDEFGHI"}',
+    '{"@type":"getTextEntities","text":"$АБВ"}',
+    '{"@type":"getTextEntities","text":"4111111111111111111"}',
+    '{"@type":"getTextEntities","text":"378282246310005"}',
+    '{"@type":"getTextEntities","text":"30569309025904"}',
+    '{"@type":"getTextEntities","text":"4222222222222"}',
+    '{"@type":"getTextEntities","text":"4111111111111112"}',
+    '{"@type":"getTextEntities","text":"1234567890123"}',
+    '{"@type":"getTextEntities","text":"0:abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789"}',
+    '{"@type":"getTextEntities","text":"EQAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHx2j"}',
+    '{"@type":"getTextEntities","text":"http://[::1]/"}',
+    '{"@type":"getTextEntities","text":"https://例え.jp/x"}',
+    '{"@type":"getTextEntities","text":"https://пример.рф/path"}',
+    '{"@type":"getTextEntities","text":"https://e.com/' + 'a' * 200 + '"}',
+    '{"@type":"getTextEntities","text":"www.abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz.com"}',
+    '{"@type":"getTextEntities","text":"пример@example.com"}',
+    '{"@type":"getTextEntities","text":"a@пример.рф"}',
+    '{"@type":"getTextEntities","text":"at 59:59"}',
+    '{"@type":"getTextEntities","text":"at 60:00"}',
+    '{"@type":"getTextEntities","text":"at 1:60"}',
+    '{"@type":"getTextEntities","text":"at 99:99:99"}',
+    '{"@type":"getTextEntities","text":"at 0:00"}',
+    '{"@type":"getTextEntities","text":"at 1:2:3"}',
+    '{"@type":"getTextEntities","text":"@username_"}',
+    '{"@type":"getTextEntities","text":"@_"}',
+    '{"@type":"getTextEntities","text":"@a_b_c"}',
+    '{"@type":"getTextEntities","text":"#标签@somebot"}',
+    '{"@type":"checkQuickReplyShortcutName","name":"\\u542f\\u52a8"}',
+    '{"@type":"checkQuickReplyShortcutName","name":"a b"}',
+    '{"@type":"checkQuickReplyShortcutName","name":"_"}',
+    '{"@type":"checkQuickReplyShortcutName","name":"' + 'a' * 32 + '"}',
+    '{"@type":"checkQuickReplyShortcutName","name":"' + 'a' * 33 + '"}',
+    '{"@type":"checkQuickReplyShortcutName","name":"a\\u200c"}',
+    '{"@type":"checkQuickReplyShortcutName","name":"\\u00f1"}',
+    '{"@type":"getCountryFlagEmoji","country_code":"\\u00fcS"}',
+    '{"@type":"getCountryFlagEmoji","country_code":"US "}',
+    '{"@type":"getCountryFlagEmoji","country_code":""}',
+    '{"@type":"getFileMimeType","file_name":"\\u56fe\\u7247.JPG"}',
+    '{"@type":"getFileMimeType","file_name":"a.b.c.tar.gz"}',
+    '{"@type":"getFileMimeType","file_name":"noext"}',
+    '{"@type":"getFileMimeType","file_name":".hidden"}',
+    '{"@type":"getFileMimeType","file_name":"trail."}',
+    '{"@type":"getFileMimeType","file_name":"' + 'a' * 100 + '.txt"}',
+    '{"@type":"getFileMimeType","file_name":""}',
+    '{"@type":"getFileExtension","mime_type":"IMAGE/JPEG"}',
+    '{"@type":"getFileExtension","mime_type":"application/x-empty"}',
+    '{"@type":"getFileExtension","mime_type":"audio/mpeg"}',
+    '{"@type":"getFileExtension","mime_type":"text/x-python"}',
+    '{"@type":"getFileExtension","mime_type":""}',
+    '{"@type":"cleanFileName","file_name":"' + 'a' * 64 + '.txt"}',
+    '{"@type":"cleanFileName","file_name":"' + 'a' * 65 + '.txt"}',
+    '{"@type":"cleanFileName","file_name":"a.' + 'b' * 16 + '"}',
+    '{"@type":"cleanFileName","file_name":"a.' + 'b' * 17 + '"}',
+    '{"@type":"cleanFileName","file_name":"!!!.???"}',
+    '{"@type":"cleanFileName","file_name":"..."}',
+    '{"@type":"cleanFileName","file_name":"\\u6587\\u4ef6\\u540d.\\u6269\\u5c55\\u540d"}',
+    '{"@type":"getTextEmojiRanges","text":"\\ud83c\\uddfa\\ud83c\\uddf8\\ud83c\\uddf8"}',
+    '{"@type":"getTextEmojiRanges","text":"\\ud83d\\udc68\\u200d\\ud83d\\udc69"}',
+    '{"@type":"getTextEmojiRanges","text":"\\ud83d\\udc4d\\ud83c\\udffb\\ud83d\\udc4d\\ud83c\\udfff"}',
+    '{"@type":"getTextEmojiRanges","text":"#\\ufe0f\\u20e3"}',
+    '{"@type":"getTextEmojiRanges","text":"\\u2764"}',
+    '{"@type":"getTextEmojiRanges","text":"\\ud83c\\udff4\\udb40\\udc67\\udb40\\udc62\\udb40\\udc73\\udb40\\udc63\\udb40\\udc74\\udb40\\udc7f"}',
+    '{"@type":"getJsonValue","json":"{\\"a\\":1,\\"a\\":2}"}',
+    '{"@type":"getJsonValue","json":"{\\"b\\":1,\\"a\\":2}"}',
+    '{"@type":"getJsonValue","json":"[[]]"}',
+    '{"@type":"getJsonValue","json":"{\\"a\\":null}"}',
+    '{"@type":"getJsonValue","json":"  {\\"a\\" : 1 }  "}',
+    '{"@type":"getJsonValue","json":"{\\"a\\":\\"\\\\u0000\\"}"}',
+    '{"@type":"getJsonValue","json":"{\\"a\\":true,\\"b\\":false}"}',
+    '{"@type":"getJsonString","json_value":{"@type":"jsonValueObject","members":[{"@type":"jsonObjectMember","key":"a","value":{"@type":"jsonValueArray","values":[{"@type":"jsonValueNull"}]}}]}}',
+    '{"@type":"getJsonString","json_value":{"@type":"nope"}}',
+    '{"@type":"getThemeParametersJsonString","theme":{"@type":"themeParameters","background_color":16777216}}',
+    '{"@type":"getThemeParametersJsonString","theme":{"@type":"themeParameters","background_color":-1}}',
+    '{"@type":"getThemeParametersJsonString","theme":{}}',
+    '{"@type":"getChatFolderDefaultIconName","folder":{"@type":"chatFolder","title":{"@type":"formattedText","text":"x"},"is_shareable":false,"include_contacts":true,"include_groups":true,"include_bots":true,"exclude_muted":true,"exclude_archived":true}}',
+    '{"@type":"getChatFolderDefaultIconName","folder":{"@type":"chatFolder","title":{"@type":"formattedText","text":"x"},"is_shareable":false,"pinned_chat_ids":[-1001234567890],"include_contacts":true}}',
+    '{"@type":"getChatFolderDefaultIconName","folder":{"@type":"chatFolder","title":{"@type":"formattedText","text":""},"is_shareable":true}}',
+    '{"@type":"getChatFolderDefaultIconName","folder":{"@type":"chatFolder"}}',
+    '{"@type":"getPushReceiverId","payload":"{\\"p\\":\\"AQEBAQEBAQ\\"}"}',
+    '{"@type":"getPushReceiverId","payload":"{\\"p\\":\\"!!!!!!!!\\"}"}',
+    '{"@type":"getPushReceiverId","payload":"{\\"user_id\\":-5}"}',
+    '{"@type":"getPushReceiverId","payload":"{\\"data\\":{}}"}',
+    '{"@type":"getPushReceiverId","payload":"[]"}',
+    '{"@type":"parseTextEntities","text":"<tg-time unix=\\"1\\">x</tg-time>","parse_mode":{"@type":"textParseModeHTML"}}',
+    '{"@type":"parseTextEntities","text":"<tg-emoji emoji-id=\\"1\\">x</tg-emoji>","parse_mode":{"@type":"textParseModeHTML"}}',
+    '{"@type":"parseTextEntities","text":"<b>unclosed","parse_mode":{"@type":"textParseModeHTML"}}',
+    '{"@type":"parseTextEntities","text":"x","parse_mode":{"@type":"textParseModeMarkdown","version":0}}',
+    '{"@type":"parseTextEntities","text":"x","parse_mode":{"@type":"textParseModeMarkdown"}}',
+    '{"@type":"parseTextEntities","text":"x","parse_mode":{}}',
+    '{"@type":"parseMarkdown","text":{"@type":"formattedText","text":"a**b**c","entities":[]}}',
+    '{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"x","entities":[{"@type":"textEntity","offset":0,"length":1,"type":{"@type":"textEntityTypePreCode","language":"py"}}]}}',
+    '{"@type":"searchStringsByPrefix","strings":["\\u00c4pfel","apfel"],"query":"a","limit":10,"return_sorted":true}',
+    '{"@type":"searchStringsByPrefix","strings":["caf\\u00e9","cafe"],"query":"CAF","limit":10,"return_sorted":true}',
+    '{"@type":"searchQuote","text":{"@type":"formattedText","text":"abcdef","entities":[{"@type":"textEntity","offset":-1,"length":3,"type":{"@type":"textEntityTypeBold"}},{"@type":"textEntity","offset":4,"length":99,"type":{"@type":"textEntityTypeItalic"}}]},"quote":{"@type":"formattedText","text":"cd","entities":[]},"quote_position":-3}',
+    '{"@type":"searchQuote","text":{"@type":"formattedText","text":"abc","entities":[]},"quote":{"@type":"formattedText","text":"abc","entities":[]},"quote_position":99}',
+    '{"@type":"getPhoneNumberInfoSync","language_code":"de","phone_number_prefix":"+49"}',
+    '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":"88812345678"}',
+    '{"@type":"getTextEntities","text":"41111111111111113"}',
+    '{"@type":"getTextEntities","text":"411111111111111118"}',
+    '{"@type":"getTextEntities","text":"4111111111111111110"}',
+    '{"@type":"getTextEntities","text":"EQAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHx2k"}',
+    '{"@type":"getTextEntities","text":"UQAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eH0Bl"}',
+    '{"@type":"getTextEntities","text":"EQAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHx2"}',
+    '{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"abc","entities":[{"@type":"textEntity","offset":0,"length":3,"type":{"@type":"textEntityTypeCode"}},{"@type":"textEntity","offset":1,"length":1,"type":{"@type":"textEntityTypeBold"}}]}}',
+    '{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"abc","entities":[{"@type":"textEntity","offset":0,"length":2,"type":{"@type":"textEntityTypePreCode","language":"py"}},{"@type":"textEntity","offset":1,"length":1,"type":{"@type":"textEntityTypeBold"}}]}}',
+    '{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"a*b","entities":[{"@type":"textEntity","offset":0,"length":3,"type":{"@type":"textEntityTypeItalic"}}]}}',
+    '{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"a`b","entities":[{"@type":"textEntity","offset":0,"length":3,"type":{"@type":"textEntityTypeCode"}}]}}',
+    '{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"ab","entities":[{"@type":"textEntity","offset":0,"length":2,"type":{"@type":"textEntityTypeTextUrl","url":"https://e.com"}}]}}',
+    '{"@type":"searchStringsByPrefix","strings":["ab","ab"],"query":"ab","limit":10,"return_sorted":true}',
+    '{"@type":"searchStringsByPrefix","strings":["ba","ab","ab"],"query":"a","limit":10,"return_sorted":true}',
 ]
 
+# 已知差异（backlog B9）：畸形 JSON 文本的 `json_decode` 报错文案未移植，两侧都是 400。
 CONTROL = [
-    '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":123}',
-    '{"@type":"getTextEntities","text":123}',
+    'not json',
+    '{',
 ]
 
 # 有状态 action 只在有序序列里有意义：每段序列对两个 dll 各跑一遍，逐项比结果。
@@ -228,6 +377,13 @@ def load(path: Path):
     return lib
 
 
+def add_runtime_dirs() -> None:
+    # CPython 3.8+ 的 CDLL 走 LOAD_LIBRARY_SEARCH_DEFAULT_DIRS，PATH 不参与依赖查找
+    for candidate in (CPP.parent, Path("C:/msys64/ucrt64/bin")):
+        if candidate.is_dir():
+            os.add_dll_directory(str(candidate))
+
+
 def run(lib, case: str) -> str | None:
     raw = lib.td_execute(case.encode())
     return None if raw is None else raw.decode()
@@ -250,6 +406,7 @@ def main(argv: list[str]) -> int:
         return 1
     print(f"oracle md5={actual}")
 
+    add_runtime_dirs()
     cpp = load(CPP)
     rs = load(RS)
 

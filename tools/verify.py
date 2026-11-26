@@ -5,13 +5,13 @@
     python tools/verify.py --json     # 同一结果的机器记录（写进冻结记录用）
 
 判据:
-    退出码 0 = 四条门禁全绿：`cargo build`（0 warning）、`tools/tdjson_diff.py`
-    （failures=0）、三个生成器 `--check` 与仓库内容逐字节相同。
+    退出码 0 = 全部门禁全绿：`cargo build`（0 warning）、`tools/tdjson_diff.py`
+    （failures=0）、五个生成器 `--check` 与仓库内容逐字节相同。
 
 覆盖边界:
     只覆盖 `tdjson` C ABI 的 `td_execute` 面与生成表的一致性。
     覆盖不到：有状态客户端路径（`td_send`/`td_receive`，见 backlog B1）、
-    `getLanguagePackString` 的成功路径（B7）、共享 JSON 层与 TDLib 的报错文案差异（B6）。
+    `getLanguagePackString` 的成功路径（B7）、畸形 JSON 文本的报错文案（B9）。
 
 失效条件:
     oracle 换了构建（md5 变）、Rust 换了 target/linker、或 `td/` 的 schema/数据表更新——
@@ -48,6 +48,7 @@ GATES = [
     ("emoji_table", [PYTHON, "tools/gen_emoji_table.py", "--check"]),
     ("country_table", [PYTHON, "tools/gen_country_table.py", "--check"]),
     ("ton_address", [PYTHON, "tools/gen_ton_address.py", "--check"]),
+    ("api_functions", [PYTHON, "tools/gen_api_functions.py", "--check"]),
 ]
 
 

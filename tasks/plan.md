@@ -1,6 +1,6 @@
 # Plan — RIIR（JSON/C ABI 边界差分实现）
 
-gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=python tools/tdjson_diff.py | round=1 | status=running | date=2026-11-26
+gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=python tools/tdjson_diff.py | round=2 | status=running | date=2026-11-26
 
 ## 范围
 
@@ -28,6 +28,12 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T14 | `getPhoneNumberInfoSync`：解内嵌 `help.countriesList` blob（zlib + TL 二进制，注意 TL 字符串是 1 字节长度前缀）→ 生成 `rust/src/country_table.rs`，实现清洗/最长匹配/patterns 格式化 | F041, F042 | done（9 条 cell + 6260 例差分为 0） |
 | T12 | 8 个日志类 action 按「有序序列」判据接入：仪器加 `SEQUENCE` 段，两侧各跑同一串请求（set → get → 还原），逐项比结果；序列跑完恢复原值，避免污染其余 cell。依据探针 `work/probe_logs.py` 的实测：`getLogVerbosityLevel` 默认 5、`getLogStream` 为 `logStreamDefault`、未知 tag → 400 `Log tag is not found` | F036, F037, F038 | done（3 段 19 步序列全绿） |
 | T6 | 把 Rust crate 从 `C:/tmp/td-rs-probe` 移进仓库 `rust/`，仪器改指仓库内产物 | F003 | done |
+| T15 | 实体类未测形态收口：botCommand/cashtag 非 ASCII、`$CASHTAG@username` 后缀、bankCard 12–19 位、tonAddress 坏校验和与 raw 形态、url 的 IPv6/超长/非 ASCII 域名、email 非 ASCII、mediaTimestamp 边界 | F011, F014 | done（40 条 cell，F051） |
+| T16 | action 面 A：mime/filename/emojiRanges/quickReply/countryFlag 的非 ASCII 与超长（含 C++ 按字节判长度的差异） | F017, F019, F020, F021 | done（F051；空名/纯符号 botCommand 仍在 coverage-domain 记 unmeasured） |
+| T17 | action 面 B：json/theme/folderIcon/pushReceiver 的边界（重复键、越界颜色、include 交叉、`p` 长度）；`logStreamFile` 仍待隔离目录 | F022–F025, F036–F038 | done（`logStreamFile` 未做，回流条件不变；本批修 `getJsonString`/`getPushReceiverId`，F051） |
+| T18 | action 面 C：parseTextEntities 的 `<tg-time>`/`<tg-emoji>`、parseMarkdown v3 roundtrip 降级路径、searchStringsByPrefix 非 ASCII 归一化、searchQuote 越界裁剪、getPhoneNumberInfoSync 其它语言 | F028–F035, F043, F041 | done（F051） |
+| T19 | 请求层对齐（原 B6）：`td/tl/tl_json.h` 的缺失/null 默认、类型错配文案、int32/int64 字面量、`@type` 四种错误、`@extra` 回显；CONTROL 换成畸形 JSON 文案（B9） | F046–F050 | done（339 PASS，failures=0） |
+| T20 | 第二阶段生成面：按 ADR-0002 复用 TL 生成器产出 types/functions（F040 已验证），前提是 B1 有结论 | F040 | blocked（B1） |
 
 ## 变更记录
 
@@ -35,3 +41,5 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 |---|---|---|---|
 | 2026-11-26 | F003, F004 | T1 | 差分边界定为 `tdjson` C ABI；放弃 C++ 对象 API（名字改编 + `td::string` + 模板不可复现） |
 | 2026-11-26 | —（配置变更，非行为） | 全部 | 装 `mattpocock-skills@1.3.2`（project scope）并跑 `/setup-matt-pocock-skills`：issue tracker = GitHub `kouhe3/td`（钉死，禁用 `tdlib/td`），triage 五标签已建，domain 文档 single-context |
+| 2026-11-26 | F046–F050 | T19, T15–T18, T20 | 主分母（29/29 action）饱和后改用 lane cell 记账：`docs/coverage-domain.md` 里 15 条「回流 T10/T13/T14」已全部指向完成的任务，重编为 T15–T18；B6 落实为 T19 并关闭 |
+| 2026-11-26 | F046, F049 | 仪器 | CONTROL 从两条类型错配（已对齐，必然转绿）换成两条畸形 JSON 文案（B9 未实现），并把原 CONTROL 两条移进 MATCH |
