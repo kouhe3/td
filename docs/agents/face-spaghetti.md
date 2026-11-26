@@ -16,7 +16,7 @@
 | 只读 oracle | `C:/tmp/td-build/libtdjson.dll`（md5 `0398814038978aaeef7f8d6ac62bb8ff`，97,185,382 B）；运行副本由 `tools/tdjson_diff.py` 直接加载，不改写 | — |
 | backlog 发布 | GitHub issues，仓库钉死 `kouhe3/td`（`docs/agents/issue-tracker.md`）；`tasks/backlog.md` 保留未成 issue 的条目 | — |
 | 配套文件 | `docs/agents/issue-tracker.md` / `triage-labels.md` / `domain.md` 已装（mattpocock-skills 1.3.2，project scope） | — |
-| 门禁 | `bash C:/Users/K/.omp/agent/skills/face-spaghetti/scripts/append-only-check.sh --worktree`（在 Git Bash 里跑）；`python tools/tdjson_diff.py` | — |
+| 门禁 | `python tools/verify.py`（构建 + 差分仪器 + 四个生成器 `--check` 一条命令）；追加检查 `bash C:/Users/K/.omp/agent/skills/face-spaghetti/scripts/append-only-check.sh --worktree`（在 Git Bash 里跑） | — |
 
 配套分工见 skill 的 `references/pairing.md`；本文件只记落点。
 
@@ -39,4 +39,15 @@
 
 ## 冻结树
 
-未建。
+本项目没有换目标，也不需要搬迁；这里的「冻结」指**里程碑快照**：
+
+| 项 | 值 |
+|---|---|
+| 快照日期 | 2026-11-26 |
+| 基线提交 | `6c4661eb4` |
+| 机器记录 | `docs/gate-2026-11-26.json` |
+| 复跑命令 | `python tools/verify.py` |
+| 当时结果 | 六项门禁全绿、仪器 279 PASS、`failures=0` |
+| 已知缺口 | B1（有状态客户端，需测试 DC 账号）、B6（共享 JSON 层报错文案）、B7（语言包成功路径需 pack 数据） |
+
+换目标或大改前先重跑 `tools/verify.py`；数字变了就更新 `docs/facts.md` 的 F044（旧行置 `过期`）。
