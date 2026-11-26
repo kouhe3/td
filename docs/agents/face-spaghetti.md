@@ -16,7 +16,7 @@
 | 只读 oracle | `C:/tmp/td-build/libtdjson.dll`（md5 `0398814038978aaeef7f8d6ac62bb8ff`，97,185,382 B）；运行副本由 `tools/tdjson_diff.py` 直接加载，不改写 | — |
 | backlog 发布 | GitHub issues，仓库钉死 `kouhe3/td`（`docs/agents/issue-tracker.md`）；`tasks/backlog.md` 保留未成 issue 的条目 | — |
 | 配套文件 | `docs/agents/issue-tracker.md` / `triage-labels.md` / `domain.md` 已装（mattpocock-skills 1.3.2，project scope） | — |
-| 门禁 | `python tools/verify.py`（构建 + 差分仪器 + 五个生成器 `--check` 一条命令）；追加检查 `bash C:/Users/K/.omp/agent/skills/face-spaghetti/scripts/append-only-check.sh --worktree`（在 Git Bash 里跑） | — |
+| 门禁 | `python tools/verify.py`（构建 + 差分仪器 + 客户端 lane + 六个生成器 `--check` 一条命令）；追加检查 `bash C:/Users/K/.omp/agent/skills/face-spaghetti/scripts/append-only-check.sh --worktree`（在 Git Bash 里跑） | — |
 
 配套分工见 skill 的 `references/pairing.md`；本文件只记落点。
 
@@ -36,7 +36,7 @@
 
 ## 共享资源
 
-无。当前判据只用 `td_execute` 纯函数路径：不登录、不联网、不碰配置目录与注册表。
+客户端 lane 会写 gitignored 的 `work/client/` 与 `work/gen-client-db/`（每侧一个独立子进程、一个全新 `database_directory`）；不碰用户账号、不登录、不依赖网络（首启 129 行在连接建立前就到 `waitPhoneNumber`，F076）。纯函数 lane 仍只用 `td_execute`。
 
 ## 冻结树
 
@@ -44,12 +44,12 @@
 
 | 项 | 值 |
 |---|---|
-| 快照日期 | 2026-11-26（round 1 = `6c4661eb4`（F044）；2 = `65deb30fc`（F052）；3 = `7c2b0dd00`（F056）；4 = `dfcfc1017`（F058）；5 = 链接 lane + 浮点溢出（F061）；6 = 非法 UTF-8 字节化（F064）） |
+| 快照日期 | 2026-11-26（round 1 = `6c4661eb4`（F044）；2 = `65deb30fc`（F052）；3 = `7c2b0dd00`（F056）；4 = `dfcfc1017`（F058）；5 = 链接 lane + 浮点溢出（F061）；6 = 非法 UTF-8 字节化（F064）；7 = 客户端首启 lane（F076/F077）） |
 | 基线提交 | `6c4661eb4`（round 1） |
 | 机器记录 | `docs/gate-2026-11-26.json` |
 | 复跑命令 | `python tools/verify.py` |
-| 当时结果 | round 1：279 PASS；2：573（284）；3：645（318）；4：759（375）；5：793（392）；6：837（414，含 22 条 bytes cell）——七项全绿贯穿 |
-| 已知缺口 | B1（有状态客户端：网络 + 账号 + tddb 范围三缺，参数已齐见 F065）、B7（语言包成功路径需 pack 数据）。**无已知行为差异**（CONTROL 为空）；`coverage-domain` 里除 `getOption commit_hash`（不可判）外没有 `unmeasured` |
+| 当时结果 | round 1：279 PASS；2：573（284）；3：645（318）；4：759（375）；5：793（392）；6：837（414，含 22 条 bytes cell）；7：837 + 客户端 lane 129 行——九项门禁全绿贯穿 |
+| 已知缺口 | B1 的首启 lane 已对齐（F076），剩第二次运行（已下发值 kv）与登录段；B7（语言包成功路径需 pack 数据）。**纯函数面无已知行为差异**（CONTROL 为空）；`coverage-domain` 里除 `getOption commit_hash` 与客户端 lane 的 `unmeasured` 行外没有缺口 |
 
 换目标或大改前先重跑 `tools/verify.py`；数字变了就把旧快照行置 `过期`，另起一行记新快照（1 = F044，2 = F052，3 = F056，4 = F058，5 = F061，6 = F064）。注意 Rust dll 的 md5 **随 HEAD 变化**（`build.rs` 烘焙 commit hash），跨轮只比大小与 warning 数。
 

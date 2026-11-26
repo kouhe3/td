@@ -6,13 +6,14 @@
 
 判据:
     退出码 0 = 全部门禁全绿：`cargo build`（0 warning）、`tools/tdjson_diff.py`
-    （failures=0）、五个生成器 `--check` 与仓库内容逐字节相同。
+    （failures=0）、`tools/client_diff.py`（首启 lane 对齐）、六个生成器 `--check`
+    与仓库内容逐字节相同。
 
 覆盖边界:
-    只覆盖 `tdjson` C ABI 的 `td_execute` 面与生成表的一致性。
-    覆盖不到：有状态客户端路径（`td_send`/`td_receive`，见 backlog B1）、
-    `getLanguagePackString` 的成功路径（B7）、超 DBL_MAX 的浮点字面量（B10）、
-    请求/字符串里的非法 UTF-8（Rust 侧按 UTF-8 处理，TDLib 保留原始字节）。
+    覆盖 `tdjson` C ABI 的 `td_execute` 面、客户端首启 lane（一个 client、全新
+    `database_directory`、固定 `setTdlibParameters`）与生成表的一致性。
+    覆盖不到：第二次运行（已下发值 kv）、登录状态机（backlog B1 的后续轮次）、
+    `getLanguagePackString` 的成功路径（B7）。
 
 失效条件:
     oracle 换了构建（md5 变）、Rust 换了 target/linker、或 `td/` 的 schema/数据表更新——
@@ -45,6 +46,8 @@ GATES = [
         ],
     ),
     ("instrument", [PYTHON, "tools/tdjson_diff.py"]),
+    ("client_options", [PYTHON, "tools/gen_client_options.py", "--check"]),
+    ("client_lane", [PYTHON, "tools/client_diff.py"]),
     ("mime_tables", [PYTHON, "tools/gen_mime_tables.py", "--check"]),
     ("emoji_table", [PYTHON, "tools/gen_emoji_table.py", "--check"]),
     ("country_table", [PYTHON, "tools/gen_country_table.py", "--check"]),

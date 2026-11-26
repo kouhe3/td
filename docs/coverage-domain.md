@@ -1,6 +1,6 @@
 # 判据定义域（coverage domain）
 
-只覆盖 `tdjson` C ABI 的 `td_execute` 纯函数路径。`measured` 需 test + fact；`unmeasured` 只占回流条件，不占 fact。
+覆盖 `tdjson` C ABI 的 `td_execute` 纯函数路径与客户端首启 lane（B1a）。`measured` 需 test + fact；`unmeasured` 只占回流条件，不占 fact。
 
 ## 实体类 × 文本形态
 
@@ -59,6 +59,18 @@
 | 畸形 JSON 文本的 `json_decode` 报错文案（12 条消息 + 深度上限 + 尾部内容） | measured（F054） | — |
 | 请求 / 字符串里的非法 UTF-8、孤立代理对（22 条 bytes cell，各 action 的拒绝文案逐条对齐） | measured（F063） | — |
 
+## 客户端 lane（B1a：首次运行）
+
+| 项 | 状态 | blocker / 回流条件 |
+|---|---|---|
+| 首启序列：`td_create_client_id` → `td_send(setTdlibParameters)` → drain 到 `waitPhoneNumber`（129 行 = 127 `updateOption` + 2 `updateAuthorizationState`） | measured（F076：`tools/client_diff.py`，A/A 地板 + 变异自检 + 两侧逐行相同） | — |
+| 动态值 `unix_time` / `utc_time_offset` / `commit_hash` | measured（F076：语义校验——与实际时刻相差 ≤5 s、两侧时区偏移相同、各自可解释） | `commit_hash` 两侧各自烘焙 HEAD，不做相等比较 |
+| `@client_id` 注入（id 从 1 起、每行携带） | measured（F076：两侧 id 都是 1 的断言） | — |
+| 同一进程里的第二个 client | unmeasured | 会多 6 条全局 update 且顺序错位（F077）；判据按「一个进程一个 client」设计 |
+| 第二次运行（同一 `database_directory`，只发变化项） | unmeasured | 需要「已下发值」kv（F072）；回流条件 = kv 实现后另立判据 |
+| `waitPhoneNumber` 之后的登录状态机 | unmeasured | 需要实时验证码 + 2FA（F073），不可回归；回流条件 = 一次性实测记录 + 人工 |
+| 其它 `setTdlibParameters` 参数 lane（`use_test_dc:false`、加密 key、语言 / 设备字段） | unmeasured | 回流条件 = 该 lane 有独立判据时 |
+
 ## 边界之外（永久不在本仪器范围）
 
 | 模块 | 行数 | 原因 |
@@ -67,4 +79,4 @@
 | `td/mtproto` | 7,443 | 同上 |
 | `tdactor` | 5,695 | 同上 |
 | `tdutils` | 48,142 | 同上 |
-| 有状态客户端路径 `td_send`/`td_receive` | — | 需 Telegram 测试 DC 账号；回流条件：拿到测试账号或用本地 MTProto 桩 |
+| 客户端 lane 之下的 `tddb` 文件格式（binlog） | — | 判据是 `td_receive` 的输出，不是磁盘内容（F074），所以不实现 |

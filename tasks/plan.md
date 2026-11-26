@@ -1,6 +1,6 @@
 # Plan — RIIR（JSON/C ABI 边界差分实现）
 
-gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=python tools/tdjson_diff.py | round=2 | status=running | date=2026-11-26
+gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=3 | status=running | date=2026-11-26
 
 ## 范围
 
@@ -41,6 +41,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T25 | 归一化全表：对 U+0020–U+FFFF 逐码点 × 27 查询扫 `searchStringsByPrefix`，1,658,474 次比较零分歧（把 F057 的 18 组抽样升级为全表） | F062 | done（一次性探针，结论进台账） |
 | T26 | 非法 UTF-8 设计改动：`td_execute` 按字节读请求、`Json::Str` 改 `Vec<u8>`、孤立代理按 C++ 编原始三字节；各 action 的拒绝文案逐条对齐（`Text/Strings must be encoded in UTF-8`、`JSON has invalid encoding`、`cleanFileName` → 空、实体字段带类型名前缀） | F063 | done（22 条 bytes cell，instrument 837 PASS） |
 | T27 | B1 切片评估：确认测试 DC 参数（全是编译期内置）、打通代理、抓离线基线、实测登录（测试 DC 的码规则过期，改走生产 DC + 既有会话代读码 + 2FA） | F065–F074 | done（生产 DC 端到端登录成功、`logOut` 清场，基线 `work/prod_baseline.txt`；实现范围已探明） |
+| T28 | B1a 首启 lane：实现 `td_create_client_id`/`td_send`/`td_receive` 的最小客户端（收到 `setTdlibParameters` 后按序吐首启序列），option 表由 `tools/gen_client_options.py` 从 oracle 采集生成（3 个动态值运行时算）；判据 = `tools/client_diff.py` 两侧子进程采集的 raw 序列逐行对齐（白名单外零差异 + 变异自检 + A/A 地板） | F076, F074 | done（129 行逐行相同、`failures=0`；`verify.py` 九门禁全绿，`warnings=0`） |
 
 ## 变更记录
 
@@ -57,3 +58,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-26 | F062 | T25 | 归一化改成全表扫描（码点 × 27 查询），`unmeasured` 只剩「非法 UTF-8 / 孤立代理对」一处，且它需要设计改动 |
 | 2026-11-26 | F063 | T26 | 用户批准设计改动：请求按字节读、`Json::Str` 改字节串。实测 TDLib 是**逐 action 拒绝**而非透传，因此只需要「解析保留字节 + 各点校验」，不必改动作内部算法 |
 | 2026-11-26 | F065–F074 | T27 | 测试 DC 的固定码规则实测已过期（F070）；改走**生产 DC**：验证码由既有 Telethon 会话代读、2FA 一次通过（F073）。范围也随之收窄——首次运行的 option 突发确定性（F074），不需要 binlog 格式，只需录制表 + kv（F072），B1 从「项目级未知」变成「有边界的实现任务」 |
+| 2026-11-26 | F076 | T28, 仪器 | 用户批准 B1a：只做首次运行 lane（129 行）；第二次运行的 kv 与登录段留给后续轮次。判据从 `tdjson_diff.py` 扩到 `verify.py`（新增 CLIENT 段），gate 重判为 round 3 |
