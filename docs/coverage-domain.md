@@ -77,7 +77,8 @@
 | 未授权状态机的响应：空号码、`checkAuthenticationCode`、`checkAuthenticationPassword`、`getMe`、`logOut`→`Closed` | measured（F079：142 行逐行相同 + A/A 地板 + 变异自检） | — |
 | 非空号码的 `setAuthenticationPhoneNumber` | unmeasured | oracle 在 0.8 s 内无响应（联网挂起），没有可判输出 |
 | 真实登录（`waitCode` → `waitPassword` → `ready`） | unmeasured | oracle 侧形态已记录（F080：六步 222 行），但 Rust 侧没有 MTProto 引擎、不回放登录段，**等价性未测**；回流条件 = 决定实现 MTProto，或接受「只在 oracle 侧留记录」 |
-| 其它 `setTdlibParameters` 参数 lane（`use_test_dc:false`、加密 key、语言 / 设备字段） | unmeasured | 回流条件 = 该 lane 有独立判据时 |
+| `setTdlibParameters` 的设备 / 语言 / 版本 / 加密 key（5 个变体） | measured（F083：首启仍 129 行且逐行相同，两次独立运行一致） | — |
+| `use_test_dc:false` 的首启 | measured（F080：127 行 = 125 option + 2 状态，随后的登录段另有 60 行） | 登录段本身见「真实登录」行 |
 
 ## 边界之外（永久不在本仪器范围）
 

@@ -47,6 +47,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T31 | B1d 真实登录形态：生产 DC 六步共 222 行（一次性实测，不进回归）。Rust 侧不回放登录段——没有 MTProto 引擎，回放只能验证自己写死的表 | F080 | done（形态与清理过程进台账；等价性仍 `unmeasured`） |
 | T32 | T20 第一阶段：`tools/gen_tl_schema.py` 从 `td_api.tl` 生成 3470 条定义的参数表（`rust/src/tl_schema.rs`，1114 函数 + 2356 构造）；Rust 在 `td_execute` 里对**全部函数**（含 29 个同步 action）先做 JSON 参数解析，抽象类要 `@type`、具体类不要；判据 = 1114 个 argument cell（MATCH 1528）逐字节相同 | F081 | done（`failures=0`；十项门禁全绿，17.7 s） |
 | T33 | 补嵌套 `@type` 两条路径：抽象类字段接受构造号（新增 `CONSTRUCTOR_IDS` 表 + `Unknown constructor 0x…`）、具体类字段只校验对象不校验字段；判据 = 6 条新 cell（`input_message_content` 的数字号/未知号/递归、`theme` 的错 `@type`/错字段/标量） | F082 | done（MATCH 1534、`failures=0`；十项门禁全绿） |
+| T34 | B1e 参数 lane 普查：6 个 `setTdlibParameters` 变体（语言 ×2、设备、系统版本、应用版本、加密 key）对首启序列的影响 | F083 | done（全部 129 行相同、两次运行一致；唯一敏感项是 `use_test_dc`） |
 
 ## 变更记录
 
