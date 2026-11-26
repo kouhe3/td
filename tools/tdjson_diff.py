@@ -19,6 +19,11 @@
       - oracle 的 md5 不等于 EXPECTED_CPP_MD5（换了构建、改了源码、改了编译器）；
       - Rust 侧换了 target / linker（C ABI 兼容性重新验证）；
       - `td_api.tl` 变更导致 action/object 序列化格式变化。
+
+CONTROL 组的纪律:
+    CONTROL 只能放**长期不实现**的动作。它靠「Rust 未实现」制造差异，一旦该动作被实现，
+    这个 case 必然转为相同，`failures=0` 与「实现正确」就自相矛盾——把它移进 MATCH，
+    并换一个仍未实现的动作进 CONTROL。`getOption` 与 `searchStringsByPrefix` 各踩过一次。
 """
 
 from __future__ import annotations
@@ -139,10 +144,19 @@ MATCH = [
     '{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"see t.me","entities":[{"@type":"textEntity","offset":4,"length":4,"type":{"@type":"textEntityTypeUrl"}}]}}',
     '{"@type":"parseMarkdown","text":{"@type":"formattedText","text":"0123456789","entities":[{"@type":"textEntity","offset":4,"length":10,"type":{"@type":"textEntityTypeBold"}}]}}',
     '{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"a\\rb","entities":[{"@type":"textEntity","offset":0,"length":3,"type":{"@type":"textEntityTypeBold"}}]}}',
+    '{"@type":"searchStringsByPrefix","strings":["alpha","beta","alphabet"],"query":"alp","limit":10,"return_sorted":true}',
+    '{"@type":"searchStringsByPrefix","strings":["b","a","c"],"query":"","limit":10,"return_sorted":true}',
+    '{"@type":"searchStringsByPrefix","strings":["x"],"query":"","limit":10,"return_sorted":false}',
+    '{"@type":"searchStringsByPrefix","strings":["Alpha","alphabet","ALP"],"query":"al","limit":10,"return_sorted":true}',
+    '{"@type":"searchStringsByPrefix","strings":["alpha","alphabet"],"query":"alp","limit":1,"return_sorted":true}',
+    '{"@type":"searchStringsByPrefix","strings":["alpha"],"query":"pha","limit":10,"return_sorted":true}',
+    '{"@type":"searchStringsByPrefix","strings":["John Smith","Smith John"],"query":"smith","limit":10,"return_sorted":true}',
+    '{"@type":"searchStringsByPrefix","strings":["cafe","caf\\u00e9"],"query":"cafe","limit":10,"return_sorted":true}',
+    '{"@type":"searchStringsByPrefix","strings":["alpha","beta"],"query":"a","limit":2,"return_sorted":true}',
 ]
 
 CONTROL = [
-    '{"@type":"searchStringsByPrefix","strings":["alpha","beta"],"query":"a","limit":2,"return_sorted":true}',
+    '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":"+1555"}',
     '{"@type":"getLanguagePackString","language_pack_database_path":"","localization_target":"android","language_pack_id":"en","key":"Continue"}',
 ]
 
