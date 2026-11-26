@@ -2,12 +2,6 @@
 **/.*.swp
 **/.DS_Store
 **/auto/
-/docs/*
-!/docs/agents/
-!/docs/adr/
-!/docs/facts.md
-!/docs/coverage-domain.md
-!/docs/plans/
 /work/
 /rust/target/
 /.omp/plugins/node_modules/

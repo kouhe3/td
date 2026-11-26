@@ -1,0 +1,72 @@
+{
+  "gates": [
+    {
+      "gate": "build",
+      "command": "cargo build --release --target x86_64-pc-windows-gnu --manifest-path rust/Cargo.toml",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "Finished `release` profile [optimized] target(s) in 0.04s"
+      ]
+    },
+    {
+      "gate": "instrument",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/tdjson_diff.py",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  message = \"Failed to parse request as JSON object: Unexpected string end\"",
+        "}",
+        "[ 1][t 0][1795673694.786267518][Logging.cpp:160][&client]\tseq-probe"
+      ]
+    },
+    {
+      "gate": "mime_tables",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_mime_tables.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS mime tables are byte-identical to the generator output"
+      ]
+    },
+    {
+      "gate": "emoji_table",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_emoji_table.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS emoji table is byte-identical to the generator output"
+      ]
+    },
+    {
+      "gate": "country_table",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_country_table.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS country table is byte-identical to the generator output"
+      ]
+    },
+    {
+      "gate": "ton_address",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_ton_address.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS instrument carries both generated addresses",
+        "EQAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHx2j",
+        "UQAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eH0Bm"
+      ]
+    },
+    {
+      "gate": "api_functions",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_api_functions.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS rust\\src\\api_functions.rs"
+      ]
+    }
+  ],
+  "failures": 0
+}
