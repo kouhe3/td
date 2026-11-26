@@ -111,11 +111,14 @@ MATCH = [
     '{"@type":"getPushReceiverId","payload":"{\\"data\\":{\\"user_id\\":7}}"}',
     '{"@type":"getPushReceiverId","payload":"{\\"x\\":1}"}',
     '{"@type":"getPushReceiverId","payload":"not json"}',
+    '{"@type":"getOption","name":"version"}',
+    '{"@type":"getOption","name":"my_id"}',
+    '{"@type":"getOption","name":""}',
 ]
 
 CONTROL = [
-    '{"@type":"getOption","name":"version"}',
-    '{"@type":"getOption","name":"my_id"}',
+    '{"@type":"searchStringsByPrefix","strings":["alpha","beta"],"query":"a","limit":2,"return_sorted":true}',
+    '{"@type":"getLanguagePackString","language_pack_database_path":"","localization_target":"android","language_pack_id":"en","key":"Continue"}',
 ]
 
 

@@ -2173,6 +2173,18 @@ fn execute(request: &str) -> String {
                 Err(message) => error_object(400, &message),
             }
         }
+        "getOption" => {
+            let name = json.get("name").and_then(Json::as_str).unwrap_or("");
+            let value = match name {
+                "version" => "1.8.71",
+                "commit_hash" => env!("TD_GIT_COMMIT_HASH"),
+                _ => return error_object(400, "The option can't be get synchronously"),
+            };
+            let mut body = String::from("{\"@type\":\"optionValueString\",\"value\":\"");
+            json_escape(value, &mut body);
+            body.push_str("\"}");
+            body
+        }
         other => error_object(
             400,
             &format!("tdjson_rs: unimplemented request type {}", other),
