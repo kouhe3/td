@@ -39,7 +39,9 @@ from __future__ import annotations
 
 import ctypes
 import hashlib
+import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -47,6 +49,8 @@ from pathlib import Path
 CPP = Path("C:/tmp/td-build/libtdjson.dll")
 RS = Path(__file__).resolve().parents[1] / "rust/target/x86_64-pc-windows-gnu/release/tdjson_rs.dll"
 EXPECTED_CPP_MD5 = "0398814038978aaeef7f8d6ac62bb8ff"
+SCHEMA = Path(__file__).resolve().parents[1] / "td/generate/scheme/td_api.tl"
+API_FUNCTIONS = Path(__file__).resolve().parents[1] / "rust/src/api_functions.rs"
 
 MATCH = [
     '{"@type":"getTextEntities","text":"@abc @a #bd"}',
@@ -464,6 +468,56 @@ MATCH = [
     b'{"@type":"getPushReceiverId","payload":"{\\"user_id\\":\xff}"}',
     b'{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"ab","entities":[{"@type":"textEntity","offset":0,"length":2,"type":{"@type":"textEntityTypeTextUrl","url":"\xff"}}]}}',
 ]
+
+def argument_cells() -> list[str]:
+    """F081: every td_api function parses its arguments before rejecting the method.
+
+    One cell per function: give its first scalar (or vector) field a wrong JSON type.
+    Cells come from td_api.tl and api_functions.rs, both tracked, so the corpus is fixed
+    by the schema rather than by hand.
+    """
+    functions = set(re.findall(r'\(-?\d+, "([^"]+)"\)', API_FUNCTIONS.read_text(encoding="utf-8")))
+    cells: list[str] = []
+    for raw in SCHEMA.read_text(encoding="utf-8").splitlines():
+        line = raw.split("//", 1)[0].strip()
+        if not line or not line.endswith(";"):
+            continue
+        body = line[:-1].strip()
+        if "{" in body or "[" in body or "=" not in body:
+            continue
+        parts = body.split("=", 1)[0].split()
+        name = parts[0]
+        if name not in functions or any(":" not in part for part in parts[1:]):
+            continue
+        picked = False
+        for part in parts[1:]:
+            field, kind = part.split(":", 1)
+            base = kind.rstrip("?")
+            if base in ("int32", "int53", "int64"):
+                wrong = "x"
+            elif base in ("string", "bytes", "String"):
+                wrong = 5
+            elif base in ("bool", "Bool", "double", "Double"):
+                wrong = "x"
+            elif base.startswith("vector<"):
+                wrong = 5
+            else:
+                continue
+            cells.append(json.dumps({"@type": name, field: wrong}, separators=(",", ":")))
+            picked = True
+            break
+        if picked:
+            continue
+        if parts[1:]:
+            # Object-only signatures: give the first object field a scalar.
+            field = parts[1].split(":", 1)[0]
+            cells.append(json.dumps({"@type": name, field: 5}, separators=(",", ":")))
+        else:
+            cells.append(json.dumps({"@type": name}, separators=(",", ":")))
+    return cells
+
+
+MATCH += argument_cells()
 
 # 当前没有已知差异（B10 已修）。再出现时放这里，并在 docs/facts.md 写明它是缺陷、带回流条件。
 CONTROL = []

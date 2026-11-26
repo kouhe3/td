@@ -5,6 +5,7 @@ mod mime_tables;
 mod country_table;
 mod api_functions;
 mod client_options;
+mod tl_schema;
 
 use std::ffi::{c_char, c_double, c_int, c_void, CStr, CString};
 use std::sync::atomic::{AtomicI32, Ordering};
@@ -7661,6 +7662,79 @@ fn expected_type_error(expected: &str, value: &Json) -> String {
     format!("Expected {}, but receive {}", expected, json_type_name(value))
 }
 
+// F081: td_execute parses the whole request object before deciding that the method is not
+// synchronous. This table-driven validator covers the top-level fields of all 1114 functions;
+// nested object fields are outside this lane (they stay unmeasured in coverage-domain).
+fn validate_arguments(name: &str, json: &Json) -> Result<(), String> {
+    let Some((_, fields)) = tl_schema::ARGUMENTS.iter().find(|(known, _)| *known == name) else {
+        return Ok(());
+    };
+    validate_fields(json, fields)
+}
+
+fn validate_fields(json: &Json, fields: &[(&str, &str)]) -> Result<(), String> {
+    for (field, type_name) in fields.iter() {
+        let Some(value) = json.get(field) else {
+            continue;
+        };
+        if matches!(value, Json::Null) {
+            continue;
+        }
+        validate_value(value, type_name)?;
+    }
+    Ok(())
+}
+
+fn validate_value(value: &Json, type_name: &str) -> Result<(), String> {
+    let base = type_name.trim_end_matches('?');
+    if let Some(inner) = base.strip_prefix("vector<").and_then(|rest| rest.strip_suffix('>')) {
+        return match value {
+            Json::Arr(items) => items.iter().try_for_each(|item| validate_value(item, inner)),
+            other => Err(expected_type_error("Array", other)),
+        };
+    }
+    match base {
+        "int32" => json_int32_field(value).map(|_| ()),
+        "int53" | "int64" => json_int64_field(value).map(|_| ()),
+        "string" | "bytes" | "String" => match value {
+            Json::Str(_) => Ok(()),
+            other => Err(expected_type_error("String", other)),
+        },
+        "bool" | "Bool" => match value {
+            Json::Bool(_) => Ok(()),
+            other => Err(expected_type_error("Boolean", other)),
+        },
+        "double" | "Double" => match value {
+            Json::Int(..) | Json::Float(..) | Json::Num(_) => Ok(()),
+            other => Err(expected_type_error("Number", other)),
+        },
+        _ => match value {
+            // A field named after a concrete constructor parses its own fields directly and
+            // does not need "@type" (the oracle accepts `theme:{}`); an abstract class does.
+            Json::Obj(_) => match tl_schema::CONSTRUCTORS.iter().find(|(known, _)| *known == base) {
+                Some((_, fields)) => validate_fields(value, fields),
+                None => validate_object(value),
+            },
+            other => Err(expected_type_error("Object", other)),
+        },
+    }
+}
+
+fn validate_object(value: &Json) -> Result<(), String> {
+    let name = match value.get("@type") {
+        None => return Err("Can't find field \"@type\"".to_string()),
+        Some(Json::Str(bytes)) => match std::str::from_utf8(bytes) {
+            Ok(name) => name,
+            Err(_) => return Err("Strings must be encoded in UTF-8".to_string()),
+        },
+        Some(other) => return Err(expected_type_error("String", other)),
+    };
+    let Some((_, fields)) = tl_schema::CONSTRUCTORS.iter().find(|(known, _)| *known == name) else {
+        return Err(format!("Unknown class \"{}\"", name));
+    };
+    validate_fields(value, fields)
+}
+
 fn request_string(json: &Json, key: &str) -> Result<String, String> {
     match json.get(key) {
         None | Some(Json::Null) => Ok(String::new()),
@@ -7811,8 +7885,14 @@ fn execute_object(json: &Json) -> String {
             Err(_) => return request_error("Strings must be encoded in UTF-8"),
             Ok(name) => {
                 if SYNCHRONOUS_ACTIONS.contains(&name) {
+                    if let Err(message) = validate_arguments(name, &json) {
+                        return request_error(&message);
+                    }
                     name
                 } else if api_functions::FUNCTIONS.iter().any(|(_, known)| *known == name) {
+                    if let Err(message) = validate_arguments(name, &json) {
+                        return request_error(&message);
+                    }
                     return error_object(400, "The method can't be executed synchronously");
                 } else {
                     return request_error(&format!("Unknown class \"{}\"", name));
@@ -7822,8 +7902,18 @@ fn execute_object(json: &Json) -> String {
         Some(Json::Int(_, literal)) | Some(Json::Float(_, literal)) | Some(Json::Num(literal)) => {
             let constructor = to_integer_i32(literal.as_bytes());
             match api_functions::FUNCTIONS.iter().find(|(id, _)| *id == constructor) {
-                Some((_, name)) if SYNCHRONOUS_ACTIONS.contains(name) => *name,
-                Some(_) => return error_object(400, "The method can't be executed synchronously"),
+                Some((_, name)) if SYNCHRONOUS_ACTIONS.contains(name) => {
+                    if let Err(message) = validate_arguments(name, &json) {
+                        return request_error(&message);
+                    }
+                    *name
+                }
+                Some((_, name)) => {
+                    if let Err(message) = validate_arguments(name, &json) {
+                        return request_error(&message);
+                    }
+                    return error_object(400, "The method can't be executed synchronously");
+                }
                 None => {
                     return request_error(&format!(
                         "Unknown constructor 0x{:08x}",

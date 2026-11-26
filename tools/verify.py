@@ -10,11 +10,13 @@
     与仓库内容逐字节相同。
 
 覆盖边界:
-    覆盖 `tdjson` C ABI 的 `td_execute` 面、客户端 lane（一个 client、固定
+    覆盖 `tdjson` C ABI 的 `td_execute` 面（29 个同步 action + 全部 1114 个函数的参数解析）、
+    客户端 lane（一个 client、固定
     `setTdlibParameters`：首次运行逐行、同一 `database_directory` 的第二次运行按集合、
     `waitPhoneNumber` 下的未授权状态机逐行）与生成表的一致性。
     覆盖不到：第二次运行的 option 顺序（不可判，F078）、真实登录（需实时码 + 2FA，F079）、
-    非空号码的 `setAuthenticationPhoneNumber`、`getLanguagePackString` 的成功路径（B7）。
+    非空号码的 `setAuthenticationPhoneNumber`、嵌套 `@type` 用构造号、具体类字段带错 `@type`、
+    `getLanguagePackString` 的成功路径（B7）。
 
 失效条件:
     oracle 换了构建（md5 变）、Rust 换了 target/linker、或 `td/` 的 schema/数据表更新——
@@ -49,6 +51,7 @@ GATES = [
     ("instrument", [PYTHON, "tools/tdjson_diff.py"]),
     ("client_options", [PYTHON, "tools/gen_client_options.py", "--check"]),
     ("client_lane", [PYTHON, "tools/client_diff.py"]),
+    ("tl_schema", [PYTHON, "tools/gen_tl_schema.py", "--check"]),
     ("mime_tables", [PYTHON, "tools/gen_mime_tables.py", "--check"]),
     ("emoji_table", [PYTHON, "tools/gen_emoji_table.py", "--check"]),
     ("country_table", [PYTHON, "tools/gen_country_table.py", "--check"]),

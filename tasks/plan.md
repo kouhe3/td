@@ -45,6 +45,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T29 | B1b 第二次运行 lane：在 `database_directory` 下写初始化标记，第二次运行改吐 125 条最终值表（`tools/gen_client_options.py` 生成第二张表）；判据 = `tools/client_diff.py` 的 second-run 段按**集合**比较（顺序不参与，F078） | F078, F072 | done（两侧集合相等、127 行 / 125 option、`failures=0`；九门禁全绿） |
 | T30 | B1c 未授权状态机 lane：首个非 `setTdlibParameters` 请求补 6 条全局突发表 + 5 个请求的响应（空号码 / checkCode / checkPassword / getMe / logOut→Closed）；判据 = `tools/client_diff.py` 的 auth 段逐行比较（平铺 142 行） | F079 | done（142 行逐行相同、`failures=0`；九门禁全绿，17.5 s） |
 | T31 | B1d 真实登录形态：生产 DC 六步共 222 行（一次性实测，不进回归）。Rust 侧不回放登录段——没有 MTProto 引擎，回放只能验证自己写死的表 | F080 | done（形态与清理过程进台账；等价性仍 `unmeasured`） |
+| T32 | T20 第一阶段：`tools/gen_tl_schema.py` 从 `td_api.tl` 生成 3470 条定义的参数表（`rust/src/tl_schema.rs`，1114 函数 + 2356 构造）；Rust 在 `td_execute` 里对**全部函数**（含 29 个同步 action）先做 JSON 参数解析，抽象类要 `@type`、具体类不要；判据 = 1114 个 argument cell（MATCH 1528）逐字节相同 | F081 | done（`failures=0`；十项门禁全绿，17.7 s） |
 
 ## 变更记录
 
