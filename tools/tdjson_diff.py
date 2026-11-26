@@ -57,6 +57,15 @@ MATCH = [
     '{"@type":"getTextEntities","text":"pay to UQAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eH0Bm now"}',
     '{"@type":"getTextEntities","text":"#b# mailto:"}',
     '{"@type":"getTextEntities","text":"#' + 'a' * 300 + '"}',
+    '{"@type":"checkQuickReplyShortcutName","name":"my_shortcut"}',
+    '{"@type":"checkQuickReplyShortcutName","name":"my shortcut"}',
+    '{"@type":"checkQuickReplyShortcutName","name":""}',
+    '{"@type":"checkQuickReplyShortcutName","name":"' + 'a' * 33 + '"}',
+    '{"@type":"getCountryFlagEmoji","country_code":"US"}',
+    '{"@type":"getCountryFlagEmoji","country_code":"yl"}',
+    '{"@type":"getCountryFlagEmoji","country_code":"U1"}',
+    '{"@type":"testReturnError","error":{"@type":"error","code":400,"message":"boom \\"quoted\\" \\u4f60\\u597d"}}',
+    '{"@type":"testReturnError"}',
 ]
 
 CONTROL = [

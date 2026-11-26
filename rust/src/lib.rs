@@ -1143,34 +1143,197 @@ fn find_entities(chars: &[char]) -> Vec<(usize, usize, Kind)> {
     kept
 }
 
-fn extract_string_field(json: &str, key: &str) -> Option<String> {
-    let needle = format!("\"{}\"", key);
-    let start = json.find(&needle)? + needle.len();
-    let rest = &json[start..];
-    let colon = rest.find(':')? + 1;
-    let mut it = rest[colon..].chars().peekable();
-    while matches!(it.peek(), Some(c) if c.is_whitespace()) {
-        it.next();
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
+enum Json {
+    Null,
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+    Str(String),
+    Arr(Vec<Json>),
+    Obj(Vec<(String, Json)>),
+}
+
+impl Json {
+    fn parse(text: &str) -> Option<Json> {
+        let bytes = text.as_bytes();
+        let mut pos = 0usize;
+        let value = parse_value(bytes, &mut pos)?;
+        skip_json_ws(bytes, &mut pos);
+        if pos != bytes.len() {
+            return None;
+        }
+        Some(value)
     }
-    if it.next()? != '"' {
+
+    fn get(&self, key: &str) -> Option<&Json> {
+        match self {
+            Json::Obj(members) => members.iter().find(|(name, _)| name == key).map(|(_, value)| value),
+            _ => None,
+        }
+    }
+
+    fn as_str(&self) -> Option<&str> {
+        match self {
+            Json::Str(value) => Some(value),
+            _ => None,
+        }
+    }
+
+    fn as_i64(&self) -> Option<i64> {
+        match self {
+            Json::Int(value) => Some(*value),
+            Json::Float(value) => Some(*value as i64),
+            _ => None,
+        }
+    }
+}
+
+fn skip_json_ws(bytes: &[u8], pos: &mut usize) {
+    while *pos < bytes.len() && matches!(bytes[*pos], b' ' | b'\t' | b'\n' | b'\r') {
+        *pos += 1;
+    }
+}
+
+fn parse_value(bytes: &[u8], pos: &mut usize) -> Option<Json> {
+    skip_json_ws(bytes, pos);
+    match *bytes.get(*pos)? {
+        b'{' => {
+            *pos += 1;
+            let mut members = Vec::new();
+            skip_json_ws(bytes, pos);
+            if bytes.get(*pos) == Some(&b'}') {
+                *pos += 1;
+                return Some(Json::Obj(members));
+            }
+            loop {
+                skip_json_ws(bytes, pos);
+                let key = match parse_value(bytes, pos)? {
+                    Json::Str(value) => value,
+                    _ => return None,
+                };
+                skip_json_ws(bytes, pos);
+                if bytes.get(*pos) != Some(&b':') {
+                    return None;
+                }
+                *pos += 1;
+                let value = parse_value(bytes, pos)?;
+                members.push((key, value));
+                skip_json_ws(bytes, pos);
+                match bytes.get(*pos) {
+                    Some(b',') => *pos += 1,
+                    Some(b'}') => {
+                        *pos += 1;
+                        return Some(Json::Obj(members));
+                    }
+                    _ => return None,
+                }
+            }
+        }
+        b'[' => {
+            *pos += 1;
+            let mut items = Vec::new();
+            skip_json_ws(bytes, pos);
+            if bytes.get(*pos) == Some(&b']') {
+                *pos += 1;
+                return Some(Json::Arr(items));
+            }
+            loop {
+                items.push(parse_value(bytes, pos)?);
+                skip_json_ws(bytes, pos);
+                match bytes.get(*pos) {
+                    Some(b',') => *pos += 1,
+                    Some(b']') => {
+                        *pos += 1;
+                        return Some(Json::Arr(items));
+                    }
+                    _ => return None,
+                }
+            }
+        }
+        b'"' => parse_json_string(bytes, pos).map(Json::Str),
+        b't' => {
+            if bytes.len() >= *pos + 4 && &bytes[*pos..*pos + 4] == b"true" {
+                *pos += 4;
+                Some(Json::Bool(true))
+            } else {
+                None
+            }
+        }
+        b'f' => {
+            if bytes.len() >= *pos + 5 && &bytes[*pos..*pos + 5] == b"false" {
+                *pos += 5;
+                Some(Json::Bool(false))
+            } else {
+                None
+            }
+        }
+        b'n' => {
+            if bytes.len() >= *pos + 4 && &bytes[*pos..*pos + 4] == b"null" {
+                *pos += 4;
+                Some(Json::Null)
+            } else {
+                None
+            }
+        }
+        _ => parse_json_number(bytes, pos),
+    }
+}
+
+fn parse_json_number(bytes: &[u8], pos: &mut usize) -> Option<Json> {
+    let start = *pos;
+    let mut is_float = false;
+    while *pos < bytes.len() {
+        match bytes[*pos] {
+            b'-' | b'+' => *pos += 1,
+            b'0'..=b'9' => *pos += 1,
+            b'.' | b'e' | b'E' => {
+                is_float = true;
+                *pos += 1;
+            }
+            _ => break,
+        }
+    }
+    if start == *pos {
         return None;
     }
+    let text = std::str::from_utf8(&bytes[start..*pos]).ok()?;
+    if is_float {
+        text.parse::<f64>().ok().map(Json::Float)
+    } else {
+        text.parse::<i64>().ok().map(Json::Int)
+    }
+}
+
+fn parse_json_string(bytes: &[u8], pos: &mut usize) -> Option<String> {
+    if bytes.get(*pos) != Some(&b'"') {
+        return None;
+    }
+    *pos += 1;
     let mut out = String::new();
     let mut high_surrogate: Option<u32> = None;
-    while let Some(c) = it.next() {
-        match c {
-            '"' => return Some(out),
-            '\\' => {
-                let e = it.next()?;
-                match e {
-                    'n' => out.push('\n'),
-                    'r' => out.push('\r'),
-                    't' => out.push('\t'),
-                    'b' => out.push('\u{8}'),
-                    'f' => out.push('\u{c}'),
-                    'u' => {
-                        let hex: String = (0..4).filter_map(|_| it.next()).collect();
-                        let code = u32::from_str_radix(&hex, 16).ok()?;
+    loop {
+        let byte = *bytes.get(*pos)?;
+        *pos += 1;
+        match byte {
+            b'"' => return Some(out),
+            b'\\' => {
+                let escape = *bytes.get(*pos)?;
+                *pos += 1;
+                match escape {
+                    b'"' => out.push('"'),
+                    b'\\' => out.push('\\'),
+                    b'/' => out.push('/'),
+                    b'b' => out.push('\u{8}'),
+                    b'f' => out.push('\u{c}'),
+                    b'n' => out.push('\n'),
+                    b'r' => out.push('\r'),
+                    b't' => out.push('\t'),
+                    b'u' => {
+                        let hex = std::str::from_utf8(bytes.get(*pos..*pos + 4)?).ok()?;
+                        *pos += 4;
+                        let code = u32::from_str_radix(hex, 16).ok()?;
                         if (0xd800..0xdc00).contains(&code) {
                             high_surrogate = Some(code);
                             continue;
@@ -1184,13 +1347,65 @@ fn extract_string_field(json: &str, key: &str) -> Option<String> {
                         high_surrogate = None;
                         out.push(char::from_u32(code)?);
                     }
-                    other => out.push(other),
+                    _ => return None,
                 }
             }
-            c => out.push(c),
+            _ => {
+                let start = *pos - 1;
+                let width = utf8_width(byte);
+                let slice = bytes.get(start..start + width)?;
+                out.push(std::str::from_utf8(slice).ok()?.chars().next()?);
+                *pos = start + width;
+            }
         }
     }
-    None
+}
+
+fn utf8_width(first: u8) -> usize {
+    match first {
+        0x00..=0x7f => 1,
+        0xc0..=0xdf => 2,
+        0xe0..=0xef => 3,
+        _ => 4,
+    }
+}
+
+fn json_escape(text: &str, out: &mut String) {
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\u{8}' => out.push_str("\\b"),
+            '\u{c}' => out.push_str("\\f"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c if (c as u32) < 0x80 => out.push(c),
+            c => {
+                let mut units = [0u16; 2];
+                for unit in c.encode_utf16(&mut units) {
+                    out.push_str(&format!("\\u{:04x}", unit));
+                }
+            }
+        }
+    }
+}
+
+fn text_object(text: &str) -> String {
+    let mut body = String::new();
+    json_escape(text, &mut body);
+    format!("{{\"@type\":\"text\",\"text\":\"{}\"}}", body)
+}
+
+fn error_object(code: i64, message: &str) -> String {
+    let mut body = String::new();
+    json_escape(message, &mut body);
+    format!("{{\"@type\":\"error\",\"code\":{},\"message\":\"{}\"}}", code, body)
+}
+
+fn ok_object() -> String {
+    "{\"@type\":\"ok\"}".to_string()
 }
 
 fn entities_json(text: &str) -> String {
@@ -1219,17 +1434,74 @@ fn entities_json(text: &str) -> String {
 }
 
 fn execute(request: &str) -> String {
-    match extract_string_field(request, "@type").as_deref() {
-        Some("getTextEntities") => match extract_string_field(request, "text") {
-            Some(text) => entities_json(&text),
-            None => "{\"@type\":\"error\",\"code\":400,\"message\":\"Text must be encoded in UTF-8\"}".to_string(),
+    let Some(json) = Json::parse(request) else {
+        return error_object(400, "tdjson_rs: malformed request");
+    };
+    let Some(kind) = json.get("@type").and_then(Json::as_str) else {
+        return error_object(400, "tdjson_rs: malformed request");
+    };
+    match kind {
+        "getTextEntities" => match json.get("text").and_then(Json::as_str) {
+            Some(text) => entities_json(text),
+            None => error_object(400, "Text must be encoded in UTF-8"),
         },
-        Some(other) => format!(
-            "{{\"@type\":\"error\",\"code\":400,\"message\":\"tdjson_rs: unimplemented request type {}\"}}",
-            other.replace('"', "'")
+        "checkQuickReplyShortcutName" => match json.get("name").and_then(Json::as_str) {
+            Some(name) => check_shortcut_name(name),
+            None => error_object(400, "Strings must be encoded in UTF-8"),
+        },
+        "getCountryFlagEmoji" => match json.get("country_code").and_then(Json::as_str) {
+            Some(code) => text_object(&country_flag_emoji(code)),
+            None => text_object(""),
+        },
+        "testReturnError" => match json.get("error") {
+            Some(error) => error_object(
+                error.get("code").and_then(Json::as_i64).unwrap_or(0),
+                error.get("message").and_then(Json::as_str).unwrap_or(""),
+            ),
+            None => error_object(404, "Not Found"),
+        },
+        other => error_object(
+            400,
+            &format!("tdjson_rs: unimplemented request type {}", other),
         ),
-        None => "{\"@type\":\"error\",\"code\":400,\"message\":\"tdjson_rs: malformed request\"}".to_string(),
     }
+}
+
+fn check_shortcut_name(name: &str) -> String {
+    let mut length = 0usize;
+    for c in name.chars() {
+        if !is_hashtag_letter(c) {
+            return error_object(200, "A letter is not allowed");
+        }
+        length += 1;
+    }
+    if length == 0 {
+        return error_object(200, "Name must be non-empty");
+    }
+    if length > 32 {
+        return error_object(200, "Name is too long");
+    }
+    ok_object()
+}
+
+fn country_flag_emoji(country_code: &str) -> String {
+    let chars: Vec<char> = country_code.chars().collect();
+    if chars.len() != 2 || !chars[0].is_ascii_alphabetic() || !chars[1].is_ascii_alphabetic() {
+        return String::new();
+    }
+    let first = chars[0].to_ascii_uppercase();
+    let second = chars[1].to_ascii_uppercase();
+    match (first, second) {
+        ('Y', 'L') => return "\u{1F52E}".to_string(),
+        ('F', 'T') => return "\u{1F48E}".to_string(),
+        ('X', 'G') => return "\u{1F6F0}".to_string(),
+        ('X', 'V') => return "\u{1F30D}".to_string(),
+        _ => {}
+    }
+    let mut out = String::with_capacity(2);
+    out.push(char::from_u32(0x1F1A5 + first as u32).unwrap_or('\u{fffd}'));
+    out.push(char::from_u32(0x1F1A5 + second as u32).unwrap_or('\u{fffd}'));
+    out
 }
 
 #[no_mangle]

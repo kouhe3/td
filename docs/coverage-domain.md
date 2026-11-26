@@ -24,9 +24,12 @@
 
 | 项 | 状态 | blocker / 回流条件 |
 |---|---|---|
-| `getTextEntities` | measured（F004, F005, F011）；url/email 两类除外 | 缺口见上表 |
-| `getOption` | unmeasured（Rust 未实现，CONTROL 可检出） | 回流：T4 |
-| `td_api.tl` 其余 action | unknown（未枚举） | 回流：T4 枚举后建 corpus |
+| `getTextEntities` | measured（F004, F005, F008, F011, F014） | — |
+| `checkQuickReplyShortcutName` | measured（F017） | 非 ASCII 名称：回流 T10 |
+| `getCountryFlagEmoji` | measured（F017） | 非 ASCII 两字节输入（C++ 按**字节**判长度）：回流 T10 |
+| `testReturnError` | measured（F017, F018） | — |
+| `getOption` | unmeasured（Rust 未实现；CONTROL 靠它区分两实现） | 回流：T10（需先定可同步选项白名单） |
+| 同步 action 其余 16 项 | unmeasured（已枚举，见 F016） | 逐项建 corpus：T10 |
 
 ## 边界之外（永久不在本仪器范围）
 
