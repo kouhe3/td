@@ -153,11 +153,16 @@ MATCH = [
     '{"@type":"searchStringsByPrefix","strings":["John Smith","Smith John"],"query":"smith","limit":10,"return_sorted":true}',
     '{"@type":"searchStringsByPrefix","strings":["cafe","caf\\u00e9"],"query":"cafe","limit":10,"return_sorted":true}',
     '{"@type":"searchStringsByPrefix","strings":["alpha","beta"],"query":"a","limit":2,"return_sorted":true}',
+    '{"@type":"getLanguagePackString","language_pack_database_path":"","localization_target":"android","language_pack_id":"en","key":"Continue"}',
+    '{"@type":"getLanguagePackString","language_pack_database_path":"","localization_target":"ios","language_pack_id":"x","key":"k"}',
+    '{"@type":"getLanguagePackString","language_pack_database_path":"","localization_target":"","language_pack_id":"","key":""}',
+    '{"@type":"getLanguagePackString","language_pack_database_path":"","localization_target":"android","language_pack_id":"en","key":"bad key"}',
+    '{"@type":"getLanguagePackString","language_pack_database_path":"","localization_target":"android","language_pack_id":"Xx","key":"Continue"}',
 ]
 
 CONTROL = [
     '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":"+1555"}',
-    '{"@type":"getLanguagePackString","language_pack_database_path":"","localization_target":"android","language_pack_id":"en","key":"Continue"}',
+    '{"@type":"searchQuote","text":{"@type":"formattedText","text":"abc","entities":[]},"quote":{"@type":"formattedText","text":"b","entities":[]},"quote_position":0}',
 ]
 
 # 有状态 action 只在有序序列里有意义：每段序列对两个 dll 各跑一遍，逐项比结果。

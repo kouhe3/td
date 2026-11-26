@@ -9,4 +9,5 @@
 | B3 | `#tag@username` 后缀、`/botCommand`、`$cashtag`、银行卡号、TON 地址、媒体时间戳 | 未入 corpus，Rust 侧未实现 | T3 扩 corpus 后逐类对齐 |
 | ~~B4~~ | ~~`/setup-matt-pocock-skills` 产物缺失~~ **已解决**：`mattpocock-skills@1.3.2` 已按 project scope 装进 `.omp/plugins/`，setup 已跑，三个文件在 `docs/agents/`；本文件条目在变成可执行任务时开 issue（仓库 `kouhe3/td`） | — | — |
 | ~~B5~~ | ~~Rust 侧工程不在本仓库（`C:/tmp/td-rs-probe`）~~ **已解决**：crate 移入 `rust/`（T6），仪器改指仓库内产物 | — | — |
-| B6 | 共享 JSON 层对超出 int64 的数字字面量（如 `99999999999999999999`）在解析阶段就失败，回 `tdjson_rs: malformed request`；TDLib 走到 actions 层才回 `Can't parse as an integer string "..."`。两者都是 400，只是文案不同 | 为畸形输入改共享层语义，会波及所有 action；收益仅为错误文案 | 出现需要逐字节比对错误文案的判据时，给 `Json` 加“不可表示数字”变体并单独测 |
+| B6 | 共享 JSON 层对超出 int64 的数字字面量（如 `99999999999999999999`）在解析阶段就失败，回 `tdjson_rs: malformed request`；TDLib 走到 actions 层才回 `Can't parse as an integer string "..."`。两者都是 400，只是文案不同 | 为畸形输入改共享层语义，会波及所有 action；收益仅为错误文案 | 出现需要逐字节比对错误文案的判据时，给 `Json` 加“不可表示数字”变体并单独测 || B7 | `searchQuote`（引文定位）与 `getLanguagePackString` 的成功路径 | `searchQuote` 要移植 `MessageQuote::search_quote`（实体归并 + 定位），体量与 Markdown 家族相当；语言包成功路径需要真实的 pack 数据库文件（`tdlib-data`） | 需求指向引文高亮时做 B7；能提供语言包数据时把 `getLanguagePackString` 的成功分支另立判据 |
+| B8 | `getPhoneNumberInfoSync` | 需要国家/号段表 + 多语言国名（`CountryInfoManager` 662 行 + `PhoneNumberManager` 357 行及其数据表） | 需要号码解析时做；数据表可从 oracle 逐项抽样后像 MIME/TLD 一样生成 |

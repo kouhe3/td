@@ -7093,6 +7093,26 @@ static LOG_STATE: std::sync::Mutex<LogState> = std::sync::Mutex::new(LogState {
     ],
 });
 
+fn check_language_pack_name(name: &str) -> bool {
+    name.len() <= 64 && name.bytes().all(|byte| byte == b'_' || byte.is_ascii_alphabetic())
+}
+
+fn check_language_code_name(name: &str) -> bool {
+    let valid_chars = name
+        .bytes()
+        .all(|byte| byte == b'-' || byte.is_ascii_alphanumeric());
+    valid_chars
+        && name.len() <= 64
+        && (name.starts_with('X') || name.is_empty() || name.len() >= 2)
+}
+
+fn is_valid_language_key(key: &str) -> bool {
+    !key.is_empty()
+        && key
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-'))
+}
+
 fn log_verbosity_json(level: i32) -> String {
     format!("{{\"@type\":\"logVerbosityLevel\",\"verbosity_level\":{}}}", level)
 }
@@ -7288,6 +7308,21 @@ fn execute(request: &str) -> String {
             json_escape(value, &mut body);
             body.push_str("\"}");
             body
+        }
+        "getLanguagePackString" => {
+            let pack = json.get("localization_target").and_then(Json::as_str).unwrap_or("");
+            let code = json.get("language_pack_id").and_then(Json::as_str).unwrap_or("");
+            let key = json.get("key").and_then(Json::as_str).unwrap_or("");
+            if pack.is_empty() || !check_language_pack_name(pack) {
+                return error_object(400, "Localization target is invalid");
+            }
+            if code.is_empty() || !check_language_code_name(code) {
+                return error_object(400, "Language pack ID is invalid");
+            }
+            if !is_valid_language_key(key) {
+                return error_object(400, "Key is invalid");
+            }
+            error_object(404, "Not Found")
         }
         other => error_object(
             400,

@@ -42,7 +42,9 @@
 | `parseMarkdown` / `getMarkdownText` | measured（F031–F034） | `get_markdown_v3` 的 roundtrip 自检降级路径（构造失败输入）未入 corpus：回流 T10 |
 | `searchStringsByPrefix` | measured（F035） | 非 ASCII 归一化（变音符号全表）、rating 并列时的次序未入 corpus：回流 T10 |
 | 8 个日志类 action | measured（F036, F037, F038；`SEQUENCE` 段 3 段 19 步） | `logStreamFile`（写文件）未测：会落盘，回流条件 = 造隔离目录后另立判据 |
-| 同步 action 其余 3 项（白名单共 29，见 F026） | unmeasured | `searchQuote` / `getLanguagePackString` / `getPhoneNumberInfoSync`：回流 T10 |
+| `getLanguagePackString` | measured（F039：三道校验 + 无库 404） | 成功路径需要真实的语言包数据库文件（`tdlib-data`），回流条件 = 拿到 pack 数据后另立判据（见 backlog B7） |
+| `searchQuote` | unmeasured | 依赖 `MessageQuote::search_quote`（实体归并 + 引文定位），体量与 Markdown 家族相当；回流 T13（B7） |
+| `getPhoneNumberInfoSync` | unmeasured | 依赖国家/号段表与多语言国名；回流 T13（B8） |
 
 ## 边界之外（永久不在本仪器范围）
 
