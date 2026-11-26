@@ -158,11 +158,20 @@ MATCH = [
     '{"@type":"getLanguagePackString","language_pack_database_path":"","localization_target":"","language_pack_id":"","key":""}',
     '{"@type":"getLanguagePackString","language_pack_database_path":"","localization_target":"android","language_pack_id":"en","key":"bad key"}',
     '{"@type":"getLanguagePackString","language_pack_database_path":"","localization_target":"android","language_pack_id":"Xx","key":"Continue"}',
+    '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":""}',
+    '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":"+"}',
+    '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":"abc"}',
+    '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":"+1555"}',
+    '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":"+1416"}',
+    '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":"+44"}',
+    '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":"+7"}',
+    '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":"+86"}',
+    '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":"+999"}',
 ]
 
 CONTROL = [
-    '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":"+1555"}',
     '{"@type":"searchQuote","text":{"@type":"formattedText","text":"abc","entities":[]},"quote":{"@type":"formattedText","text":"b","entities":[]},"quote_position":0}',
+    '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":123}',
 ]
 
 # 有状态 action 只在有序序列里有意义：每段序列对两个 dll 各跑一遍，逐项比结果。

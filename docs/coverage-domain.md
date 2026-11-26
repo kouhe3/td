@@ -44,7 +44,7 @@
 | 8 个日志类 action | measured（F036, F037, F038；`SEQUENCE` 段 3 段 19 步） | `logStreamFile`（写文件）未测：会落盘，回流条件 = 造隔离目录后另立判据 |
 | `getLanguagePackString` | measured（F039：三道校验 + 无库 404） | 成功路径需要真实的语言包数据库文件（`tdlib-data`），回流条件 = 拿到 pack 数据后另立判据（见 backlog B7） |
 | `searchQuote` | unmeasured | 依赖 `MessageQuote::search_quote`（实体归并 + 引文定位），体量与 Markdown 家族相当；回流 T13（B7） |
-| `getPhoneNumberInfoSync` | unmeasured | 依赖国家/号段表与多语言国名；回流 T13（B8） |
+| `getPhoneNumberInfoSync` | measured（F041, F042） | 只有内置 `en` 快照；服务器下发的其它语言名称、`is_anonymous` 用的 fragment 前缀表未入 corpus：回流 T14 |
 
 ## 边界之外（永久不在本仪器范围）
 

@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::{BTreeMap, HashSet};
 mod emoji_table;
 mod mime_tables;
+mod country_table;
 
 use std::ffi::{c_char, c_double, c_int, c_void, CStr, CString};
 
@@ -7235,6 +7236,9 @@ fn execute(request: &str) -> String {
             Some(code) => text_object(&country_flag_emoji(code)),
             None => text_object(""),
         },
+        "getPhoneNumberInfoSync" => phone_number_info_json(
+            json.get("phone_number_prefix").and_then(Json::as_str).unwrap_or(""),
+        ),
         "testReturnError" => match json.get("error") {
             Some(error) => error_object(
                 error.get("code").and_then(Json::as_i64).unwrap_or(0),
@@ -7365,6 +7369,141 @@ fn country_flag_emoji(country_code: &str) -> String {
     let mut out = String::with_capacity(2);
     out.push(char::from_u32(0x1F1A5 + first as u32).unwrap_or('\u{fffd}'));
     out.push(char::from_u32(0x1F1A5 + second as u32).unwrap_or('\u{fffd}'));
+    out
+}
+
+fn phone_number_info_json(phone_number_prefix: &str) -> String {
+    let phone_number: String = phone_number_prefix.chars().filter(|c| c.is_ascii_digit()).collect();
+    if phone_number.is_empty() {
+        return phone_number_info_object_json(None, "", "", false);
+    }
+    let is_anonymous = phone_number.starts_with("888");
+
+    let bytes = phone_number.as_bytes();
+    let mut best: Option<(&country_table::Country, &country_table::CallingCode)> = None;
+    let mut best_length = 0;
+    let mut is_prefix = false;
+    for country in country_table::COUNTRIES.iter() {
+        for calling_code in country.calling_codes.iter() {
+            let code = calling_code.calling_code.as_bytes();
+            if bytes.starts_with(code) {
+                let rest = &bytes[code.len()..];
+                for prefix in calling_code.prefixes.iter() {
+                    if prefix.as_bytes().starts_with(rest) {
+                        is_prefix = true;
+                    }
+                    if code.len() + prefix.len() > best_length && rest.starts_with(prefix.as_bytes()) {
+                        best = Some((country, calling_code));
+                        best_length = code.len() + prefix.len();
+                    }
+                }
+            }
+            if code.starts_with(bytes) {
+                is_prefix = true;
+            }
+        }
+    }
+
+    let Some((country, calling_code)) = best else {
+        return if is_prefix {
+            phone_number_info_object_json(None, &phone_number, "", is_anonymous)
+        } else {
+            phone_number_info_object_json(None, "", &phone_number, is_anonymous)
+        };
+    };
+
+    let formatted_part = &phone_number[calling_code.calling_code.len()..];
+    let mut formatted_phone_number = String::new();
+    let mut max_matched_digits = 0;
+    for pattern in calling_code.patterns.iter() {
+        let pattern = pattern.as_bytes();
+        let mut result = String::new();
+        let mut pattern_pos = 0;
+        let mut is_failed_match = false;
+        let mut matched_digits = 0;
+        for &digit in formatted_part.as_bytes() {
+            while pattern_pos < pattern.len() && pattern[pattern_pos] != b'X' && !pattern[pattern_pos].is_ascii_digit()
+            {
+                result.push(pattern[pattern_pos] as char);
+                pattern_pos += 1;
+            }
+            if pattern_pos >= pattern.len() || pattern[pattern_pos] == b'X' {
+                result.push(digit as char);
+                pattern_pos += 1;
+            } else if digit == pattern[pattern_pos] {
+                matched_digits += 1;
+                result.push(digit as char);
+                pattern_pos += 1;
+            } else {
+                is_failed_match = true;
+                break;
+            }
+        }
+        if pattern[pattern_pos.min(pattern.len())..].iter().any(|c| c.is_ascii_digit()) {
+            is_failed_match = true;
+        }
+        if !is_failed_match && matched_digits >= max_matched_digits {
+            max_matched_digits = matched_digits;
+            while pattern_pos < pattern.len() {
+                result.push(if pattern[pattern_pos] == b'X' { '-' } else { ' ' });
+                pattern_pos += 1;
+            }
+            formatted_phone_number = result;
+        }
+    }
+
+    let formatted: &str =
+        if formatted_phone_number.is_empty() { formatted_part } else { &formatted_phone_number };
+    phone_number_info_object_json(
+        Some(country),
+        &calling_code.calling_code,
+        formatted,
+        is_anonymous,
+    )
+}
+
+fn phone_number_info_object_json(
+    country: Option<&country_table::Country>,
+    country_calling_code: &str,
+    formatted_phone_number: &str,
+    is_anonymous: bool,
+) -> String {
+    let mut out = String::from("{\"@type\":\"phoneNumberInfo\"");
+    if let Some(country) = country {
+        out.push_str(",\"country\":");
+        out.push_str(&country_info_json(country));
+    }
+    out.push_str(",\"country_calling_code\":\"");
+    json_escape(country_calling_code, &mut out);
+    out.push_str("\",\"formatted_phone_number\":\"");
+    json_escape(formatted_phone_number, &mut out);
+    out.push_str("\",\"is_anonymous\":");
+    out.push_str(if is_anonymous { "true" } else { "false" });
+    out.push('}');
+    out
+}
+
+fn country_info_json(country: &country_table::Country) -> String {
+    let mut out = String::from("{\"@type\":\"countryInfo\",\"country_code\":\"");
+    json_escape(country.country_code, &mut out);
+    out.push_str("\",\"name\":\"");
+    json_escape(country.default_name, &mut out);
+    out.push_str("\",\"english_name\":\"");
+    json_escape(country.default_name, &mut out);
+    out.push_str("\",\"flag_emoji\":\"");
+    json_escape(&country_flag_emoji(country.country_code), &mut out);
+    out.push_str("\",\"is_hidden\":");
+    out.push_str(if country.is_hidden { "true" } else { "false" });
+    out.push_str(",\"calling_codes\":[");
+    for (index, calling_code) in country.calling_codes.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        out.push('"');
+        json_escape(calling_code.calling_code, &mut out);
+        out.push('"');
+    }
+    out.push_str("]}");
     out
 }
 
