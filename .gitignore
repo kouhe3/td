@@ -2,7 +2,12 @@
 **/.*.swp
 **/.DS_Store
 **/auto/
-docs/
+/docs/*
+!/docs/agents/
+!/docs/facts.md
+!/docs/coverage-domain.md
+!/docs/plans/
+/work/
 /tdlib/
 vcpkg/
 .clang-tidy
