@@ -15,9 +15,15 @@
 2. **第一阶段（当前）**：只为 `td_execute` 实际用到的 action 手写所需对象序列化（已完成 4 个 action）。这层很薄，因为 JSON 边界只需要「解析请求 → 算 → 写 JSON」。
 3. **第二阶段（进入有状态客户端之前）**：优先复用现成的 Rust TL 代码生成器（`grammers-tl-gen` + `grammers-tl-parser`，用 TDLib 的 `.tl` 作输入），只有在 schema 构造不被支持时才考虑移植 TDLib 自己的生成器。
 
-## 待验
+## 验证结果（2026-11-26，F040）
 
-- 第二条的可行性尚未实测：grammers 的生成器面向 Telegram MTProto layer，TDLib 的 `.tl` 有额外构造（`SplitSource` 的三文件拆分、自定义 writer、`td_api` 与 `telegram_api` 的命名空间约定）。验证判据是「同一 `.tl` 生成的 Rust 类型能被 JSON 层直接使用」，见 plan T11。
+实测 `grammers-tl-parser` 2.0.0 + `grammers-tl-gen` 0.12.0 吃 `td_api.tl`：
+
+- 原文件直接喂会 **panic**（注释里的非 ASCII 让它切到 UTF-8 码点中间）；去掉注释行后可解析。
+- 3473 条定义里有 3470 条被接受，3 条 `NotImplemented`：`vector {t:Type} # [ t ] = Vector t;`、`double ? = Double;`、`string ? = String;`——都是 TL 的泛型/裸可空标记，TDLib 自己的生成器支持。
+- 生成器对 3470 条定义产出 3.47 MB `types` + 1.00 MB `functions`。
+
+**结论：可行，但不是 drop-in**——需要（a）注释预处理或修 parser 的边界 bug，（b）为 3 条构造补支持或改写输入。这比移植 7.7k 行 C++ 生成器便宜得多，维持第二阶段选型。
 
 ## 后果
 
