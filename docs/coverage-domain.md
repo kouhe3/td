@@ -33,7 +33,8 @@
 | `getFileExtension` | measured（F019） | 反向表未覆盖的 MIME：回流 T10 |
 | `cleanFileName` | measured（F021） | 超长（>64 stem / >16 ext）、纯符号名：回流 T10 |
 | `getTextEmojiRanges` | measured（F020） | 孤立 ZWJ、不完整序列、双肤色组合：回流 T10 |
-| 同步 action 其余 12 项 | unmeasured（已枚举，见 F016） | 逐项建 corpus：T10 |
+| `getJsonValue` / `getJsonString` | measured（F022） | 重复键、超大指数、非法 JSON 的错误文案：回流 T10 |
+| 同步 action 其余 10 项 | unmeasured（已枚举，见 F016） | 逐项建 corpus：T10 |
 
 ## 边界之外（永久不在本仪器范围）
 

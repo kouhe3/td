@@ -1847,6 +1847,114 @@ fn emoji_ranges_json(text: &str) -> String {
     )
 }
 
+fn number_value(value: Option<&Json>) -> f64 {
+    match value {
+        Some(Json::Float(number)) => *number,
+        Some(Json::Int(number)) => *number as f64,
+        _ => 0.0,
+    }
+}
+
+fn emit_typed_json_value(value: &Json, out: &mut String) {
+    match value {
+        Json::Null => out.push_str("{\"@type\":\"jsonValueNull\"}"),
+        Json::Bool(flag) => {
+            out.push_str("{\"@type\":\"jsonValueBoolean\",\"value\":");
+            out.push_str(if *flag { "true" } else { "false" });
+            out.push('}');
+        }
+        Json::Int(number) => out.push_str(&format!(
+            "{{\"@type\":\"jsonValueNumber\",\"value\":{:.6}}}",
+            *number as f64
+        )),
+        Json::Float(number) => out.push_str(&format!(
+            "{{\"@type\":\"jsonValueNumber\",\"value\":{:.6}}}",
+            number
+        )),
+        Json::Str(text) => {
+            out.push_str("{\"@type\":\"jsonValueString\",\"value\":\"");
+            json_escape(text, out);
+            out.push_str("\"}");
+        }
+        Json::Arr(items) => {
+            out.push_str("{\"@type\":\"jsonValueArray\",\"values\":[");
+            for (index, item) in items.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                emit_typed_json_value(item, out);
+            }
+            out.push_str("]}");
+        }
+        Json::Obj(members) => {
+            out.push_str("{\"@type\":\"jsonValueObject\",\"members\":[");
+            for (index, (key, member)) in members.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                out.push_str("{\"@type\":\"jsonObjectMember\",\"key\":\"");
+                json_escape(key, out);
+                out.push_str("\",\"value\":");
+                emit_typed_json_value(member, out);
+                out.push('}');
+            }
+            out.push_str("]}");
+        }
+    }
+}
+
+fn emit_json_text(value: &Json, out: &mut String) {
+    match value.get("@type").and_then(Json::as_str) {
+        Some("jsonValueNull") => out.push_str("null"),
+        Some("jsonValueBoolean") => {
+            let flag = matches!(value.get("value"), Some(Json::Bool(true)));
+            out.push_str(if flag { "true" } else { "false" });
+        }
+        Some("jsonValueNumber") => {
+            out.push_str(&format!("{:.6}", number_value(value.get("value"))));
+        }
+        Some("jsonValueString") => {
+            out.push('"');
+            if let Some(text) = value.get("value").and_then(Json::as_str) {
+                json_escape(text, out);
+            }
+            out.push('"');
+        }
+        Some("jsonValueArray") => {
+            out.push('[');
+            if let Some(Json::Arr(items)) = value.get("values") {
+                for (index, item) in items.iter().enumerate() {
+                    if index > 0 {
+                        out.push(',');
+                    }
+                    emit_json_text(item, out);
+                }
+            }
+            out.push(']');
+        }
+        Some("jsonValueObject") => {
+            out.push('{');
+            if let Some(Json::Arr(members)) = value.get("members") {
+                for (index, member) in members.iter().enumerate() {
+                    if index > 0 {
+                        out.push(',');
+                    }
+                    out.push('"');
+                    if let Some(key) = member.get("key").and_then(Json::as_str) {
+                        json_escape(key, out);
+                    }
+                    out.push_str("\":");
+                    if let Some(member_value) = member.get("value") {
+                        emit_json_text(member_value, out);
+                    }
+                }
+            }
+            out.push('}');
+        }
+        _ => out.push_str("null"),
+    }
+}
+
 fn execute(request: &str) -> String {
     let Some(json) = Json::parse(request) else {
         return error_object(400, "tdjson_rs: malformed request");
@@ -1886,6 +1994,25 @@ fn execute(request: &str) -> String {
         "getTextEmojiRanges" => match json.get("text").and_then(Json::as_str) {
             Some(text) => emoji_ranges_json(text),
             None => error_object(400, "Text must be encoded in UTF-8"),
+        },
+        "getJsonValue" => match json.get("json").and_then(Json::as_str) {
+            Some(text) => match Json::parse(text) {
+                Some(value) => {
+                    let mut out = String::new();
+                    emit_typed_json_value(&value, &mut out);
+                    out
+                }
+                None => error_object(400, "Failed to parse JSON object"),
+            },
+            None => error_object(400, "Failed to parse JSON object"),
+        },
+        "getJsonString" => match json.get("json_value") {
+            Some(value) => {
+                let mut out = String::new();
+                emit_json_text(value, &mut out);
+                text_object(&out)
+            }
+            None => text_object(""),
         },
         other => error_object(
             400,

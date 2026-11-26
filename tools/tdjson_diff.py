@@ -82,6 +82,17 @@ MATCH = [
     '{"@type":"getTextEmojiRanges","text":"ok \\ud83d\\udc4d\\ud83c\\udffd go"}',
     '{"@type":"getTextEmojiRanges","text":"\\u2764\\ufe0f"}',
     '{"@type":"getTextEmojiRanges","text":"a\\ud83d\\ude00b\\ud83d\\udc68\\u200d\\ud83d\\udc69\\u200d\\ud83d\\udc67c"}',
+    '{"@type":"getJsonValue","json":"{}"}',
+    '{"@type":"getJsonValue","json":"[]"}',
+    '{"@type":"getJsonValue","json":"{\\"a\\":1,\\"b\\":[true,false,null],\\"c\\":{\\"d\\":\\"x\\ny\\"}}"}',
+    '{"@type":"getJsonValue","json":"{\\"n\\": 1.5, \\"big\\": 1234567890123, \\"neg\\": -0.25}"}',
+    '{"@type":"getJsonValue","json":"{\\"u\\":\\"\\u4f60\\u597d\\"}"}',
+    '{"@type":"getJsonString","json_value":{"@type":"jsonValueNull"}}',
+    '{"@type":"getJsonString","json_value":{"@type":"jsonValueBoolean","value":true}}',
+    '{"@type":"getJsonString","json_value":{"@type":"jsonValueNumber","value":1.5}}',
+    '{"@type":"getJsonString","json_value":{"@type":"jsonValueString","value":"hi \\u4f60"}}',
+    '{"@type":"getJsonString","json_value":{"@type":"jsonValueArray","values":[{"@type":"jsonValueNumber","value":2},{"@type":"jsonValueString","value":"a"}]}}',
+    '{"@type":"getJsonString","json_value":{"@type":"jsonValueObject","members":[{"@type":"jsonObjectMember","key":"k","value":{"@type":"jsonValueNumber","value":3}}]}}',
 ]
 
 CONTROL = [
