@@ -7213,6 +7213,109 @@ fn log_action(kind: &str, json: &Json) -> Option<String> {
     }
 }
 
+fn is_allowed_quote_entity_type(entity_type: EType) -> bool {
+    matches!(
+        entity_type,
+        EType::Bold
+            | EType::Italic
+            | EType::Underline
+            | EType::Strikethrough
+            | EType::Spoiler
+            | EType::CustomEmoji
+            | EType::FormattedDate
+    )
+}
+
+fn process_quote_entities(entities: &mut Vec<TextEntity>, length: i32) {
+    entities.retain(|entity| is_allowed_quote_entity_type(entity.etype));
+    entities.retain(|entity| {
+        entity.offset >= 0
+            && entity.offset < length
+            && entity.length > 0
+            && entity.length <= length - entity.offset
+    });
+    remove_empty_entities(entities);
+    fix_entities(entities);
+    remove_empty_entities(entities);
+}
+
+fn search_quote(
+    text: &str,
+    quote: &str,
+    quote_position: i32,
+    text_entities: &mut Vec<TextEntity>,
+    quote_entities: &mut Vec<TextEntity>,
+) -> i32 {
+    let length = text.chars().map(char::len_utf16).sum::<usize>() as i32;
+    let quote_length = quote.chars().map(char::len_utf16).sum::<usize>() as i32;
+    if quote_length == 0 || quote_length > length {
+        return -1;
+    }
+    process_quote_entities(text_entities, length);
+    process_quote_entities(quote_entities, quote_length);
+
+    let quote_position = quote_position.clamp(0, length - 1);
+    let mut byte_positions: Vec<Option<usize>> = Vec::with_capacity(length as usize);
+    for (byte_index, c) in text.char_indices() {
+        byte_positions.push(Some(byte_index));
+        if c as u32 >= 0x10000 {
+            byte_positions.push(None);
+        }
+    }
+    if byte_positions.len() != length as usize {
+        return -1;
+    }
+    let quote_bytes = quote.as_bytes();
+    let check_position = |position: i32| -> bool {
+        if position < 0 || position > length - quote_length {
+            return false;
+        }
+        let Some(Some(byte_position)) = byte_positions.get(position as usize) else {
+            return false;
+        };
+        text.as_bytes()
+            .get(*byte_position..*byte_position + quote_bytes.len())
+            == Some(quote_bytes)
+    };
+    let mut i = 0i32;
+    while quote_position - i >= 0 || quote_position + i + 1 <= length - quote_length {
+        if check_position(quote_position - i) {
+            return quote_position - i;
+        }
+        if check_position(quote_position + i + 1) {
+            return quote_position + i + 1;
+        }
+        i += 1;
+    }
+    -1
+}
+
+fn search_quote_request(json: &Json) -> String {
+    let read = |key: &str| -> Result<(String, Vec<TextEntity>), String> {
+        match json.get(key) {
+            None | Some(Json::Null) => Err("Text and quote must be non-empty".to_string()),
+            Some(value) => {
+                let wrapper = Json::Obj(vec![("text".to_string(), value.clone())]);
+                read_formatted_text(&wrapper, false)
+            }
+        }
+    };
+    let (text, mut text_entities) = match read("text") {
+        Ok(value) => value,
+        Err(message) => return error_object(400, &message),
+    };
+    let (quote, mut quote_entities) = match read("quote") {
+        Ok(value) => value,
+        Err(message) => return error_object(400, &message),
+    };
+    let quote_position = json.get("quote_position").and_then(Json::as_i64).unwrap_or(0) as i32;
+    let position = search_quote(&text, &quote, quote_position, &mut text_entities, &mut quote_entities);
+    if position == -1 {
+        return error_object(404, "Not Found");
+    }
+    format!("{{\"@type\":\"foundPosition\",\"position\":{}}}", position)
+}
+
 fn execute(request: &str) -> String {
     let Some(json) = Json::parse(request) else {
         return error_object(400, "tdjson_rs: malformed request");
@@ -7224,6 +7327,7 @@ fn execute(request: &str) -> String {
         return result;
     }
     match kind {
+        "searchQuote" => search_quote_request(&json),
         "getTextEntities" => match json.get("text").and_then(Json::as_str) {
             Some(text) => entities_json(text),
             None => error_object(400, "Text must be encoded in UTF-8"),

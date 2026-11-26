@@ -167,11 +167,19 @@ MATCH = [
     '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":"+7"}',
     '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":"+86"}',
     '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":"+999"}',
+    '{"@type":"searchQuote","text":{"@type":"formattedText","text":"abcdef","entities":[]},"quote":{"@type":"formattedText","text":"cd","entities":[]},"quote_position":0}',
+    '{"@type":"searchQuote","text":{"@type":"formattedText","text":"abcabc","entities":[]},"quote":{"@type":"formattedText","text":"abc","entities":[]},"quote_position":4}',
+    '{"@type":"searchQuote","text":{"@type":"formattedText","text":"abcabc","entities":[]},"quote":{"@type":"formattedText","text":"abc","entities":[]},"quote_position":0}',
+    '{"@type":"searchQuote","text":{"@type":"formattedText","text":"abcdef","entities":[]},"quote":{"@type":"formattedText","text":"zz","entities":[]},"quote_position":0}',
+    '{"@type":"searchQuote","text":{"@type":"formattedText","text":"abcdef","entities":[]},"quote":{"@type":"formattedText","text":"","entities":[]},"quote_position":0}',
+    '{"@type":"searchQuote","text":{"@type":"formattedText","text":"\\ud83d\\ude00x","entities":[]},"quote":{"@type":"formattedText","text":"x","entities":[]},"quote_position":0}',
+    '{"@type":"searchQuote","text":{"@type":"formattedText","text":"abcdef","entities":[]},"quote":{"@type":"formattedText","text":"ab","entities":[{"@type":"textEntity","offset":0,"length":2,"type":{"@type":"textEntityTypeBold"}}]},"quote_position":0}',
+    '{"@type":"searchQuote","text":null,"quote":{"@type":"formattedText","text":"a","entities":[]},"quote_position":0}',
 ]
 
 CONTROL = [
-    '{"@type":"searchQuote","text":{"@type":"formattedText","text":"abc","entities":[]},"quote":{"@type":"formattedText","text":"b","entities":[]},"quote_position":0}',
     '{"@type":"getPhoneNumberInfoSync","language_code":"en","phone_number_prefix":123}',
+    '{"@type":"getTextEntities","text":123}',
 ]
 
 # 有状态 action 只在有序序列里有意义：每段序列对两个 dll 各跑一遍，逐项比结果。
