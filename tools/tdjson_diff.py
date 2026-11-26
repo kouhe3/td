@@ -160,6 +160,36 @@ CONTROL = [
     '{"@type":"getLanguagePackString","language_pack_database_path":"","localization_target":"android","language_pack_id":"en","key":"Continue"}',
 ]
 
+# 有状态 action 只在有序序列里有意义：每段序列对两个 dll 各跑一遍，逐项比结果。
+# 每段序列自己负责把状态恢复原值，避免污染其它段落。
+SEQUENCES = [
+    [
+        '{"@type":"getLogVerbosityLevel"}',
+        '{"@type":"setLogVerbosityLevel","new_verbosity_level":3}',
+        '{"@type":"getLogVerbosityLevel"}',
+        '{"@type":"setLogVerbosityLevel","new_verbosity_level":5}',
+        '{"@type":"getLogVerbosityLevel"}',
+    ],
+    [
+        '{"@type":"getLogTagVerbosityLevel","tag":"td_requests"}',
+        '{"@type":"setLogTagVerbosityLevel","tag":"td_requests","new_verbosity_level":7}',
+        '{"@type":"getLogTagVerbosityLevel","tag":"td_requests"}',
+        '{"@type":"setLogTagVerbosityLevel","tag":"td_requests","new_verbosity_level":3}',
+        '{"@type":"getLogTagVerbosityLevel","tag":"td_requests"}',
+    ],
+    [
+        '{"@type":"getLogStream"}',
+        '{"@type":"setLogStream","log_stream":{"@type":"logStreamEmpty"}}',
+        '{"@type":"getLogStream"}',
+        '{"@type":"setLogStream","log_stream":{"@type":"logStreamDefault"}}',
+        '{"@type":"getLogStream"}',
+        '{"@type":"getLogTagVerbosityLevel","tag":"no_such_tag"}',
+        '{"@type":"setLogTagVerbosityLevel","tag":"no_such_tag","new_verbosity_level":2}',
+        '{"@type":"addLogMessage","verbosity_level":1,"text":"seq-probe"}',
+        '{"@type":"getLogTags"}',
+    ],
+]
+
 
 def md5(path: Path) -> str:
     h = hashlib.md5()
@@ -233,6 +263,21 @@ def main(argv: list[str]) -> int:
         print(f"{'PASS' if ok else 'FAIL'} {case}")
         print(f"  cpp: {a}")
         print(f"  rs : {b}")
+
+    print("\n== SEQUENCE: 有状态 action 按有序序列比 ==  ")
+    for index, sequence in enumerate(SEQUENCES):
+        cpp_outputs = [run(cpp, step) for step in sequence]
+        rs_outputs = [run(rs, step) for step in sequence]
+        ok = cpp_outputs == rs_outputs
+        if not ok:
+            failures.append(f"sequence {index} differs")
+        print(f"{'PASS' if ok else 'FAIL'} sequence {index} ({len(sequence)} steps)")
+        for step, cpp_out, rs_out in zip(sequence, cpp_outputs, rs_outputs):
+            marker = " " if cpp_out == rs_out else ">"
+            print(f" {marker} {step}")
+            print(f"   cpp: {cpp_out}")
+            if cpp_out != rs_out:
+                print(f"   rs : {rs_out}")
 
     print(f"\nfailures={len(failures)}")
     for f in failures:

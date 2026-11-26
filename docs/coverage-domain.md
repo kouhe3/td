@@ -41,7 +41,8 @@
 | `parseTextEntities` | measured（F028, F029, F030） | 超出 int64 的 `version` 字面量走共享 JSON 层、错误文案不同（见 backlog B6）；`<tg-time>`、`<tg-emoji>` 等扩展标签未入 corpus：回流 T10 |
 | `parseMarkdown` / `getMarkdownText` | measured（F031–F034） | `get_markdown_v3` 的 roundtrip 自检降级路径（构造失败输入）未入 corpus：回流 T10 |
 | `searchStringsByPrefix` | measured（F035） | 非 ASCII 归一化（变音符号全表）、rating 并列时的次序未入 corpus：回流 T10 |
-| 同步 action 其余 11 项（白名单共 29，见 F026） | unmeasured | 逐项建 corpus：T10 |
+| 8 个日志类 action | measured（F036, F037, F038；`SEQUENCE` 段 3 段 19 步） | `logStreamFile`（写文件）未测：会落盘，回流条件 = 造隔离目录后另立判据 |
+| 同步 action 其余 3 项（白名单共 29，见 F026） | unmeasured | `searchQuote` / `getLanguagePackString` / `getPhoneNumberInfoSync`：回流 T10 |
 
 ## 边界之外（永久不在本仪器范围）
 

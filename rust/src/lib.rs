@@ -7056,6 +7056,142 @@ fn parse_text_entities(request: &Json) -> String {
     }
 }
 
+struct LogState {
+    level: i32,
+    stream: &'static str,
+    stream_path: String,
+    stream_max_file_size: i64,
+    tag_levels: [(&'static str, i32); 20],
+}
+
+static LOG_STATE: std::sync::Mutex<LogState> = std::sync::Mutex::new(LogState {
+    level: 5,
+    stream: "logStreamDefault",
+    stream_path: String::new(),
+    stream_max_file_size: 0,
+    tag_levels: [
+        ("actor", 14),
+        ("binlog", 12),
+        ("config_recoverer", 3),
+        ("connections", 3),
+        ("dc", 6),
+        ("dns_resolver", 4),
+        ("fd", 13),
+        ("file_gc", 3),
+        ("file_loader", 4),
+        ("file_references", 3),
+        ("get_difference", 3),
+        ("mtproto", 11),
+        ("net_query", 3),
+        ("notifications", 3),
+        ("proxy", 4),
+        ("raw_mtproto", 14),
+        ("sqlite", 14),
+        ("td_init", 7),
+        ("td_requests", 3),
+        ("update_file", 3),
+    ],
+});
+
+fn log_verbosity_json(level: i32) -> String {
+    format!("{{\"@type\":\"logVerbosityLevel\",\"verbosity_level\":{}}}", level)
+}
+
+fn tag_level(tag: &str) -> Option<i32> {
+    let state = LOG_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    state
+        .tag_levels
+        .iter()
+        .find(|(name, _)| *name == tag)
+        .map(|(_, level)| *level)
+}
+
+fn log_action(kind: &str, json: &Json) -> Option<String> {
+    let new_level = json.get("new_verbosity_level").and_then(Json::as_i64).unwrap_or(0) as i32;
+    match kind {
+        "getLogVerbosityLevel" => {
+            let state = LOG_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            Some(log_verbosity_json(state.level))
+        }
+        "setLogVerbosityLevel" => {
+            let mut state = LOG_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.level = new_level;
+            Some(ok_object())
+        }
+        "getLogStream" => {
+            let state = LOG_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let body = match state.stream {
+                "logStreamEmpty" => "{\"@type\":\"logStreamEmpty\"}".to_string(),
+                "logStreamFile" => format!(
+                    "{{\"@type\":\"logStreamFile\",\"path\":\"{}\",\"max_file_size\":{}}}",
+                    state.stream_path, state.stream_max_file_size
+                ),
+                _ => "{\"@type\":\"logStreamDefault\"}".to_string(),
+            };
+            Some(body)
+        }
+        "setLogStream" => {
+            let stream = json.get("log_stream");
+            let kind_name = stream
+                .and_then(|value| value.get("@type"))
+                .and_then(Json::as_str)
+                .unwrap_or("logStreamDefault");
+            let path = stream.and_then(|value| value.get("path")).and_then(Json::as_str).unwrap_or("");
+            let max_file_size = stream
+                .and_then(|value| value.get("max_file_size"))
+                .and_then(Json::as_i64)
+                .unwrap_or(0);
+            let mut state = LOG_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            state.stream = match kind_name {
+                "logStreamEmpty" => "logStreamEmpty",
+                "logStreamFile" => "logStreamFile",
+                _ => "logStreamDefault",
+            };
+            state.stream_path = if kind_name == "logStreamFile" {
+                path.to_string()
+            } else {
+                String::new()
+            };
+            state.stream_max_file_size = if kind_name == "logStreamFile" { max_file_size } else { 0 };
+            Some(ok_object())
+        }
+        "getLogTags" => {
+            let state = LOG_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            let mut out = String::from("{\"@type\":\"logTags\",\"tags\":[");
+            for (index, (name, _)) in state.tag_levels.iter().enumerate() {
+                if index > 0 {
+                    out.push(',');
+                }
+                out.push('"');
+                out.push_str(name);
+                out.push('"');
+            }
+            out.push_str("]}");
+            Some(out)
+        }
+        "getLogTagVerbosityLevel" => {
+            let tag = json.get("tag").and_then(Json::as_str).unwrap_or("");
+            Some(match tag_level(tag) {
+                Some(level) => log_verbosity_json(level),
+                None => error_object(400, "Log tag is not found"),
+            })
+        }
+        "setLogTagVerbosityLevel" => {
+            let tag = json.get("tag").and_then(Json::as_str).unwrap_or("");
+            let mut state = LOG_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+            match state.tag_levels.iter_mut().find(|(name, _)| *name == tag) {
+                Some(entry) => {
+                    entry.1 = new_level;
+                    Some(ok_object())
+                }
+                None => Some(error_object(400, "Log tag is not found")),
+            }
+        }
+        "addLogMessage" => Some(ok_object()),
+        _ => None,
+    }
+}
+
 fn execute(request: &str) -> String {
     let Some(json) = Json::parse(request) else {
         return error_object(400, "tdjson_rs: malformed request");
@@ -7063,6 +7199,9 @@ fn execute(request: &str) -> String {
     let Some(kind) = json.get("@type").and_then(Json::as_str) else {
         return error_object(400, "tdjson_rs: malformed request");
     };
+    if let Some(result) = log_action(kind, &json) {
+        return result;
+    }
     match kind {
         "getTextEntities" => match json.get("text").and_then(Json::as_str) {
             Some(text) => entities_json(text),
