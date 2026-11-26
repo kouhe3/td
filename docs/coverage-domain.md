@@ -1,6 +1,6 @@
 # 判据定义域（coverage domain）
 
-覆盖 `tdjson` C ABI 的 `td_execute` 纯函数路径与客户端首启 lane（B1a）。`measured` 需 test + fact；`unmeasured` 只占回流条件，不占 fact。
+覆盖 `tdjson` C ABI 的 `td_execute` 路径（29 个同步 action + 全部 1114 个函数的参数解析）与客户端 lane（首次运行、第二次运行、未授权状态机、真实登录记录）。`measured` 需 test + fact；`unmeasured` 只占回流条件，不占 fact。
 
 ## 实体类 × 文本形态
 
@@ -60,8 +60,8 @@
 | 请求 / 字符串里的非法 UTF-8、孤立代理对（22 条 bytes cell，各 action 的拒绝文案逐条对齐） | measured（F063） | — |
 | 全部 1114 个函数的参数解析（含 29 个同步 action）：按 TL 定义顺序、缺失/`null` 取默认、多余字段忽略 | measured（F081：1114 个 argument cell，MATCH 1528） | — |
 | 嵌套对象：抽象类字段必须带 `@type`（缺失 / 未知两种文案）、具体类字段不需要 | measured（F081：`sendMessage.input_message_content`、`getThemeParametersJsonString.theme` 两条样例 + 递归校验） | — |
-| 嵌套 `@type` 用构造号（数字）而非名字 | unmeasured | 顶层支持（已有 cell），嵌套未测；回流条件 = 造一条带数字 `@type` 的嵌套 cell |
-| 具体类字段带了**错的** `@type` | unmeasured | 未测；回流条件 = 同一条 lane 补两侧样例 |
+| 嵌套 `@type` 用构造号（数字） | measured（F082：正确号接受、未知号 `Unknown constructor 0x00003039`，新增 `CONSTRUCTOR_IDS` 表） | — |
+| 具体类字段的 `@type` 与字段类型都不校验（只要求是对象） | measured（F082：`theme` 的错 `@type`、`bg_color:true`、标量三条） | — |
 
 ## 客户端 lane（首次运行、第二次运行、未授权状态机、真实登录记录）
 

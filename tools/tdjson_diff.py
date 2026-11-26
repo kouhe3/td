@@ -467,6 +467,13 @@ MATCH = [
     b'{"@type":"cleanFileName","file_name":"\xff.txt"}',
     b'{"@type":"getPushReceiverId","payload":"{\\"user_id\\":\xff}"}',
     b'{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"ab","entities":[{"@type":"textEntity","offset":0,"length":2,"type":{"@type":"textEntityTypeTextUrl","url":"\xff"}}]}}',
+    # F082: nested @type as constructor id, abstract vs concrete field paths
+    '{"@type":"sendMessage","chat_id":1,"input_message_content":{"@type":-212805484}}',
+    '{"@type":"sendMessage","chat_id":1,"input_message_content":{"@type":12345}}',
+    '{"@type":"sendMessage","chat_id":1,"input_message_content":{"@type":"inputMessageText","text":5}}',
+    '{"@type":"getThemeParametersJsonString","theme":{"@type":"nope"}}',
+    '{"@type":"getThemeParametersJsonString","theme":{"bg_color":true}}',
+    '{"@type":"getThemeParametersJsonString","theme":5}',
 ]
 
 def argument_cells() -> list[str]:

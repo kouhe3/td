@@ -7709,12 +7709,16 @@ fn validate_value(value: &Json, type_name: &str) -> Result<(), String> {
             other => Err(expected_type_error("Number", other)),
         },
         _ => match value {
-            // A field named after a concrete constructor parses its own fields directly and
-            // does not need "@type" (the oracle accepts `theme:{}`); an abstract class does.
-            Json::Obj(_) => match tl_schema::CONSTRUCTORS.iter().find(|(known, _)| *known == base) {
-                Some((_, fields)) => validate_fields(value, fields),
-                None => validate_object(value),
-            },
+            // A field typed as a concrete constructor only has to be an object: the oracle
+            // ignores both its "@type" and its field types there (F082). An abstract class
+            // resolves "@type" to a constructor and validates that constructor's fields.
+            Json::Obj(_) => {
+                if tl_schema::CONSTRUCTORS.iter().any(|(known, _)| *known == base) {
+                    Ok(())
+                } else {
+                    validate_object(value)
+                }
+            }
             other => Err(expected_type_error("Object", other)),
         },
     }
@@ -7727,6 +7731,16 @@ fn validate_object(value: &Json) -> Result<(), String> {
             Ok(name) => name,
             Err(_) => return Err("Strings must be encoded in UTF-8".to_string()),
         },
+        // The oracle also accepts the constructor id instead of the name (F082).
+        Some(Json::Int(_, literal)) | Some(Json::Float(_, literal)) | Some(Json::Num(literal)) => {
+            let constructor = to_integer_i32(literal.as_bytes());
+            match tl_schema::CONSTRUCTOR_IDS.iter().find(|(id, _)| *id == constructor) {
+                Some((_, name)) => name,
+                None => {
+                    return Err(format!("Unknown constructor 0x{:08x}", constructor as u32))
+                }
+            }
+        }
         Some(other) => return Err(expected_type_error("String", other)),
     };
     let Some((_, fields)) = tl_schema::CONSTRUCTORS.iter().find(|(known, _)| *known == name) else {

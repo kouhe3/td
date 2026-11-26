@@ -15,8 +15,7 @@
     `setTdlibParameters`：首次运行逐行、同一 `database_directory` 的第二次运行按集合、
     `waitPhoneNumber` 下的未授权状态机逐行）与生成表的一致性。
     覆盖不到：第二次运行的 option 顺序（不可判，F078）、真实登录（需实时码 + 2FA，F079）、
-    非空号码的 `setAuthenticationPhoneNumber`、嵌套 `@type` 用构造号、具体类字段带错 `@type`、
-    `getLanguagePackString` 的成功路径（B7）。
+    非空号码的 `setAuthenticationPhoneNumber`、`getLanguagePackString` 的成功路径（B7）。
 
 失效条件:
     oracle 换了构建（md5 变）、Rust 换了 target/linker、或 `td/` 的 schema/数据表更新——
