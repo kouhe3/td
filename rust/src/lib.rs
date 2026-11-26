@@ -8235,11 +8235,16 @@ fn utc_offset_seconds() -> i64 {
     0
 }
 
-fn startup_sequence(client_id: c_int) -> Vec<String> {
+fn startup_sequence(client_id: c_int, second_run: bool) -> Vec<String> {
     let unix_time = unix_time_now().to_string();
     let utc_offset = utc_offset_seconds().to_string();
     let client = client_id.to_string();
-    client_options::STARTUP_TEMPLATE
+    let template: &[&str] = if second_run {
+        client_options::SECOND_RUN_TEMPLATE.as_slice()
+    } else {
+        client_options::STARTUP_TEMPLATE.as_slice()
+    };
+    template
         .iter()
         .map(|row| {
             row.replace("{CLIENT_ID}", &client)
@@ -8248,6 +8253,19 @@ fn startup_sequence(client_id: c_int) -> Vec<String> {
                 .replace("{COMMIT_HASH}", env!("TD_GIT_COMMIT_HASH"))
         })
         .collect()
+}
+
+// The oracle decides "this directory was opened before" from its binlog (F072/F078). The
+// judged surface is only td_receive, so a marker file is enough to pick the second-run table.
+fn load_or_init_state(database_directory: &str) -> bool {
+    let directory = std::path::Path::new(database_directory);
+    let marker = directory.join(".tdjson_rs_state");
+    if marker.is_file() {
+        return true;
+    }
+    let _ = std::fs::create_dir_all(directory);
+    let _ = std::fs::write(&marker, env!("TD_GIT_COMMIT_HASH"));
+    false
 }
 
 fn send_request(client_id: c_int, bytes: &[u8]) {
@@ -8261,6 +8279,10 @@ fn send_request(client_id: c_int, bytes: &[u8]) {
     if kind.as_slice() != b"setTdlibParameters".as_slice() {
         return;
     }
+    let second_run = match json.get("database_directory") {
+        Some(Json::Str(bytes)) => std::str::from_utf8(bytes).map(load_or_init_state).unwrap_or(false),
+        _ => false,
+    };
     let Ok(mut clients) = CLIENTS.lock() else {
         return;
     };
@@ -8268,7 +8290,7 @@ fn send_request(client_id: c_int, bytes: &[u8]) {
     if let Some(state) = clients.get_mut(index) {
         if !state.parameters_set {
             state.parameters_set = true;
-            state.pending = startup_sequence(client_id).into_iter().collect();
+            state.pending = startup_sequence(client_id, second_run).into_iter().collect();
         }
     }
 }

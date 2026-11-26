@@ -10,9 +10,10 @@
     与仓库内容逐字节相同。
 
 覆盖边界:
-    覆盖 `tdjson` C ABI 的 `td_execute` 面、客户端首启 lane（一个 client、全新
-    `database_directory`、固定 `setTdlibParameters`）与生成表的一致性。
-    覆盖不到：第二次运行（已下发值 kv）、登录状态机（backlog B1 的后续轮次）、
+    覆盖 `tdjson` C ABI 的 `td_execute` 面、客户端 lane（一个 client、固定
+    `setTdlibParameters`：首次运行逐行、同一 `database_directory` 的第二次运行按集合）
+    与生成表的一致性。
+    覆盖不到：第二次运行的 option 顺序（不可判，F078）、登录状态机（backlog B1 的后续轮次）、
     `getLanguagePackString` 的成功路径（B7）。
 
 失效条件:

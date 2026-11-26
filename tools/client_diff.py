@@ -7,13 +7,15 @@
 判据:
     退出码 0 = ① A/A 地板：oracle 两次独立进程、规范化后逐行相同；
                ② MATCH：两侧逐行相同（白名单只有 unix_time / utc_time_offset / commit_hash）；
-               ③ 变异自检：篡改一条 option 后比较器必须报差异；
-               ④ 白名单值自身可判：unix_time 与采集时刻相差 ≤5s、两条 commit_hash 各自可解释。
+               ③ second run：同一 database_directory 的第二次运行按**集合**相等
+                  （125 个 option + 2 状态；顺序不参与，F078）；
+               ④ 变异自检：篡改一条 option 后比较器必须报差异；
+               ⑤ 白名单值自身可判：unix_time 与采集时刻相差 ≤5s、两条 commit_hash 各自可解释。
 
 覆盖边界:
-    只覆盖「一个全新 database_directory、一个 client、先 `td_send(setTdlibParameters)` 再 drain
-    到 `authorizationStateWaitPhoneNumber`」这一条驱动。第二个 client（F077）、已下发值 kv、
-    登录状态机、其它 `setTdlibParameters` 参数 lane 不在内。
+    只覆盖「一个 client、先 `td_send(setTdlibParameters)` 再 drain 到
+    `authorizationStateWaitPhoneNumber`」这一条驱动，分首次运行（逐行）与同一目录的第二次
+    运行（按集合）。第二个 client（F077）、登录状态机、其它 `setTdlibParameters` 参数 lane 不在内。
 
 失效条件:
     oracle md5 变、TDLib 版本变（option 表变）、驱动参数变——任一条都要重判 gate。
@@ -89,7 +91,7 @@ def add_runtime_dirs() -> None:
             os.add_dll_directory(str(candidate))
 
 
-def worker(dll: str, db: str, out: str) -> int:
+def worker(dll: str, db: str, out: str, fresh: bool) -> int:
     add_runtime_dirs()
     lib = ctypes.CDLL(dll)
     lib.td_create_client_id.restype = ctypes.c_int
@@ -100,9 +102,9 @@ def worker(dll: str, db: str, out: str) -> int:
     lib.td_execute.argtypes = [ctypes.c_char_p]
 
     database = Path(db)
-    if database.exists():
+    if fresh and database.exists():
         shutil.rmtree(database)
-    database.mkdir(parents=True)
+    database.mkdir(parents=True, exist_ok=True)
 
     lib.td_execute(json.dumps({"@type": "setLogVerbosityLevel", "new_verbosity_level": 0}).encode())
     client_id = lib.td_create_client_id()
@@ -153,6 +155,27 @@ def option_value(rows: list[str], name: str) -> str | None:
     return None
 
 
+def compare_sets(left: list[str], right: list[str]) -> str | None:
+    if len(left) != len(right):
+        return f"line count {len(left)} != {len(right)}"
+    a = sorted(normalize(row) for row in left)
+    b = sorted(normalize(row) for row in right)
+    if a == b:
+        return None
+    missing = [row for row in a if row not in b]
+    extra = [row for row in b if row not in a]
+    detail = f"{len(missing)} only in cpp, {len(extra)} only in rs"
+    if missing:
+        detail += f"\n    only cpp: {missing[0][:220]}"
+    if extra:
+        detail += f"\n    only rs : {extra[0][:220]}"
+    return detail
+
+
+def option_count(rows: list[str]) -> int:
+    return sum(1 for row in rows if json.loads(row).get("@type") == "updateOption")
+
+
 def mutate(rows: list[str]) -> list[str]:
     changed = list(rows)
     for index, row in enumerate(changed):
@@ -162,13 +185,16 @@ def mutate(rows: list[str]) -> list[str]:
     raise SystemExit("FAIL self-test: no version option to mutate")
 
 
-def capture(dll: Path, tag: str) -> tuple[list[str], dict]:
+def capture(dll: Path, tag: str, database: str, fresh: bool = True) -> tuple[list[str], dict]:
     base = ROOT / "work" / "client" / tag
-    database = base / "db"
+    database_path = ROOT / "work" / "client" / database / "db"
     out = base / "rows.jsonl"
     base.mkdir(parents=True, exist_ok=True)
+    command = [PYTHON, str(Path(__file__).resolve()), "--capture", str(dll), str(database_path), str(out)]
+    if not fresh:
+        command.append("--reuse")
     process = subprocess.run(
-        [PYTHON, str(Path(__file__).resolve()), "--capture", str(dll), str(database), str(out)],
+        command,
         capture_output=True,
     )
     text = ((process.stdout or b"") + (process.stderr or b"")).decode("utf-8", "replace")
@@ -181,7 +207,7 @@ def capture(dll: Path, tag: str) -> tuple[list[str], dict]:
 
 def main(argv: list[str]) -> int:
     if argv[:1] == ["--capture"]:
-        return worker(argv[1], argv[2], argv[3])
+        return worker(argv[1], argv[2], argv[3], "--reuse" not in argv)
 
     failures: list[str] = []
     if not CPP.is_file():
@@ -196,9 +222,9 @@ def main(argv: list[str]) -> int:
         return 1
     print(f"oracle md5={actual}")
 
-    cpp_a, meta_a = capture(CPP, "cpp-a")
-    cpp_b, _ = capture(CPP, "cpp-b")
-    rs, meta_rs = capture(RS, "rs")
+    cpp_a, meta_a = capture(CPP, "cpp-a", "cpp", fresh=True)
+    cpp_b, _ = capture(CPP, "cpp-b", "cpp-b", fresh=True)
+    rs, meta_rs = capture(RS, "rs", "rs", fresh=True)
 
     print("\n== self-test: 管道不能空转 ==")
     checks = [
@@ -222,6 +248,36 @@ def main(argv: list[str]) -> int:
     if diff:
         failures.append("client lane differs: " + diff.split("\n")[0])
     print(f"{'PASS' if diff is None else 'FAIL'} cpp vs rs (129 lines)" + ("" if diff is None else f"\n{diff}"))
+
+    print("\n== second run: 同一 database_directory，按集合比较（顺序不参与，F078） ==")
+    cpp_2, _ = capture(CPP, "cpp-2", "cpp", fresh=False)
+    cpp_3, _ = capture(CPP, "cpp-3", "cpp", fresh=False)
+    rs_2, _ = capture(RS, "rs-2", "rs", fresh=False)
+
+    shapes = [
+        ("cpp 第二次运行是 127 行 / 125 个 option", len(cpp_2) == 127 and option_count(cpp_2) == 125, f"cpp {len(cpp_2)}/{option_count(cpp_2)}"),
+        ("rust 第二次运行同形状", len(rs_2) == 127 and option_count(rs_2) == 125, f"rs {len(rs_2)}/{option_count(rs_2)}"),
+    ]
+    for name, ok, detail in shapes:
+        if not ok:
+            failures.append(f"second-run shape: {name} ({detail})")
+        print(f"{'PASS' if ok else 'FAIL'} {name}" + ("" if ok else f": {detail}"))
+
+    diff = compare_sets(cpp_2, cpp_3)
+    if diff:
+        failures.append("second-run floor unstable: " + diff.split("\n")[0])
+    print(f"{'PASS' if diff is None else 'FAIL'} cpp-2 vs cpp-3 (set)" + ("" if diff is None else f"\n{diff}"))
+
+    diff = compare_sets(cpp_2, rs_2)
+    if diff:
+        failures.append("second-run lane differs: " + diff.split("\n")[0])
+    print(f"{'PASS' if diff is None else 'FAIL'} cpp vs rs (second run, set)" + ("" if diff is None else f"\n{diff}"))
+
+    diff = compare_sets(cpp_2, mutate(cpp_2))
+    ok = diff is not None
+    if not ok:
+        failures.append("self-test failed: second-run mutation not detected")
+    print(f"{'PASS' if ok else 'FAIL'} second-run mutation detected" + ("" if ok else ": 集合比较器对改过的 option 仍报相同"))
 
     print("\n== self-test: 变异必须被检出 ==")
     diff = compare(cpp_a, mutate(cpp_a))

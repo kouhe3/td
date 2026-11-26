@@ -67,7 +67,8 @@
 | 动态值 `unix_time` / `utc_time_offset` / `commit_hash` | measured（F076：语义校验——与实际时刻相差 ≤5 s、两侧时区偏移相同、各自可解释） | `commit_hash` 两侧各自烘焙 HEAD，不做相等比较 |
 | `@client_id` 注入（id 从 1 起、每行携带） | measured（F076：两侧 id 都是 1 的断言） | — |
 | 同一进程里的第二个 client | unmeasured | 会多 6 条全局 update 且顺序错位（F077）；判据按「一个进程一个 client」设计 |
-| 第二次运行（同一 `database_directory`，只发变化项） | unmeasured | 需要「已下发值」kv（F072）；回流条件 = kv 实现后另立判据 |
+| 第二次运行（同一 `database_directory`）：127 行 = 125 个 option + 2 状态，值取最终态（首启的 3/5 中间值不再出现） | measured（F078：`tools/client_diff.py` second-run 段，**按集合**比较 + A/A 集合地板 + 变异自检） | 逐行顺序见下一行 |
+| 第二次运行的 option 顺序 | unmeasured | oracle 的 run2/3/4 两两不同（首个差异在第 4 行），并发更新顺序不可判；Rust 侧按名字排序输出，判据只比集合 |
 | `waitPhoneNumber` 之后的登录状态机 | unmeasured | 需要实时验证码 + 2FA（F073），不可回归；回流条件 = 一次性实测记录 + 人工 |
 | 其它 `setTdlibParameters` 参数 lane（`use_test_dc:false`、加密 key、语言 / 设备字段） | unmeasured | 回流条件 = 该 lane 有独立判据时 |
 
