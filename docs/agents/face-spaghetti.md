@@ -14,8 +14,8 @@
 | 一次性探测目录 | `work/`（gitignored） | — |
 | 仪器目录 | `tools/` | — |
 | 只读 oracle | `C:/tmp/td-build/libtdjson.dll`（md5 `0398814038978aaeef7f8d6ac62bb8ff`，97,185,382 B）；运行副本由 `tools/tdjson_diff.py` 直接加载，不改写 | — |
-| backlog 发布 | 未装 `/setup-matt-pocock-skills`；退回 `tasks/backlog.md` | — |
-| 配套文件 | `docs/agents/issue-tracker.md` / `triage-labels.md` / `domain.md` 均未装 | — |
+| backlog 发布 | GitHub issues，仓库钉死 `kouhe3/td`（`docs/agents/issue-tracker.md`）；`tasks/backlog.md` 保留未成 issue 的条目 | — |
+| 配套文件 | `docs/agents/issue-tracker.md` / `triage-labels.md` / `domain.md` 已装（mattpocock-skills 1.3.2，project scope） | — |
 | 门禁 | `bash C:/Users/K/.omp/agent/skills/face-spaghetti/scripts/append-only-check.sh --worktree`（在 Git Bash 里跑）；`python tools/tdjson_diff.py` | — |
 
 配套分工见 skill 的 `references/pairing.md`；本文件只记落点。

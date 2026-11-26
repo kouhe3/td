@@ -9,6 +9,7 @@
 !/docs/plans/
 /work/
 /rust/target/
+/.omp/plugins/node_modules/
 /tdlib/
 vcpkg/
 .clang-tidy
