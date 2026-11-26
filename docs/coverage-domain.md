@@ -10,9 +10,9 @@
 |---|---|---|---|---|
 | mention | measured（F005, F010） | measured（F007） | measured（F005, F010） | — |
 | hashtag | measured（F009, F011） | measured（F007, F009） | measured（F014：`#b#` 否决、>256 截断） | — |
-| botCommand | measured（F011） | measured（F051） | unmeasured | 空名 / 纯符号名：回流 T16 |
+| botCommand | measured（F011） | measured（F051） | measured（F057：`/`、`/a`、`/a b`、`/1`、`/_`、`/@bot`、`/start@`、词前缀否决） | — |
 | cashtag | measured（F011） | measured（F051） | measured（F051：`$btc` 小写拒收、`$ABCDEFGHI` 过长拒收） | — |
-| bankCardNumber | measured（F011） | — | measured（F051：12–19 位逐长度，非 Luhn 拒收） | 各卡组织前缀表未逐条枚举 |
+| bankCardNumber | measured（F011） | — | measured（F051：12–19 位逐长度，非 Luhn 拒收；F057：Visa/MC/Amex/UnionPay/MIR 的组织长度表与边界前缀 2220/2221/2720/2204/2205） | — |
 | tonAddress | measured（F013, F015） | — | measured（F051：坏校验和、短串、raw `0:<hex>`） | — |
 | url（含 tgUrl / mailto） | measured（F008） | measured（F051） | measured（F051：IPv6、超长 path、无协议形态） | — |
 | emailAddress | measured（F008） | — | measured（F051：非 ASCII 本地部分与域名） | — |
@@ -39,7 +39,7 @@
 | `getOption` | measured（F027：`version` 与两种拒绝） | `commit_hash` 绑定构建时 HEAD，两侧各自烘焙 → 仓库前进即不同，不构成可判 cell（unmeasured） |
 | `parseTextEntities` | measured（F028, F029, F030, F051：`<tg-time>`/`<tg-emoji>`、未闭合标签、version 0/缺省） | — |
 | `parseMarkdown` / `getMarkdownText` | measured（F031–F034, F051：v3 roundtrip 自检与降级路径） | — |
-| `searchStringsByPrefix` | measured（F035, F051：变音符号、大小写、重复项并列次序） | 归一化全表未逐字符枚举 |
+| `searchStringsByPrefix` | measured（F035, F051：变音符号、大小写、重复项并列次序；F057：18 组变音符号归一化） | 归一化全表未逐字符枚举（只抽样 18 组） |
 | 8 个日志类 action | measured（F036, F037, F038, F053；`SEQUENCE` 段 4 段 35 步，含隔离目录下的文件流与三条错误路径） | 符号链接形态的路径规范化未测（C++ 的 realpath 会解析链接） |
 | `getLanguagePackString` | measured（F039：三道校验 + 无库 404） | 成功路径需要真实的语言包数据库文件（`tdlib-data`），回流条件 = 拿到 pack 数据后另立判据（见 backlog B7） |
 | `searchQuote` | measured（F043, F051：负 offset / 越界长度实体、越界 quote_position） | — |
