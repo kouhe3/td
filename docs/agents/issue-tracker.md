@@ -4,7 +4,9 @@ Issues and specs for this repo live as GitHub issues **in `kouhe3/td`** (the for
 
 ## Repo pinning (read first)
 
-This clone has two remotes: `origin` = `kouhe3/td` and `upstream` = `tdlib/td`. In this clone `gh repo view` resolved to **`tdlib/td`** — the parent project, where we must never file anything.
+This clone has two remotes: `origin` = `kouhe3/td` and `upstream` = `tdlib/td`. A fresh clone carries `remote.upstream.gh-resolved = base` inherited from the fork parent, so `gh repo view` resolves to **`tdlib/td`** — the parent project, where we must never file anything.
+
+Fixed here with `gh repo set-default kouhe3/td` (writes `remote.origin.gh-resolved = base` into `.git/config`, verified: `gh repo view --json nameWithOwner` → `kouhe3/td`). That setting is **not versioned**, so run it again after every fresh clone.
 
 - Every write takes `-R kouhe3/td`: `gh issue create -R kouhe3/td …`, `gh issue comment -R kouhe3/td <n> …`.
 - Before the first write of a session, confirm the target: `gh repo view kouhe3/td --json nameWithOwner`.
