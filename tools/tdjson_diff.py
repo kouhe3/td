@@ -129,6 +129,16 @@ MATCH = [
     '{"@type":"parseTextEntities","text":"<code class=\\"language-py\\">x</code>","parse_mode":{"@type":"textParseModeHTML"}}',
     '{"@type":"parseTextEntities","text":"x","parse_mode":{"@type":"textParseModeMarkdown","version":3}}',
     '{"@type":"parseTextEntities","text":"&nbsp; &amp","parse_mode":{"@type":"textParseModeHTML"}}',
+    '{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"hi there","entities":[]}}',
+    '{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"bold","entities":[{"@type":"textEntity","offset":0,"length":4,"type":{"@type":"textEntityTypeBold"}}]}}',
+    '{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"x=1","entities":[{"@type":"textEntity","offset":0,"length":3,"type":{"@type":"textEntityTypeCode"}}]}}',
+    '{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"bi","entities":[{"@type":"textEntity","offset":0,"length":2,"type":{"@type":"textEntityTypeBold"}},{"@type":"textEntity","offset":0,"length":2,"type":{"@type":"textEntityTypeItalic"}}]}}',
+    '{"@type":"parseMarkdown","text":{"@type":"formattedText","text":"hi *there*","entities":[]}}',
+    '{"@type":"parseMarkdown","text":{"@type":"formattedText","text":"**b** and *i*","entities":[]}}',
+    '{"@type":"parseMarkdown","text":null}',
+    '{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"see t.me","entities":[{"@type":"textEntity","offset":4,"length":4,"type":{"@type":"textEntityTypeUrl"}}]}}',
+    '{"@type":"parseMarkdown","text":{"@type":"formattedText","text":"0123456789","entities":[{"@type":"textEntity","offset":4,"length":10,"type":{"@type":"textEntityTypeBold"}}]}}',
+    '{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"a\\rb","entities":[{"@type":"textEntity","offset":0,"length":3,"type":{"@type":"textEntityTypeBold"}}]}}',
 ]
 
 CONTROL = [

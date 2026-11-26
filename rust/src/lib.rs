@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashSet;
 mod emoji_table;
 mod mime_tables;
 
@@ -2115,6 +2116,11 @@ const MAX_USER_ID: i64 = (1 << 40) - 1;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum EType {
+    Mention,
+    Hashtag,
+    BotCommand,
+    Url,
+    EmailAddress,
     Bold,
     Italic,
     Code,
@@ -2122,18 +2128,33 @@ enum EType {
     PreCode,
     TextUrl,
     MentionName,
+    Cashtag,
+    PhoneNumber,
     Underline,
     Strikethrough,
     BlockQuote,
-    ExpandableBlockQuote,
-    FormattedDate,
+    BankCardNumber,
+    MediaTimestamp,
     Spoiler,
     CustomEmoji,
+    ExpandableBlockQuote,
+    FormattedDate,
+    TonAddress,
 }
 
 impl EType {
+    /// index of MessageEntity::Type, used for the entity type bit masks
+    fn index(self) -> u32 {
+        self as u32
+    }
+
     fn type_name(self) -> &'static str {
         match self {
+            EType::Mention => "textEntityTypeMention",
+            EType::Hashtag => "textEntityTypeHashtag",
+            EType::BotCommand => "textEntityTypeBotCommand",
+            EType::Url => "textEntityTypeUrl",
+            EType::EmailAddress => "textEntityTypeEmailAddress",
             EType::Bold => "textEntityTypeBold",
             EType::Italic => "textEntityTypeItalic",
             EType::Code => "textEntityTypeCode",
@@ -2141,40 +2162,59 @@ impl EType {
             EType::PreCode => "textEntityTypePreCode",
             EType::TextUrl => "textEntityTypeTextUrl",
             EType::MentionName => "textEntityTypeMentionName",
+            EType::Cashtag => "textEntityTypeCashtag",
+            EType::PhoneNumber => "textEntityTypePhoneNumber",
             EType::Underline => "textEntityTypeUnderline",
             EType::Strikethrough => "textEntityTypeStrikethrough",
             EType::BlockQuote => "textEntityTypeBlockQuote",
-            EType::ExpandableBlockQuote => "textEntityTypeExpandableBlockQuote",
-            EType::FormattedDate => "textEntityTypeDateTime",
+            EType::BankCardNumber => "textEntityTypeBankCardNumber",
+            EType::MediaTimestamp => "textEntityTypeMediaTimestamp",
             EType::Spoiler => "textEntityTypeSpoiler",
             EType::CustomEmoji => "textEntityTypeCustomEmoji",
+            EType::ExpandableBlockQuote => "textEntityTypeExpandableBlockQuote",
+            EType::FormattedDate => "textEntityTypeDateTime",
+            EType::TonAddress => "textEntityTypeTonAddress",
         }
     }
 
     /// MessageEntity.cpp operator<<; these names appear inside error messages.
     fn message_name(self) -> &'static str {
         match self {
+            EType::Mention => "Mention",
+            EType::Hashtag => "Hashtag",
+            EType::BotCommand => "BotCommand",
+            EType::Url => "Url",
+            EType::EmailAddress => "EmailAddress",
             EType::Bold => "Bold",
             EType::Italic => "Italic",
+            EType::Underline => "Underline",
+            EType::Strikethrough => "Strikethrough",
+            EType::BlockQuote => "BlockQuote",
             EType::Code => "Code",
             EType::Pre => "Pre",
             EType::PreCode => "PreCode",
             EType::TextUrl => "TextUrl",
             EType::MentionName => "MentionName",
-            EType::Underline => "Underline",
-            EType::Strikethrough => "Strikethrough",
-            EType::BlockQuote => "BlockQuote",
-            EType::ExpandableBlockQuote => "ExpandableBlockQuote",
-            EType::FormattedDate => "Date",
+            EType::Cashtag => "Cashtag",
+            EType::PhoneNumber => "PhoneNumber",
+            EType::BankCardNumber => "BankCardNumber",
+            EType::MediaTimestamp => "MediaTimestamp",
             EType::Spoiler => "Spoiler",
             EType::CustomEmoji => "CustomEmoji",
+            EType::ExpandableBlockQuote => "ExpandableBlockQuote",
+            EType::FormattedDate => "Date",
+            EType::TonAddress => "TonAddress",
         }
     }
 
-    /// MessageEntity::get_type_priority; only the values reachable from the
-    /// three parsers are listed.
+    /// MessageEntity::get_type_priority
     fn priority(self) -> i32 {
         match self {
+            EType::Mention => 50,
+            EType::Hashtag => 50,
+            EType::BotCommand => 50,
+            EType::Url => 50,
+            EType::EmailAddress => 50,
             EType::Bold => 90,
             EType::Italic => 91,
             EType::Code => 20,
@@ -2182,17 +2222,23 @@ impl EType {
             EType::PreCode => 10,
             EType::TextUrl => 49,
             EType::MentionName => 49,
+            EType::Cashtag => 50,
+            EType::PhoneNumber => 50,
             EType::Underline => 92,
             EType::Strikethrough => 93,
             EType::BlockQuote => 0,
-            EType::ExpandableBlockQuote => 0,
-            EType::FormattedDate => 30,
+            EType::BankCardNumber => 50,
+            EType::MediaTimestamp => 50,
             EType::Spoiler => 94,
             EType::CustomEmoji => 99,
+            EType::ExpandableBlockQuote => 0,
+            EType::FormattedDate => 30,
+            EType::TonAddress => 50,
         }
     }
 }
 
+#[derive(Clone, PartialEq)]
 struct TextEntity {
     etype: EType,
     offset: i32,
@@ -2202,6 +2248,7 @@ struct TextEntity {
     custom_emoji_id: i64,
     date: i32,
     date_flags: i32,
+    media_timestamp: i32,
 }
 
 impl TextEntity {
@@ -2215,6 +2262,7 @@ impl TextEntity {
             custom_emoji_id: 0,
             date: 0,
             date_flags: 0,
+            media_timestamp: -1,
         }
     }
 }
@@ -2226,6 +2274,1561 @@ fn sort_entities(entities: &mut [TextEntity]) {
             .then_with(|| right.length.cmp(&left.length))
             .then_with(|| left.etype.priority().cmp(&right.etype.priority()))
     });
+}
+
+// ---------------------------------------------------------------------------
+// parseMarkdown / getMarkdownText: the v3 pipeline of MessageEntity.cpp
+// ---------------------------------------------------------------------------
+
+fn entity_type_mask(etype: EType) -> u32 {
+    1 << etype.index()
+}
+
+fn splittable_entities_mask() -> u32 {
+    entity_type_mask(EType::Bold)
+        | entity_type_mask(EType::Italic)
+        | entity_type_mask(EType::Underline)
+        | entity_type_mask(EType::Strikethrough)
+        | entity_type_mask(EType::Spoiler)
+}
+
+fn blockquote_entities_mask() -> u32 {
+    entity_type_mask(EType::BlockQuote) | entity_type_mask(EType::ExpandableBlockQuote)
+}
+
+fn continuous_entities_mask() -> u32 {
+    entity_type_mask(EType::Mention)
+        | entity_type_mask(EType::Hashtag)
+        | entity_type_mask(EType::BotCommand)
+        | entity_type_mask(EType::Url)
+        | entity_type_mask(EType::EmailAddress)
+        | entity_type_mask(EType::TextUrl)
+        | entity_type_mask(EType::MentionName)
+        | entity_type_mask(EType::Cashtag)
+        | entity_type_mask(EType::PhoneNumber)
+        | entity_type_mask(EType::BankCardNumber)
+        | entity_type_mask(EType::MediaTimestamp)
+        | entity_type_mask(EType::CustomEmoji)
+        | entity_type_mask(EType::TonAddress)
+}
+
+fn pre_entities_mask() -> u32 {
+    entity_type_mask(EType::Pre)
+        | entity_type_mask(EType::Code)
+        | entity_type_mask(EType::PreCode)
+        | entity_type_mask(EType::FormattedDate)
+}
+
+fn user_entities_mask() -> u32 {
+    splittable_entities_mask()
+        | blockquote_entities_mask()
+        | entity_type_mask(EType::TextUrl)
+        | entity_type_mask(EType::MentionName)
+        | entity_type_mask(EType::CustomEmoji)
+        | pre_entities_mask()
+}
+
+fn is_splittable_entity(etype: EType) -> bool {
+    entity_type_mask(etype) & splittable_entities_mask() != 0
+}
+
+fn is_blockquote_entity(etype: EType) -> bool {
+    entity_type_mask(etype) & blockquote_entities_mask() != 0
+}
+
+fn is_continuous_entity(etype: EType) -> bool {
+    entity_type_mask(etype) & continuous_entities_mask() != 0
+}
+
+fn is_pre_entity(etype: EType) -> bool {
+    entity_type_mask(etype) & pre_entities_mask() != 0
+}
+
+fn is_user_entity(etype: EType) -> bool {
+    entity_type_mask(etype) & user_entities_mask() != 0
+}
+
+const SPLITTABLE_ENTITY_TYPE_COUNT: usize = 5;
+
+fn splittable_entity_type_index(etype: EType) -> usize {
+    match etype {
+        EType::Bold => 0,
+        EType::Italic => 1,
+        EType::Underline => 2,
+        EType::Strikethrough => 3,
+        EType::Spoiler => 4,
+        _ => unreachable!(),
+    }
+}
+
+/// td/utils/utf8.cpp utf8_utf16_length
+fn text_length(text: &[u8]) -> i32 {
+    let mut result = 0;
+    for &c in text {
+        if utf8_is_first_code_unit(c) {
+            result += 1 + i32::from((c & 0xf8) == 0xf0);
+        }
+    }
+    result
+}
+
+/// td/utils/utf8.cpp utf8_utf16_truncate
+fn utf16_truncate(text: &[u8], mut length: i32) -> &[u8] {
+    for (index, &c) in text.iter().enumerate() {
+        if utf8_is_first_code_unit(c) {
+            if length <= 0 {
+                return &text[..index];
+            }
+            length -= 1;
+            if c >= 0xf0 {
+                length -= 1;
+            }
+        }
+    }
+    text
+}
+
+/// td/utils/utf8.cpp utf8_utf16_substr
+fn utf8_utf16_substr(text: &[u8], offset: i32, length: i32) -> &[u8] {
+    let rest = if offset == 0 {
+        text
+    } else {
+        let cut = utf16_truncate(text, offset).len();
+        &text[cut..]
+    };
+    utf16_truncate(rest, length)
+}
+
+fn is_valid_user_id(user_id: i64) -> bool {
+    0 < user_id && user_id <= MAX_USER_ID
+}
+
+fn remove_empty_entities(entities: &mut Vec<TextEntity>) {
+    entities.retain(|entity| {
+        if entity.length <= 0 {
+            return false;
+        }
+        match entity.etype {
+            EType::TextUrl => !entity.argument.is_empty(),
+            EType::MentionName => is_valid_user_id(entity.user_id),
+            EType::CustomEmoji => entity.custom_emoji_id != 0,
+            EType::FormattedDate => entity.date > 0,
+            _ => true,
+        }
+    });
+}
+
+fn are_entities_valid(entities: &[TextEntity]) -> bool {
+    if entities.is_empty() {
+        return true;
+    }
+
+    let mut end_pos = [-1i32; SPLITTABLE_ENTITY_TYPE_COUNT];
+    let mut stack: Vec<&TextEntity> = Vec::new();
+    let mut nested_entity_type_mask = 0u32;
+    for entity in entities {
+        while let Some(top) = stack.last() {
+            if entity.offset < top.offset + top.length {
+                break;
+            }
+            nested_entity_type_mask &= !entity_type_mask(top.etype);
+            stack.pop();
+        }
+
+        if let Some(top) = stack.last() {
+            if entity.offset + entity.length > top.offset + top.length {
+                // entity intersects some previous entity
+                return false;
+            }
+            if nested_entity_type_mask & entity_type_mask(entity.etype) != 0 {
+                // entity has the same type as one of the previous nested
+                return false;
+            }
+            if is_pre_entity(top.etype) {
+                // Pre and Code can't contain nested entities
+                return false;
+            }
+            // parents are not pre after this point
+            if is_pre_entity(entity.etype) && (nested_entity_type_mask & !blockquote_entities_mask()) != 0 {
+                // Pre and Code can't be part of other entities, except blockquote
+                return false;
+            }
+            if (is_continuous_entity(entity.etype) || is_blockquote_entity(entity.etype))
+                && (nested_entity_type_mask & continuous_entities_mask()) != 0
+            {
+                // continuous and blockquote can't be part of other continuous entity
+                return false;
+            }
+            if is_blockquote_entity(entity.etype) && (nested_entity_type_mask & blockquote_entities_mask()) != 0 {
+                // blockquote entities can't be nested
+                return false;
+            }
+            if (nested_entity_type_mask & splittable_entities_mask()) != 0 {
+                // the previous nested entity may be needed to split for consistency
+                return false;
+            }
+        }
+
+        if is_splittable_entity(entity.etype) {
+            let index = splittable_entity_type_index(entity.etype);
+            if end_pos[index] >= entity.offset {
+                // the entities can be merged
+                return false;
+            }
+            end_pos[index] = entity.offset + entity.length;
+        }
+        stack.push(entity);
+        nested_entity_type_mask |= entity_type_mask(entity.etype);
+    }
+    true
+}
+
+// removes all intersecting entities, including nested
+fn remove_intersecting_entities(entities: &mut Vec<TextEntity>) {
+    let mut last_entity_end = 0i32;
+    let mut left_entities = 0usize;
+    for index in 0..entities.len() {
+        if entities[index].offset >= last_entity_end {
+            last_entity_end = entities[index].offset + entities[index].length;
+            if index != left_entities {
+                entities[left_entities] = entities[index].clone();
+            }
+            left_entities += 1;
+        }
+    }
+    entities.truncate(left_entities);
+}
+
+// continuous_entities and blockquote_entities must be pre-sorted and non-overlapping
+fn remove_entities_intersecting_blockquote(
+    entities: &mut Vec<TextEntity>,
+    blockquote_entities: &[TextEntity],
+) {
+    if blockquote_entities.is_empty() {
+        return;
+    }
+
+    let mut blockquote_it = 0usize;
+    let mut left_entities = 0usize;
+    for index in 0..entities.len() {
+        while blockquote_it < blockquote_entities.len()
+            && (!is_blockquote_entity(blockquote_entities[blockquote_it].etype)
+                || blockquote_entities[blockquote_it].offset + blockquote_entities[blockquote_it].length
+                    <= entities[index].offset)
+        {
+            blockquote_it += 1;
+        }
+        if blockquote_it < blockquote_entities.len() {
+            let blockquote = &blockquote_entities[blockquote_it];
+            if blockquote.offset + blockquote.length < entities[index].offset + entities[index].length
+                || (entities[index].offset < blockquote.offset
+                    && blockquote.offset < entities[index].offset + entities[index].length)
+            {
+                continue;
+            }
+        }
+        if index != left_entities {
+            entities[left_entities] = entities[index].clone();
+        }
+        left_entities += 1;
+    }
+    entities.truncate(left_entities);
+}
+
+struct SplitEntitiesState<'a> {
+    entities: &'a [TextEntity],
+    result: Vec<TextEntity>,
+    it: usize,
+    begin_pos: [i32; SPLITTABLE_ENTITY_TYPE_COUNT],
+    end_pos: [i32; SPLITTABLE_ENTITY_TYPE_COUNT],
+}
+
+impl SplitEntitiesState<'_> {
+    fn flush_entities(&mut self, offset: i32) {
+        for etype in [
+            EType::Bold,
+            EType::Italic,
+            EType::Underline,
+            EType::Strikethrough,
+            EType::Spoiler,
+        ] {
+            let index = splittable_entity_type_index(etype);
+            if self.end_pos[index] != 0 && self.begin_pos[index] < offset {
+                if self.end_pos[index] <= offset {
+                    let length = self.end_pos[index] - self.begin_pos[index];
+                    self.result
+                        .push(TextEntity::new(etype, self.begin_pos[index], length));
+                    self.begin_pos[index] = 0;
+                    self.end_pos[index] = 0;
+                } else {
+                    let length = offset - self.begin_pos[index];
+                    self.result
+                        .push(TextEntity::new(etype, self.begin_pos[index], length));
+                    self.begin_pos[index] = offset;
+                }
+            }
+        }
+    }
+
+    fn add_entities(&mut self, end_offset: i32) {
+        while self.it < self.entities.len() {
+            let entity = self.entities[self.it].clone();
+            if entity.offset >= end_offset {
+                break;
+            }
+            let index = splittable_entity_type_index(entity.etype);
+            if entity.offset <= self.end_pos[index] && self.end_pos[index] != 0 {
+                if entity.offset + entity.length > self.end_pos[index] {
+                    self.end_pos[index] = entity.offset + entity.length;
+                }
+            } else {
+                self.flush_entities(entity.offset);
+                self.begin_pos[index] = entity.offset;
+                self.end_pos[index] = entity.offset + entity.length;
+            }
+            self.it += 1;
+        }
+        self.flush_entities(end_offset);
+    }
+}
+
+// entities must contain only splittable entities
+fn split_entities(entities: &mut Vec<TextEntity>, other_entities: &[TextEntity]) {
+    let mut state = SplitEntitiesState {
+        entities,
+        result: Vec::new(),
+        it: 0,
+        begin_pos: [0; SPLITTABLE_ENTITY_TYPE_COUNT],
+        end_pos: [0; SPLITTABLE_ENTITY_TYPE_COUNT],
+    };
+    let mut nested_entities_stack: Vec<usize> = Vec::new();
+    for (index, other_entity) in other_entities.iter().enumerate() {
+        while let Some(&top) = nested_entities_stack.last() {
+            let top_entity = &other_entities[top];
+            if other_entity.offset < top_entity.offset + top_entity.length {
+                break;
+            }
+            // remove non-intersecting entities from the stack
+            let old_size = state.result.len();
+            state.add_entities(top_entity.offset + top_entity.length);
+            if is_pre_entity(top_entity.etype) {
+                state.result.truncate(old_size);
+            }
+            nested_entities_stack.pop();
+        }
+        state.add_entities(other_entity.offset);
+        nested_entities_stack.push(index);
+    }
+    // add_offset(std::numeric_limits<int32>::max())
+    while let Some(&top) = nested_entities_stack.last() {
+        let top_entity = &other_entities[top];
+        let old_size = state.result.len();
+        state.add_entities(top_entity.offset + top_entity.length);
+        if is_pre_entity(top_entity.etype) {
+            state.result.truncate(old_size);
+        }
+        nested_entities_stack.pop();
+    }
+    state.add_entities(i32::MAX);
+    let result = state.result;
+    *entities = result;
+
+    // entities are sorted only by offset now, re-sort if needed
+    sort_entities(entities);
+}
+
+fn resplit_entities(splittable_entities: Vec<TextEntity>, entities: Vec<TextEntity>) -> Vec<TextEntity> {
+    if splittable_entities.is_empty() {
+        return entities;
+    }
+
+    let mut splittable_entities = splittable_entities;
+    let mut entities = entities;
+    split_entities(&mut splittable_entities, &entities); // can merge some entities
+
+    if entities.is_empty() {
+        return splittable_entities;
+    }
+
+    entities.extend(splittable_entities);
+    sort_entities(&mut entities);
+    entities
+}
+
+fn fix_entities(entities: &mut Vec<TextEntity>) {
+    sort_entities(entities);
+
+    if are_entities_valid(entities) {
+        // fast path
+        return;
+    }
+
+    let mut continuous_entities = Vec::new();
+    let mut blockquote_entities = Vec::new();
+    let mut splittable_entities = Vec::new();
+    for entity in entities.drain(..) {
+        if is_splittable_entity(entity.etype) {
+            splittable_entities.push(entity);
+        } else if is_blockquote_entity(entity.etype) {
+            blockquote_entities.push(entity);
+        } else {
+            continuous_entities.push(entity);
+        }
+    }
+    remove_intersecting_entities(&mut continuous_entities); // continuous entities can't intersect each other
+
+    if !blockquote_entities.is_empty() {
+        remove_intersecting_entities(&mut blockquote_entities); // blockquote entities can't intersect each other
+
+        // blockquote entities can contain continuous entities, but can't intersect them in the other ways
+        remove_entities_intersecting_blockquote(&mut continuous_entities, &blockquote_entities);
+
+        continuous_entities.extend(blockquote_entities);
+        sort_entities(&mut continuous_entities);
+    }
+
+    // must be called once to not merge some adjacent entities
+    *entities = resplit_entities(splittable_entities, continuous_entities);
+}
+
+// td/telegram/misc.cpp
+fn replace_offending_characters(text: &mut [u8]) {
+    let mut pos = 0usize;
+    while pos < text.len() {
+        if text[pos] == 0xe2
+            && text.get(pos + 1) == Some(&0x80)
+            && matches!(text.get(pos + 2), Some(&0x8e) | Some(&0x8f))
+        {
+            while text.get(pos + 3) == Some(&0xe2)
+                && text.get(pos + 4) == Some(&0x80)
+                && matches!(text.get(pos + 5), Some(&0x8e) | Some(&0x8f))
+            {
+                text[pos + 2] = 0x8c;
+                pos += 3;
+            }
+            pos += 2;
+        }
+        pos += 1;
+    }
+}
+
+const TEXT_LENGTH_LIMIT: usize = 35000; // server-side limit
+
+fn clean_input_string(text: &mut Vec<u8>) -> bool {
+    if std::str::from_utf8(text).is_err() {
+        return false;
+    }
+
+    let size = text.len();
+    let mut new_size = 0usize;
+    let mut pos = 0usize;
+    while pos < size {
+        let c = text[pos];
+        match c {
+            // remove control characters, but allow '\n' and ignore '\r'
+            0..=9 | 11 | 12 | 14..=32 => {
+                text[new_size] = b' ';
+                new_size += 1;
+            }
+            b'\r' => {}
+            _ => {
+                // remove \xe2\x80[\xa8-\xae]
+                if c == 0xe2
+                    && pos + 2 < size
+                    && text[pos + 1] == 0x80
+                    && (0xa8..=0xae).contains(&text[pos + 2])
+                {
+                    pos += 2;
+                } else if c == 0xcc && pos + 1 < size && matches!(text[pos + 1], 0xb3 | 0xbf | 0x8a) {
+                    // remove vertical lines \xcc[\xb3\xbf\x8a]
+                    pos += 1;
+                } else {
+                    text[new_size] = text[pos];
+                    new_size += 1;
+                }
+            }
+        }
+        if new_size >= TEXT_LENGTH_LIMIT - 3 && utf8_is_first_code_unit(text[new_size - 1]) {
+            new_size -= 1;
+            break;
+        }
+        pos += 1;
+    }
+
+    text.truncate(new_size);
+    replace_offending_characters(text);
+    true
+}
+
+/// like clean_input_string but also fixes entities
+fn clean_input_string_with_entities(text: &[u8], entities: &mut Vec<TextEntity>) -> Result<Vec<u8>, String> {
+    let mut nested_entities_stack: Vec<(usize, i32)> = Vec::new();
+    let mut current_entity = 0usize;
+    let mut utf16_offset = 0i32;
+    let mut utf16_skipped = 0i32;
+    let text_size = text.len();
+
+    let mut result = Vec::with_capacity(text_size);
+    let mut pos = 0usize;
+    while pos <= text_size {
+        let c = byte_at(text, pos);
+        let is_utf8_character_begin = utf8_is_first_code_unit(c);
+        if is_utf8_character_begin {
+            while let Some(&(index, skipped_before)) = nested_entities_stack.last() {
+                let entity_end = entities[index].offset + entities[index].length;
+                if utf16_offset < entity_end {
+                    break;
+                }
+                if utf16_offset != entity_end {
+                    return Err(format!(
+                        "Entity beginning at UTF-16 offset {} ends in a middle of a UTF-16 symbol at byte offset {}",
+                        entities[index].offset, pos
+                    ));
+                }
+                entities[index].offset -= skipped_before;
+                entities[index].length -= utf16_skipped - skipped_before;
+                nested_entities_stack.pop();
+            }
+            while current_entity < entities.len() && utf16_offset >= entities[current_entity].offset {
+                if utf16_offset != entities[current_entity].offset {
+                    return Err(format!(
+                        "Entity begins in a middle of a UTF-16 symbol at byte offset {}",
+                        pos
+                    ));
+                }
+                nested_entities_stack.push((current_entity, utf16_skipped));
+                current_entity += 1;
+            }
+        }
+        if pos == text_size {
+            break;
+        }
+
+        match c {
+            // remove control characters, but allow '\n' and ignore '\r'
+            0..=9 | 11 | 12 | 14..=32 => {
+                result.push(b' ');
+                utf16_offset += 1;
+                pos += 1;
+            }
+            b'\r' => {
+                utf16_offset += 1;
+                utf16_skipped += 1;
+                pos += 1;
+            }
+            _ => {
+                if is_utf8_character_begin {
+                    utf16_offset += 1 + i32::from(c >= 0xf0);
+                }
+                if c == 0xe2
+                    && pos + 2 < text_size
+                    && byte_at(text, pos + 1) == 0x80
+                    && (0xa8..=0xae).contains(&byte_at(text, pos + 2))
+                {
+                    pos += 3;
+                    utf16_skipped += 1;
+                    continue;
+                }
+                if c == 0xcc && pos + 1 < text_size && matches!(byte_at(text, pos + 1), 0xb3 | 0xbf | 0x8a) {
+                    pos += 2;
+                    utf16_skipped += 1;
+                    continue;
+                }
+
+                result.push(text[pos]);
+                pos += 1;
+            }
+        }
+    }
+
+    if current_entity != entities.len() {
+        return Err(format!(
+            "Entity begins after the end of the text at UTF-16 offset {}",
+            entities[current_entity].offset
+        ));
+    }
+    if let Some(&(index, _)) = nested_entities_stack.last() {
+        return Err(format!(
+            "Entity beginning at UTF-16 offset {} ends after the end of the text at UTF-16 offset {}",
+            entities[index].offset,
+            entities[index].offset + entities[index].length
+        ));
+    }
+
+    replace_offending_characters(&mut result);
+    Ok(result)
+}
+
+/// removes empty entities; only the "is there any non-whitespace character"
+/// answer of remove_invalid_entities is needed with skip_trim = true
+fn remove_invalid_entities(text: &[u8], entities: &mut Vec<TextEntity>) -> bool {
+    if !entities.is_empty() {
+        remove_empty_entities(entities);
+    }
+    // only ' ' and '\n' are whitespace here
+    text.iter().any(|&c| c != b'\n' && c != b' ')
+}
+
+/// fix_formatted_text with the arguments used by both parseMarkdown and
+/// getMarkdownText: allow_empty = true, allow_empty_string = true,
+/// skip_new_entities = true, skip_bot_commands = true,
+/// skip_media_timestamps = true, skip_trim = true.
+fn fix_formatted_text(text: &mut String, entities: &mut Vec<TextEntity>) -> Result<(), String> {
+    let mut result;
+    if entities.is_empty() {
+        // fast path
+        result = text.as_bytes().to_vec();
+        if !clean_input_string(&mut result) {
+            return Err("Strings must be encoded in UTF-8".to_string());
+        }
+    } else {
+        for entity in entities.iter() {
+            if entity.offset < 0 || entity.offset > 1000000 {
+                return Err(format!("Receive an entity with incorrect offset {}", entity.offset));
+            }
+            if entity.length < 0 || entity.length > 1000000 {
+                return Err(format!("Receive an entity with incorrect length {}", entity.length));
+            }
+        }
+        remove_empty_entities(entities);
+
+        fix_entities(entities);
+
+        result = clean_input_string_with_entities(text.as_bytes(), entities)?;
+    }
+
+    // allow_empty is true for both requests
+    if !remove_invalid_entities(&result, entities) {
+        text.clear();
+        entities.clear();
+        return Ok(());
+    }
+
+    // re-fix entities after removal of some characters; the sort order can be
+    // incorrect by type and some splittable entities may be concatenated
+    fix_entities(entities);
+
+    if result.len() > TEXT_LENGTH_LIMIT {
+        let mut new_size = TEXT_LENGTH_LIMIT;
+        while !utf8_is_first_code_unit(result[new_size]) {
+            new_size -= 1;
+        }
+        result.truncate(new_size);
+
+        let length = text_length(&result);
+        entities.retain(|entity| entity.offset + entity.length <= length);
+    }
+
+    *text = bytes_to_string(result);
+    Ok(())
+}
+
+fn find_text_url_entities_v3(text: &[u8]) -> Vec<[usize; 4]> {
+    let size = text.len();
+    let mut result = Vec::new();
+    let mut i = 0usize;
+    while i < size {
+        if text[i] != b'[' {
+            i += 1;
+            continue;
+        }
+
+        let text_begin = i;
+        let mut text_end = text_begin + 1;
+        while text_end < size && text[text_end] != b']' {
+            text_end += 1;
+        }
+
+        if text_end == size || text_end == text_begin + 1 {
+            i = text_end + 1; // prevent quadratic asymptotic
+            continue;
+        }
+
+        let url_begin = text_end + 1;
+        if url_begin == size || text[url_begin] != b'(' {
+            i = text_end + 1;
+            continue;
+        }
+
+        let mut url_end = url_begin + 1;
+        while url_end < size && text[url_end] != b')' {
+            url_end += 1;
+        }
+
+        // prevent quadratic asymptotic; disallows [a](b[c](t.me)
+        if url_end < size && get_checked_link(&text[url_begin + 1..url_end]).is_some() {
+            result.push([text_begin, text_end, url_begin, url_end]);
+        }
+        i = url_end + 1;
+    }
+    result
+}
+
+struct TextUrlState {
+    result_text: Vec<u8>,
+    result_entities: Vec<TextEntity>,
+    result_text_utf16_length: i32,
+    part_entities: Vec<TextEntity>,
+    part_splittable_entities: [Vec<TextEntity>; SPLITTABLE_ENTITY_TYPE_COUNT],
+    part_begin: i32,
+    max_end: i32,
+    skipped_length: i32,
+}
+
+fn text_url_add_part(state: &mut TextUrlState, text: &mut &[u8], part_end: i32) {
+    // we have [part_begin, max_end) kept part and [max_end, part_end) part to parse text_url entities
+    if state.max_end != state.part_begin {
+        // add all entities from the kept part
+        let kept_part_text = utf8_utf16_substr(text, 0, state.max_end - state.part_begin);
+        let kept_size = kept_part_text.len();
+        state.result_text.extend_from_slice(kept_part_text);
+        *text = &text[kept_size..];
+
+        state.result_entities.append(&mut state.part_entities);
+        state.result_text_utf16_length += state.max_end - state.part_begin;
+    }
+
+    let mut splittable_entity_pos = [0usize; SPLITTABLE_ENTITY_TYPE_COUNT];
+    if part_end != state.max_end {
+        // try to find text_url entities in the left part
+        let parsed_part_text = utf8_utf16_substr(text, 0, part_end - state.max_end);
+        let parsed_size = parsed_part_text.len();
+        *text = &text[parsed_size..];
+
+        let text_urls = find_text_url_entities_v3(parsed_part_text);
+
+        let mut text_utf16_offset = state.max_end;
+        let mut prev_pos = 0usize;
+        for &[text_begin_pos, text_end_pos, url_begin_pos, url_end_pos] in &text_urls {
+            let before_text_url = &parsed_part_text[prev_pos..text_begin_pos];
+            let before_text_url_length = text_length(before_text_url);
+            state.result_text_utf16_length += before_text_url_length;
+            state.result_text.extend_from_slice(before_text_url);
+            text_utf16_offset += before_text_url_length;
+
+            let text_url = &parsed_part_text[text_begin_pos + 1..text_end_pos];
+            let text_url_length = text_length(text_url);
+            let url = &parsed_part_text[url_begin_pos + 1..url_end_pos];
+            let url_length = text_length(url);
+            let mut text_url_entity =
+                TextEntity::new(EType::TextUrl, state.result_text_utf16_length, text_url_length);
+            text_url_entity.argument = bytes_to_string(get_checked_link(url).unwrap_or_default());
+            state.result_entities.push(text_url_entity);
+            state.result_text.extend_from_slice(text_url);
+            state.result_text_utf16_length += text_url_length;
+
+            let initial_utf16_length = 1 + text_url_length + 1 + 1 + url_length + 1;
+
+            // adjust splittable entities, removing deleted parts from them
+            // in the segment [text_utf16_offset, text_utf16_offset + initial_utf16_length)
+            // the first character and the last (url_utf16_length + 3) characters are deleted
+            for index in 0..SPLITTABLE_ENTITY_TYPE_COUNT {
+                loop {
+                    let pos = splittable_entity_pos[index];
+                    if pos >= state.part_splittable_entities[index].len()
+                        || state.part_splittable_entities[index][pos].offset
+                            >= text_utf16_offset + initial_utf16_length
+                    {
+                        break;
+                    }
+                    let current = state.part_splittable_entities[index][pos].clone();
+                    let mut offset = current.offset;
+                    let mut length = current.length;
+                    if offset + length > text_utf16_offset + 1 + text_url_length {
+                        // ends after last removed part; truncate length
+                        length = text_utf16_offset + 1 + text_url_length - offset;
+                    }
+                    if offset >= text_utf16_offset + 1 {
+                        offset -= 1;
+                    } else if offset + length >= text_utf16_offset + 1 {
+                        length -= 1;
+                    }
+                    if length > 0 {
+                        let skipped_length = state.skipped_length;
+                        if offset < text_utf16_offset && offset + length > text_utf16_offset {
+                            // entity intersects start on the new text_url entity; split it
+                            state.result_entities.push(TextEntity::new(
+                                current.etype,
+                                offset - skipped_length,
+                                text_utf16_offset - offset,
+                            ));
+                            length -= text_utf16_offset - offset;
+                            offset = text_utf16_offset;
+                        }
+                        state.result_entities.push(TextEntity::new(
+                            current.etype,
+                            offset - skipped_length,
+                            length,
+                        ));
+                    }
+                    let entity = &mut state.part_splittable_entities[index][pos];
+                    if entity.offset + entity.length > text_utf16_offset + initial_utf16_length {
+                        // begins before end of the segment, but ends after it
+                        // need to keep the entity for future segments, so split the entity
+                        entity.length = entity.offset + entity.length - (text_utf16_offset + initial_utf16_length);
+                        entity.offset = text_utf16_offset + initial_utf16_length;
+                    } else {
+                        splittable_entity_pos[index] += 1;
+                    }
+                }
+            }
+            text_utf16_offset += initial_utf16_length;
+
+            state.skipped_length += 2 + 2 + url_length;
+            prev_pos = url_end_pos + 1;
+        }
+
+        state.result_text.extend_from_slice(&parsed_part_text[prev_pos..]);
+        state.result_text_utf16_length += part_end - text_utf16_offset;
+    }
+
+    // now add all left splittable entities from [part_begin, part_end)
+    for index in 0..SPLITTABLE_ENTITY_TYPE_COUNT {
+        loop {
+            let pos = splittable_entity_pos[index];
+            if pos >= state.part_splittable_entities[index].len()
+                || state.part_splittable_entities[index][pos].offset >= part_end
+            {
+                break;
+            }
+            let current = state.part_splittable_entities[index][pos].clone();
+            let skipped_length = state.skipped_length;
+            if current.offset + current.length > part_end {
+                // begins before end of the segment, but ends after it
+                // need to keep the entity for future segments, so split the entity
+                // entities don't intersect each other, so there can be at most one such entity
+                state.result_entities.push(TextEntity::new(
+                    current.etype,
+                    current.offset - skipped_length,
+                    part_end - current.offset,
+                ));
+
+                let entity = &mut state.part_splittable_entities[index][pos];
+                entity.length = entity.offset + entity.length - part_end;
+                entity.offset = part_end;
+            } else {
+                state.result_entities.push(TextEntity::new(
+                    current.etype,
+                    current.offset - skipped_length,
+                    current.length,
+                ));
+                splittable_entity_pos[index] += 1;
+            }
+        }
+        let splittable_entities = &mut state.part_splittable_entities[index];
+        if splittable_entity_pos[index] == splittable_entities.len() {
+            splittable_entities.clear();
+        } else {
+            // only one entity can be left
+            let last = splittable_entities.last().cloned().unwrap();
+            splittable_entities.clear();
+            splittable_entities.push(last);
+        }
+    }
+
+    state.part_begin = part_end;
+}
+
+// entities must be valid for the text
+fn parse_text_url_entities_v3(text: &[u8], entities: &[TextEntity]) -> (Vec<u8>, Vec<TextEntity>) {
+    // continuous entities can't intersect TextUrl entities,
+    // so try to find new TextUrl entities only between the predetermined continuous entities
+    let mut state = TextUrlState {
+        result_text: Vec::new(),
+        result_entities: Vec::new(),
+        result_text_utf16_length: 0,
+        part_entities: Vec::new(),
+        part_splittable_entities: std::array::from_fn(|_| Vec::new()),
+        part_begin: 0,
+        max_end: 0,
+        skipped_length: 0,
+    };
+    let mut text = text;
+    for entity in entities {
+        if is_splittable_entity(entity.etype) {
+            let index = splittable_entity_type_index(entity.etype);
+            state.part_splittable_entities[index].push(entity.clone());
+            continue;
+        }
+        debug_assert!(is_continuous_entity(entity.etype));
+
+        if entity.offset > state.max_end {
+            // found a gap from max_end to entity.offset between predetermined entities
+            text_url_add_part(&mut state, &mut text, entity.offset);
+        }
+
+        state.max_end = entity.offset + entity.length;
+        let mut kept = entity.clone();
+        kept.offset -= state.skipped_length;
+        state.part_entities.push(kept);
+    }
+    let part_end = state.part_begin + text_length(text);
+    text_url_add_part(&mut state, &mut text, part_end);
+
+    (state.result_text, state.result_entities)
+}
+
+fn find_splittable_entities_v3(text: &[u8], entities: &[TextEntity]) -> Vec<TextEntity> {
+    let mut unallowed_boundaries: HashSet<i32> = HashSet::new();
+    for entity in entities {
+        unallowed_boundaries.insert(entity.offset + 1);
+        unallowed_boundaries.insert(entity.offset + entity.length + 1);
+        if matches!(
+            entity.etype,
+            EType::Mention
+                | EType::Hashtag
+                | EType::BotCommand
+                | EType::Cashtag
+                | EType::PhoneNumber
+                | EType::BankCardNumber
+                | EType::TonAddress
+        ) {
+            for i in 1..entity.length {
+                unallowed_boundaries.insert(entity.offset + i + 1);
+            }
+        }
+    }
+
+    // URLs and email addresses absorb adjacent markup like "~~t.me/a~~", so markup
+    // at their beginning can only open an entity and markup at their end can only
+    // close one, while markup inside them isn't parsed
+    let mut opening_only_positions: HashSet<i32> = HashSet::new();
+    let mut closing_only_positions: HashSet<i32> = HashSet::new();
+    let is_markup_character = |c: u8| matches!(c, b'_' | b'*' | b'~' | b'|');
+
+    let chars: Vec<char> = String::from_utf8_lossy(text).chars().collect();
+    let chars_offset = utf16_prefix(&chars);
+    let mut left_text = text;
+    let mut left_text_offset = 0i32;
+    for (position, length, kind) in find_entities(&chars) {
+        if matches!(kind, Kind::MediaTimestamp(_)) {
+            // skip_media_timestamps
+            continue;
+        }
+        let offset = chars_offset[position] as i32;
+        let length = (chars_offset[position + length] - chars_offset[position]) as i32;
+
+        if !matches!(kind, Kind::Url | Kind::EmailAddress) {
+            for i in 0..=length {
+                unallowed_boundaries.insert(offset + i + 1);
+            }
+            continue;
+        }
+
+        let skipped = utf8_utf16_substr(left_text, 0, offset - left_text_offset);
+        left_text = &left_text[skipped.len()..];
+        let entity_text = utf8_utf16_substr(left_text, 0, length);
+        left_text = &left_text[entity_text.len()..];
+        left_text_offset = offset + length;
+
+        let mut prefix_length = 0i32;
+        while prefix_length < length && is_markup_character(entity_text[prefix_length as usize]) {
+            opening_only_positions.insert(offset + prefix_length + 1);
+            prefix_length += 1;
+        }
+        let mut suffix_length = 0i32;
+        while prefix_length + suffix_length < length
+            && is_markup_character(entity_text[entity_text.len() - suffix_length as usize - 1])
+        {
+            suffix_length += 1;
+            closing_only_positions.insert(offset + length - suffix_length + 1);
+        }
+        for i in prefix_length + 1..length - suffix_length {
+            unallowed_boundaries.insert(offset + i + 1);
+        }
+    }
+
+    let mut result = Vec::new();
+    let mut splittable_entity_offset = [0i32; SPLITTABLE_ENTITY_TYPE_COUNT];
+    let mut utf16_offset = 0i32;
+    let mut i = 0usize;
+    while i + 1 < text.len() {
+        let c = text[i];
+        if utf8_is_first_code_unit(c) {
+            utf16_offset += 1 + i32::from(c >= 0xf0);
+        }
+        if is_markup_character(c)
+            && text[i] == text[i + 1]
+            && !unallowed_boundaries.contains(&(utf16_offset + 1))
+        {
+            let mut j = i + 2;
+            while j != text.len()
+                && text[j] == text[i]
+                && !unallowed_boundaries.contains(&(utf16_offset + (j - i) as i32))
+            {
+                j += 1;
+            }
+            if j == i + 2 {
+                let etype = match c {
+                    b'_' => EType::Italic,
+                    b'*' => EType::Bold,
+                    b'~' => EType::Strikethrough,
+                    _ => EType::Spoiler,
+                };
+                let index = splittable_entity_type_index(etype);
+                if splittable_entity_offset[index] != 0 {
+                    if !opening_only_positions.contains(&utf16_offset) {
+                        let length = utf16_offset - splittable_entity_offset[index] - 1;
+                        if length > 0 {
+                            result.push(TextEntity::new(etype, splittable_entity_offset[index], length));
+                        }
+                        splittable_entity_offset[index] = 0;
+                    }
+                } else if !closing_only_positions.contains(&utf16_offset) {
+                    splittable_entity_offset[index] = utf16_offset + 1;
+                }
+            }
+            utf16_offset += (j - i - 1) as i32;
+            i = j - 1;
+        }
+        i += 1;
+    }
+    result
+}
+
+fn parse_pre_entities_v3(text: &[u8]) -> (Vec<u8>, Vec<TextEntity>) {
+    let mut result = Vec::new();
+    let mut entities = Vec::new();
+    let size = text.len();
+    let mut utf16_offset = 0i32;
+    let mut i = 0usize;
+    while i < size {
+        let c = text[i];
+        if c != b'`' {
+            if utf8_is_first_code_unit(c) {
+                utf16_offset += 1 + i32::from(c >= 0xf0);
+            }
+            result.push(c);
+            i += 1;
+            continue;
+        }
+
+        let mut j = i + 1;
+        while j < size && text[j] == b'`' {
+            j += 1;
+        }
+
+        if j - i == 1 || j - i == 3 {
+            // trying to find end of the entity
+            let mut entity_length = 0i32;
+            let mut is_found = false;
+            let mut end_tag_begin = j;
+            while end_tag_begin < size {
+                let cur_c = text[end_tag_begin];
+                if cur_c == b'`' {
+                    // possible end tag
+                    let mut end_tag_end = end_tag_begin + 1;
+                    while end_tag_end < size && text[end_tag_end] == b'`' {
+                        end_tag_end += 1;
+                    }
+                    if end_tag_end - end_tag_begin == j - i {
+                        // end tag found
+                        let mut entity_begin = j;
+                        let mut language_code: &[u8] = b"";
+                        if j - i == 3 {
+                            let mut language_code_end = j;
+                            while language_code_end < end_tag_begin - 1
+                                && (33..=126).contains(&text[language_code_end])
+                            {
+                                language_code_end += 1;
+                            }
+                            if language_code_end < end_tag_begin - 1 && text[language_code_end] == b'\n' {
+                                language_code = &text[entity_begin..language_code_end];
+                                entity_begin = language_code_end + 1;
+                                entity_length -= (entity_begin - j) as i32;
+                            }
+                        }
+                        if !language_code.is_empty() {
+                            let mut entity = TextEntity::new(EType::PreCode, utf16_offset, entity_length);
+                            entity.argument = bytes_to_string(language_code.to_vec());
+                            entities.push(entity);
+                        } else {
+                            let etype = if j - i == 3 { EType::Pre } else { EType::Code };
+                            entities.push(TextEntity::new(etype, utf16_offset, entity_length));
+                        }
+                        result.extend_from_slice(&text[entity_begin..end_tag_begin]);
+                        utf16_offset += entity_length;
+                        i = end_tag_end - 1;
+                        is_found = true;
+                        break;
+                    } else {
+                        // not an end tag, skip
+                        entity_length += (end_tag_end - end_tag_begin) as i32;
+                        end_tag_begin = end_tag_end - 1;
+                    }
+                } else if utf8_is_first_code_unit(cur_c) {
+                    entity_length += 1 + i32::from(cur_c >= 0xf0);
+                }
+                end_tag_begin += 1;
+            }
+            if is_found {
+                i += 1;
+                continue;
+            }
+        }
+
+        result.extend_from_slice(&text[i..j]);
+        utf16_offset += (j - i) as i32;
+        i = j;
+    }
+    (result, entities)
+}
+
+struct PreEntitiesState<'a> {
+    text: &'a [u8],
+    result_text: Vec<u8>,
+    result_entities: Vec<TextEntity>,
+    result_text_utf16_length: i32,
+    part_begin: i32,
+    max_end: i32,
+    skipped_length: i32,
+}
+
+impl PreEntitiesState<'_> {
+    fn add_part(&mut self, part_end: i32) {
+        // we have [part_begin, max_end) kept part and [max_end, part_end) part to parse pre entities
+        if self.max_end != self.part_begin {
+            // add the kept part
+            let kept_part_text = utf8_utf16_substr(self.text, 0, self.max_end - self.part_begin);
+            let kept_size = kept_part_text.len();
+            self.result_text.extend_from_slice(kept_part_text);
+            self.text = &self.text[kept_size..];
+
+            self.result_text_utf16_length += self.max_end - self.part_begin;
+        }
+
+        if part_end != self.max_end {
+            // try to find pre entities in the left part
+            let parsed_part_text = utf8_utf16_substr(self.text, 0, part_end - self.max_end);
+            let parsed_size = parsed_part_text.len();
+            self.text = &self.text[parsed_size..];
+
+            if !parsed_part_text.contains(&b'`') {
+                // fast path, no pre entities; just append the text
+                self.result_text.extend_from_slice(parsed_part_text);
+                self.result_text_utf16_length += part_end - self.max_end;
+            } else {
+                let (parsed_text, parsed_entities) = parse_pre_entities_v3(parsed_part_text);
+                let new_skipped_length = (parsed_part_text.len() - parsed_text.len()) as i32;
+                self.result_text.extend_from_slice(&parsed_text);
+                let offset = self.result_text_utf16_length;
+                for mut entity in parsed_entities {
+                    entity.offset += offset;
+                    self.result_entities.push(entity);
+                }
+                self.result_text_utf16_length += part_end - self.max_end - new_skipped_length;
+                self.skipped_length += new_skipped_length;
+            }
+        }
+
+        self.part_begin = part_end;
+    }
+}
+
+// entities must be valid for the text; nothing can intersect pre entities, so
+// ignore all '`' inside the predetermined entities
+fn parse_pre_entities_v3_with_entities(
+    text: &[u8],
+    entities: Vec<TextEntity>,
+) -> (Vec<u8>, Vec<TextEntity>) {
+    let mut state = PreEntitiesState {
+        text,
+        result_text: Vec::new(),
+        result_entities: Vec::new(),
+        result_text_utf16_length: 0,
+        part_begin: 0,
+        max_end: 0,
+        skipped_length: 0,
+    };
+
+    for entity in entities {
+        if entity.offset > state.max_end {
+            // found a gap from max_end to entity.offset between predetermined entities
+            state.add_part(entity.offset);
+        }
+
+        state.max_end = state.max_end.max(entity.offset + entity.length);
+        let mut kept = entity;
+        kept.offset -= state.skipped_length;
+        state.result_entities.push(kept);
+    }
+    let part_end = state.part_begin + text_length(state.text);
+    state.add_part(part_end);
+
+    (state.result_text, state.result_entities)
+}
+
+type MarkdownParser = fn(&[u8], Vec<TextEntity>) -> (Vec<u8>, Vec<TextEntity>);
+
+struct MarkdownPartParser<'a> {
+    left_text: &'a [u8],
+    result_text: Vec<u8>,
+    result_entities: Vec<TextEntity>,
+    part_entities: Vec<TextEntity>,
+    result_text_utf16_length: i32,
+    part_begin: i32,
+}
+
+impl<'a> MarkdownPartParser<'a> {
+    fn new(text: &'a [u8]) -> MarkdownPartParser<'a> {
+        MarkdownPartParser {
+            left_text: text,
+            result_text: Vec::new(),
+            result_entities: Vec::new(),
+            part_entities: Vec::new(),
+            result_text_utf16_length: 0,
+            part_begin: 0,
+        }
+    }
+
+    fn add_part(&mut self, part_end: i32, parse: MarkdownParser) {
+        let part_text = utf8_utf16_substr(self.left_text, 0, part_end - self.part_begin);
+        let part_size = part_text.len();
+        self.left_text = &self.left_text[part_size..];
+
+        let (text, mut entities) = parse(part_text, std::mem::take(&mut self.part_entities));
+
+        self.result_text.extend_from_slice(&text);
+        for entity in entities.iter_mut() {
+            entity.offset += self.result_text_utf16_length;
+        }
+        self.result_entities.append(&mut entities);
+        self.result_text_utf16_length += text_length(&text);
+        self.part_begin = part_end;
+    }
+}
+
+// entities must be valid and can contain only splittable and continuous entities
+// __italic__ ~~strikethrough~~ **bold** ||spoiler|| and [text_url](telegram.org)
+// entities are left to be parsed
+fn parse_markdown_v3_without_pre(text: &[u8], entities: Vec<TextEntity>) -> (Vec<u8>, Vec<TextEntity>) {
+    let mut text = text;
+    let mut entities = entities;
+    let parsed_text_url_text;
+    if text.contains(&b'[') {
+        let (parsed_text, parsed_entities) = parse_text_url_entities_v3(text, &entities);
+        parsed_text_url_text = parsed_text;
+        text = &parsed_text_url_text;
+        entities = parsed_entities;
+    }
+    // splittable entities are sorted only within a fixed type now
+
+    let mut have_splittable_entities = false;
+    let mut i = 0usize;
+    while i + 1 < text.len() {
+        if matches!(text[i], b'_' | b'*' | b'~' | b'|') && text[i] == text[i + 1] {
+            have_splittable_entities = true;
+            break;
+        }
+        i += 1;
+    }
+    if !have_splittable_entities {
+        // fast path
+        sort_entities(&mut entities);
+        return (text.to_vec(), entities);
+    }
+
+    let found_splittable_entities = find_splittable_entities_v3(text, &entities);
+    let mut removed_pos: Vec<i32> = Vec::new();
+    for entity in &found_splittable_entities {
+        removed_pos.push(entity.offset - 1);
+        removed_pos.push(entity.offset + entity.length + 1);
+    }
+    removed_pos.sort_unstable();
+
+    let mut new_text = Vec::with_capacity(text.len().saturating_sub(2 * removed_pos.len()));
+    let mut j = 0usize;
+    let mut utf16_offset = 0i32;
+    let mut i = 0usize;
+    while i < text.len() {
+        let c = text[i];
+        if utf8_is_first_code_unit(c) {
+            utf16_offset += 1 + i32::from(c >= 0xf0);
+        }
+        if j < removed_pos.len() && utf16_offset == removed_pos[j] {
+            // skip the markup character
+            i += 1;
+            utf16_offset += 1;
+            j += 1;
+        } else {
+            new_text.push(text[i]);
+        }
+        i += 1;
+    }
+
+    entities.extend(found_splittable_entities);
+    for entity in entities.iter_mut() {
+        let removed_before_begin = removed_pos.partition_point(|&pos| pos <= entity.offset) as i32;
+        let removed_before_end = removed_pos.partition_point(|&pos| pos <= entity.offset + entity.length) as i32;
+        entity.length -= 2 * (removed_before_end - removed_before_begin);
+        entity.offset -= 2 * removed_before_begin;
+    }
+
+    remove_empty_entities(&mut entities);
+
+    sort_entities(&mut entities);
+    (new_text, entities)
+}
+
+// entities must be valid and can contain only splittable, continuous and pre entities
+fn parse_markdown_v3_without_blockquote(
+    text: &[u8],
+    entities: Vec<TextEntity>,
+) -> (Vec<u8>, Vec<TextEntity>) {
+    let mut text = text.to_vec();
+    let mut entities = entities;
+    if text.contains(&b'`') {
+        let (parsed_text, parsed_entities) = parse_pre_entities_v3_with_entities(&text, entities);
+        text = parsed_text;
+        entities = parsed_entities;
+    }
+
+    if !entities.iter().any(|entity| is_pre_entity(entity.etype)) {
+        // fast path
+        return parse_markdown_v3_without_pre(&text, entities);
+    }
+
+    let mut parser = MarkdownPartParser::new(&text);
+    let mut i = 0usize;
+    while i < entities.len() {
+        let entity = entities[i].clone();
+        debug_assert!(
+            is_splittable_entity(entity.etype)
+                || is_pre_entity(entity.etype)
+                || is_continuous_entity(entity.etype)
+        );
+        if is_pre_entity(entity.etype) {
+            parser.add_part(entity.offset, parse_markdown_v3_without_pre);
+
+            let part_text = utf8_utf16_substr(parser.left_text, 0, entity.length);
+            let part_size = part_text.len();
+            parser.left_text = &parser.left_text[part_size..];
+
+            parser.result_text.extend_from_slice(part_text);
+            let mut kept = entity.clone();
+            kept.offset = parser.result_text_utf16_length;
+            parser.result_entities.push(kept);
+            parser.result_text_utf16_length += entity.length;
+            parser.part_begin = entity.offset + entity.length;
+        } else {
+            let mut kept = entity.clone();
+            kept.offset -= parser.part_begin;
+            parser.part_entities.push(kept);
+        }
+        i += 1;
+    }
+    let part_end = parser.part_begin + text_length(parser.left_text);
+    parser.add_part(part_end, parse_markdown_v3_without_pre);
+    (parser.result_text, parser.result_entities)
+}
+
+// text entities must be valid; returned entities must be resplit and fixed
+fn parse_markdown_v3(text: &[u8], entities: Vec<TextEntity>) -> (Vec<u8>, Vec<TextEntity>) {
+    if !entities.iter().any(|entity| is_blockquote_entity(entity.etype)) {
+        // fast path
+        return parse_markdown_v3_without_blockquote(text, entities);
+    }
+
+    let mut parser = MarkdownPartParser::new(text);
+    let mut i = 0usize;
+    while i < entities.len() {
+        let entity = entities[i].clone();
+        debug_assert!(
+            is_splittable_entity(entity.etype)
+                || is_pre_entity(entity.etype)
+                || is_continuous_entity(entity.etype)
+                || is_blockquote_entity(entity.etype)
+        );
+        if is_blockquote_entity(entity.etype) {
+            parser.add_part(entity.offset, parse_markdown_v3_without_blockquote);
+
+            let offset = parser.result_text_utf16_length;
+            let mut quote = entity.clone();
+            quote.offset = offset;
+            let index = parser.result_entities.len();
+            parser.result_entities.push(quote);
+
+            while i + 1 < entities.len()
+                && entities[i + 1].offset + entities[i + 1].length <= entity.offset + entity.length
+            {
+                i += 1;
+                let mut next = entities[i].clone();
+                next.offset -= parser.part_begin;
+                parser.part_entities.push(next);
+            }
+            parser.add_part(entity.offset + entity.length, parse_markdown_v3_without_blockquote);
+
+            parser.result_entities[index].length = parser.result_text_utf16_length - offset;
+        } else {
+            let mut kept = entity.clone();
+            kept.offset -= parser.part_begin;
+            parser.part_entities.push(kept);
+        }
+        i += 1;
+    }
+    let part_end = parser.part_begin + text_length(parser.left_text);
+    parser.add_part(part_end, parse_markdown_v3_without_blockquote);
+
+    (parser.result_text, parser.result_entities)
+}
+
+fn is_valid_language_code(code: &[u8]) -> bool {
+    code.iter().all(|&c| (33..=126).contains(&c))
+}
+
+// text entities must be valid
+fn get_markdown_v3(text: String, entities: Vec<TextEntity>) -> (String, Vec<TextEntity>) {
+    if entities.is_empty() {
+        return (text, entities);
+    }
+    if entities.iter().any(|entity| !is_user_entity(entity.etype)) {
+        return (text, entities);
+    }
+
+    let mut result_text: Vec<u8> = Vec::with_capacity(text.len());
+    let mut result_entities: Vec<TextEntity> = Vec::new();
+    let mut nested_entities_stack: Vec<(TextEntity, i32)> = Vec::new();
+    let mut current_entity = 0usize;
+    let mut utf16_offset = 0i32;
+    let mut utf16_added = 0i32;
+
+    let source = text.as_bytes();
+    for pos in 0..=source.len() {
+        let c = source.get(pos).copied().unwrap_or(0);
+        if utf8_is_first_code_unit(c) {
+            while let Some((entity, added_before)) = nested_entities_stack.last() {
+                let entity_end = entity.offset + entity.length;
+                if utf16_offset < entity_end {
+                    break;
+                }
+                let entity = entity.clone();
+                let added_before = *added_before;
+                nested_entities_stack.pop();
+
+                let mut need_entity = false;
+                match entity.etype {
+                    EType::Italic => {
+                        result_text.extend_from_slice(b"__");
+                        utf16_added += 2;
+                    }
+                    EType::Bold => {
+                        result_text.extend_from_slice(b"**");
+                        utf16_added += 2;
+                    }
+                    EType::Strikethrough => {
+                        result_text.extend_from_slice(b"~~");
+                        utf16_added += 2;
+                    }
+                    EType::Spoiler => {
+                        result_text.extend_from_slice(b"||");
+                        utf16_added += 2;
+                    }
+                    EType::TextUrl => {
+                        result_text.extend_from_slice(b"](");
+                        result_text.extend_from_slice(entity.argument.as_bytes());
+                        result_text.push(b')');
+                        utf16_added += 3 + text_length(entity.argument.as_bytes());
+                    }
+                    EType::Code => {
+                        result_text.push(b'`');
+                        utf16_added += 1;
+                    }
+                    EType::Pre => {
+                        result_text.extend_from_slice(b"```");
+                        utf16_added += 3;
+                    }
+                    EType::PreCode => {
+                        if is_valid_language_code(entity.argument.as_bytes()) {
+                            result_text.extend_from_slice(b"```");
+                            utf16_added += 3;
+                        } else {
+                            need_entity = true;
+                        }
+                    }
+                    _ => need_entity = true,
+                }
+                if need_entity {
+                    let mut kept = entity;
+                    kept.offset += added_before;
+                    kept.length += utf16_added - added_before;
+                    result_entities.push(kept);
+                }
+            }
+
+            while current_entity < entities.len() && utf16_offset >= entities[current_entity].offset {
+                let entity = &entities[current_entity];
+                match entity.etype {
+                    EType::Italic => {
+                        result_text.extend_from_slice(b"__");
+                        utf16_added += 2;
+                    }
+                    EType::Bold => {
+                        result_text.extend_from_slice(b"**");
+                        utf16_added += 2;
+                    }
+                    EType::Strikethrough => {
+                        result_text.extend_from_slice(b"~~");
+                        utf16_added += 2;
+                    }
+                    EType::Spoiler => {
+                        result_text.extend_from_slice(b"||");
+                        utf16_added += 2;
+                    }
+                    EType::TextUrl => {
+                        result_text.push(b'[');
+                        utf16_added += 1;
+                    }
+                    EType::Code => {
+                        result_text.push(b'`');
+                        utf16_added += 1;
+                    }
+                    EType::Pre => {
+                        result_text.extend_from_slice(b"```");
+                        utf16_added += 3;
+                        if c != b'\n' {
+                            result_text.push(b'\n');
+                            utf16_added += 1;
+                        }
+                    }
+                    EType::PreCode => {
+                        if is_valid_language_code(entity.argument.as_bytes()) {
+                            result_text.extend_from_slice(b"```");
+                            utf16_added += 3;
+                            if !entity.argument.is_empty() {
+                                result_text.extend_from_slice(entity.argument.as_bytes());
+                                utf16_added += text_length(entity.argument.as_bytes());
+                            }
+                            if c != b'\n' {
+                                result_text.push(b'\n');
+                                utf16_added += 1;
+                            }
+                        }
+                    }
+                    _ => {
+                        // keep as is
+                    }
+                }
+                let kept = entity.clone();
+                current_entity += 1;
+                nested_entities_stack.push((kept, utf16_added));
+            }
+            utf16_offset += 1 + i32::from(c >= 0xf0);
+        }
+        if pos == source.len() {
+            break;
+        }
+
+        result_text.push(source[pos]);
+    }
+
+    sort_entities(&mut result_entities);
+    let result_text = bytes_to_string(result_text);
+
+    let (parsed_text, parsed_entities) = parse_markdown_v3(result_text.as_bytes(), result_entities.clone());
+    if parsed_text != text.as_bytes() || parsed_entities != entities {
+        return (text, entities);
+    }
+    (result_text, result_entities)
 }
 
 fn byte_at(bytes: &[u8], pos: usize) -> u8 {
@@ -2482,7 +4085,7 @@ fn is_valid_ipv6(text: &[u8]) -> bool {
     written == 16 || compressed
 }
 
-fn check_url_part(part: &[u8], allow_colon: bool) -> bool {
+fn check_url_part(part: &[u8], name: &str, allow_colon: bool) -> Result<(), String> {
     let mut pos = 0usize;
     while pos < part.len() {
         let c = part[pos];
@@ -2511,27 +4114,26 @@ fn check_url_part(part: &[u8], allow_colon: bool) -> bool {
         }
         if c == b'%' {
             pos += 1;
-            if !is_hex_digit_byte(byte_at(part, pos)) {
-                return false;
+            if is_hex_digit_byte(byte_at(part, pos)) {
+                pos += 1;
+                if is_hex_digit_byte(byte_at(part, pos)) {
+                    pos += 1;
+                    continue;
+                }
             }
-            pos += 1;
-            if !is_hex_digit_byte(byte_at(part, pos)) {
-                return false;
-            }
-            pos += 1;
-            continue;
+            return Err(format!("Wrong percent-encoded symbol in URL {}", name));
         }
         if c >= 128 {
             // plain UTF-8 symbols are allowed
             pos += 1;
             continue;
         }
-        return false;
+        return Err(format!("Disallowed character in URL {}", name));
     }
-    true
+    Ok(())
 }
 
-fn parse_url(url: &[u8]) -> Option<HttpUrl> {
+fn parse_url(url: &[u8]) -> Result<HttpUrl, String> {
     let mut pos = 0usize;
     while pos < url.len() && !matches!(url[pos], b':' | b'/' | b'?' | b'#' | b'@' | b'[' | b']') {
         pos += 1;
@@ -2544,7 +4146,7 @@ fn parse_url(url: &[u8]) -> Option<HttpUrl> {
         } else if protocol == b"https" {
             https = true;
         } else {
-            return None;
+            return Err("Unsupported URL protocol".to_string());
         }
         pos += 3;
     } else {
@@ -2577,7 +4179,7 @@ fn parse_url(url: &[u8]) -> Option<HttpUrl> {
         }
     }
     if port < 0 || port > 65535 {
-        return None;
+        return Err("Wrong port number specified in the URL".to_string());
     }
 
     let (userinfo, host) = match userinfo_host.iter().rposition(|&c| c == b'@') {
@@ -2588,12 +4190,15 @@ fn parse_url(url: &[u8]) -> Option<HttpUrl> {
     let mut is_ipv6 = false;
     if !host.is_empty() && host[0] == b'[' && host[host.len() - 1] == b']' {
         if !is_valid_ipv6(&host[1..host.len() - 1]) {
-            return None;
+            return Err("Wrong IPv6 address specified in the URL".to_string());
         }
         is_ipv6 = true;
     }
-    if host.is_empty() || host == b"." {
-        return None;
+    if host.is_empty() {
+        return Err("URL host is empty".to_string());
+    }
+    if host == b"." {
+        return Err("Host is invalid".to_string());
     }
 
     let specified_port = port;
@@ -2620,14 +4225,15 @@ fn parse_url(url: &[u8]) -> Option<HttpUrl> {
     if is_ipv6 {
         for &c in &host_str[1..host_str.len() - 1] {
             if !(c == b':' || is_digit_byte(c) || (b'a'..=b'f').contains(&c) || c == b'.') {
-                return None;
+                return Err("Wrong IPv6 URL host".to_string());
             }
         }
-    } else if !check_url_part(&host_str, false) || !check_url_part(userinfo, true) {
-        return None;
+    } else {
+        check_url_part(&host_str, "host", false)?;
+        check_url_part(userinfo, "userinfo", true)?;
     }
 
-    Some(HttpUrl {
+    Ok(HttpUrl {
         https,
         userinfo: userinfo.to_vec(),
         host: host_str,
@@ -2637,9 +4243,7 @@ fn parse_url(url: &[u8]) -> Option<HttpUrl> {
     })
 }
 
-/// LinkManager::check_link_impl without the error strings; None means that the
-/// link is invalid and callers then drop the entity.
-fn check_link_impl(link: &[u8]) -> Option<Vec<u8>> {
+fn check_link_impl(link: &[u8]) -> Result<Vec<u8>, String> {
     let mut link = link;
     let mut is_tg = false;
     let mut is_ton = false;
@@ -2665,7 +4269,11 @@ fn check_link_impl(link: &[u8]) -> Option<Vec<u8>> {
             || http_url.specified_port != 0
             || http_url.is_ipv6
         {
-            return None;
+            return Err(if is_tg {
+                "Wrong tg URL".to_string()
+            } else {
+                "Wrong ton URL".to_string()
+            });
         }
         let mut query: &[u8] = &http_url.query;
         if query.len() > 1 && query[1] == b'?' {
@@ -2673,7 +4281,7 @@ fn check_link_impl(link: &[u8]) -> Option<Vec<u8>> {
         }
         for &c in &http_url.host {
             if !is_alnum_byte(c) && c != b'-' && c != b'_' && !(is_tonsite && c == b'.') {
-                return None;
+                return Err("Unallowed characters in URL host".to_string());
             }
         }
         let mut result = Vec::new();
@@ -2687,16 +4295,25 @@ fn check_link_impl(link: &[u8]) -> Option<Vec<u8>> {
         result.extend_from_slice(b"://");
         result.extend_from_slice(&http_url.host);
         result.extend_from_slice(query);
-        return Some(result);
+        return Ok(result);
     }
     if !http_url.host.contains(&b'.') && !http_url.is_ipv6 {
-        return None;
+        return Err("Wrong HTTP URL".to_string());
     }
-    Some(http_url.get_url())
+    Ok(http_url.get_url())
+}
+
+/// LinkManager::check_link; the message of the invalid link reason is part of
+/// the error returned by get_message_entities for textUrl entities.
+fn check_link(link: &[u8]) -> Result<Vec<u8>, String> {
+    check_link_impl(link).map_err(|reason| match std::str::from_utf8(link) {
+        Ok(text) => format!("URL '{}' is invalid: {}", text, reason),
+        Err(_) => format!("URL is invalid: {}", reason),
+    })
 }
 
 fn get_checked_link(link: &[u8]) -> Option<Vec<u8>> {
-    check_link_impl(link)
+    check_link_impl(link).ok()
 }
 
 fn split_parameter(parameter: &[u8]) -> (&[u8], &[u8]) {
@@ -3801,6 +5418,10 @@ fn formatting_type_json(date_flags: i32) -> Option<String> {
 
 fn entity_type_json(entity: &TextEntity) -> String {
     match entity.etype {
+        EType::MediaTimestamp => format!(
+            "{{\"@type\":\"textEntityTypeMediaTimestamp\",\"media_timestamp\":{}}}",
+            entity.media_timestamp
+        ),
         EType::PreCode | EType::TextUrl => {
             let (name, key) = if entity.etype == EType::PreCode {
                 ("textEntityTypePreCode", "language")
@@ -3866,6 +5487,270 @@ fn json_type_name(value: &Json) -> &'static str {
     }
 }
 
+fn json_int64_field(value: &Json) -> Result<i64, String> {
+    let literal = match value {
+        Json::Null => return Ok(0),
+        Json::Int(_, literal) | Json::Float(_, literal) => literal,
+        Json::Str(text) => text,
+        other => return Err(format!("Expected Number, but receive {}", json_type_name(other))),
+    };
+    match to_integer_safe_i64(literal.as_bytes()) {
+        Some(number) => Ok(number),
+        None => Err(format!("Can't parse as an integer string \"{}\"", literal)),
+    }
+}
+
+/// td_api constructor identifiers, which the JSON layer also accepts as "@type"
+const TEXT_ENTITY_TYPE_CONSTRUCTORS: [(i32, &str); 24] = [
+    (934535013, "textEntityTypeMention"),
+    (-1023958307, "textEntityTypeHashtag"),
+    (1222915915, "textEntityTypeCashtag"),
+    (-1150997581, "textEntityTypeBotCommand"),
+    (-1312762756, "textEntityTypeUrl"),
+    (1425545249, "textEntityTypeEmailAddress"),
+    (-1160140246, "textEntityTypePhoneNumber"),
+    (105986320, "textEntityTypeBankCardNumber"),
+    (516305059, "textEntityTypeTonAddress"),
+    (-1128210000, "textEntityTypeBold"),
+    (-118253987, "textEntityTypeItalic"),
+    (792317842, "textEntityTypeUnderline"),
+    (961529082, "textEntityTypeStrikethrough"),
+    (544019899, "textEntityTypeSpoiler"),
+    (-974534326, "textEntityTypeCode"),
+    (1648958606, "textEntityTypePre"),
+    (-945325397, "textEntityTypePreCode"),
+    (-1003999032, "textEntityTypeBlockQuote"),
+    (36572261, "textEntityTypeExpandableBlockQuote"),
+    (445719651, "textEntityTypeTextUrl"),
+    (-1570974289, "textEntityTypeMentionName"),
+    (1724820677, "textEntityTypeCustomEmoji"),
+    (-1841898992, "textEntityTypeMediaTimestamp"),
+    (-1544268588, "textEntityTypeDateTime"),
+];
+
+const DATE_TIME_FORMATTING_CONSTRUCTORS: [(i32, &str); 5] = [
+    (-648483424, "dateTimeFormattingTypeRelative"),
+    (47463317, "dateTimeFormattingTypeAbsolute"),
+    (1790302111, "dateTimePartPrecisionNone"),
+    (1290158159, "dateTimePartPrecisionShort"),
+    (-105378824, "dateTimePartPrecisionLong"),
+];
+
+fn json_class_name<'a>(value: &'a Json, constructors: &[(i32, &'static str)]) -> Result<&'a str, String> {
+    match value.get("@type") {
+        Some(Json::Str(name)) => Ok(name),
+        Some(Json::Int(_, literal)) | Some(Json::Float(_, literal)) => {
+            let constructor = to_integer_i32(literal.as_bytes());
+            match constructors.iter().find(|(id, _)| *id == constructor) {
+                Some((_, name)) => Ok(name),
+                None => Err(format!("Unknown constructor 0x{:08x}", constructor as u32)),
+            }
+        }
+        None => Err("Can't find field \"@type\"".to_string()),
+        Some(other) => Err(format!(
+            "Expected String or Integer, but receive {}",
+            json_type_name(other)
+        )),
+    }
+}
+
+fn json_nullable_class_name<'a>(
+    value: Option<&'a Json>,
+    constructors: &[(i32, &'static str)],
+) -> Result<Option<&'a str>, String> {
+    match value {
+        None | Some(Json::Null) => Ok(None),
+        Some(value) => json_class_name(value, constructors).map(Some),
+    }
+}
+
+/// FormattedDate::get_formatted_date(date, DateTimeFormattingType)
+fn formatting_type_flags(value: Option<&Json>) -> Result<i32, String> {
+    let Some(value) = value.filter(|value| !matches!(value, Json::Null)) else {
+        return Ok(0);
+    };
+    let class_name = json_class_name(value, &DATE_TIME_FORMATTING_CONSTRUCTORS)?;
+    if class_name == "dateTimeFormattingTypeRelative" {
+        return Ok(DATE_RELATIVE);
+    }
+    if class_name != "dateTimeFormattingTypeAbsolute" {
+        return Err(format!("Unknown class \"{}\"", class_name));
+    }
+
+    let mut date_flags = 0;
+    if let Some(precision) = json_nullable_class_name(value.get("time_precision"), &DATE_TIME_FORMATTING_CONSTRUCTORS)? {
+        date_flags |= match precision {
+            "dateTimePartPrecisionNone" => 0,
+            "dateTimePartPrecisionShort" => DATE_SHORT_TIME,
+            "dateTimePartPrecisionLong" => DATE_LONG_TIME,
+            other => return Err(format!("Unknown class \"{}\"", other)),
+        };
+    }
+    if let Some(precision) = json_nullable_class_name(value.get("date_precision"), &DATE_TIME_FORMATTING_CONSTRUCTORS)? {
+        date_flags |= match precision {
+            "dateTimePartPrecisionNone" => 0,
+            "dateTimePartPrecisionShort" => DATE_SHORT_DATE,
+            "dateTimePartPrecisionLong" => DATE_LONG_DATE,
+            other => return Err(format!("Unknown class \"{}\"", other)),
+        };
+    }
+    if matches!(value.get("show_day_of_week"), Some(Json::Bool(true))) {
+        date_flags |= DATE_DAY_OF_WEEK;
+    }
+    Ok(date_flags)
+}
+
+/// get_message_entities for td_api::textEntity objects taken from a JSON request
+fn get_message_entities(entities: Option<&Json>, allow_all: bool) -> Result<Vec<TextEntity>, String> {
+    let format_error =
+        |message: String| format!("Failed to parse JSON object as TDLib request: {}", message);
+
+    let mut result = Vec::new();
+    let items = match entities {
+        None | Some(Json::Null) => return Ok(result),
+        Some(Json::Arr(items)) => items,
+        Some(other) => {
+            return Err(format_error(format!(
+                "Expected Array, but receive {}",
+                json_type_name(other)
+            )))
+        }
+    };
+    for item in items {
+        if matches!(item, Json::Null) {
+            continue;
+        }
+        if !matches!(item, Json::Obj(_)) {
+            return Err(format_error(format!(
+                "Expected Object, but receive {}",
+                json_type_name(item)
+            )));
+        }
+
+        // a missing or null "type" makes the entity unusable
+        let Some(entity_type) = item.get("type") else {
+            continue;
+        };
+        if matches!(entity_type, Json::Null) {
+            continue;
+        }
+
+        let offset = match item.get("offset") {
+            None => 0,
+            Some(value) => json_int32_field(value).map_err(format_error)?,
+        };
+        let length = match item.get("length") {
+            None => 0,
+            Some(value) => json_int32_field(value).map_err(format_error)?,
+        };
+
+        let entity = match json_class_name(entity_type, &TEXT_ENTITY_TYPE_CONSTRUCTORS).map_err(format_error)? {
+            "textEntityTypeMention" => TextEntity::new(EType::Mention, offset, length),
+            "textEntityTypeHashtag" => TextEntity::new(EType::Hashtag, offset, length),
+            "textEntityTypeBotCommand" => TextEntity::new(EType::BotCommand, offset, length),
+            "textEntityTypeUrl" => TextEntity::new(EType::Url, offset, length),
+            "textEntityTypeEmailAddress" => TextEntity::new(EType::EmailAddress, offset, length),
+            "textEntityTypeCashtag" => TextEntity::new(EType::Cashtag, offset, length),
+            "textEntityTypePhoneNumber" => TextEntity::new(EType::PhoneNumber, offset, length),
+            "textEntityTypeBankCardNumber" => TextEntity::new(EType::BankCardNumber, offset, length),
+            "textEntityTypeBold" => TextEntity::new(EType::Bold, offset, length),
+            "textEntityTypeItalic" => TextEntity::new(EType::Italic, offset, length),
+            "textEntityTypeUnderline" => TextEntity::new(EType::Underline, offset, length),
+            "textEntityTypeStrikethrough" => TextEntity::new(EType::Strikethrough, offset, length),
+            "textEntityTypeBlockQuote" => TextEntity::new(EType::BlockQuote, offset, length),
+            "textEntityTypeCode" => TextEntity::new(EType::Code, offset, length),
+            "textEntityTypePre" => TextEntity::new(EType::Pre, offset, length),
+            "textEntityTypePreCode" => {
+                let argument = entity_type.get("language").and_then(Json::as_str).unwrap_or("");
+                let mut language = argument.as_bytes().to_vec();
+                if !clean_input_string(&mut language) {
+                    return Err("MessageEntityPreCode.language must be encoded in UTF-8".to_string());
+                }
+                let mut entity = TextEntity::new(EType::PreCode, offset, length);
+                entity.argument = bytes_to_string(language);
+                entity
+            }
+            "textEntityTypeTextUrl" => {
+                let url = entity_type.get("url").and_then(Json::as_str).unwrap_or("");
+                let mut url = url.as_bytes().to_vec();
+                if !clean_input_string(&mut url) {
+                    return Err("MessageEntityTextUrl.url must be encoded in UTF-8".to_string());
+                }
+                if let Some(user_id) = get_link_user_id(&url) {
+                    let mut entity = TextEntity::new(EType::MentionName, offset, length);
+                    entity.user_id = user_id;
+                    entity
+                } else {
+                    let checked = check_link(&url).map_err(|message| format!("Entity {}", message))?;
+                    let mut entity = TextEntity::new(EType::TextUrl, offset, length);
+                    entity.argument = bytes_to_string(checked);
+                    entity
+                }
+            }
+            "textEntityTypeMentionName" => {
+                let user_id = match entity_type.get("user_id") {
+                    None => 0,
+                    Some(value) => json_int64_field(value).map_err(format_error)?,
+                };
+                let mut entity = TextEntity::new(EType::MentionName, offset, length);
+                entity.user_id = user_id;
+                entity
+            }
+            "textEntityTypeMediaTimestamp" => {
+                let media_timestamp = match entity_type.get("media_timestamp") {
+                    None => 0,
+                    Some(value) => json_int32_field(value).map_err(format_error)?,
+                };
+                if media_timestamp < 0 {
+                    return Err("Invalid media timestamp specified".to_string());
+                }
+                let mut entity = TextEntity::new(EType::MediaTimestamp, offset, length);
+                entity.media_timestamp = media_timestamp;
+                entity
+            }
+            "textEntityTypeSpoiler" => TextEntity::new(EType::Spoiler, offset, length),
+            "textEntityTypeCustomEmoji" => {
+                let custom_emoji_id = match entity_type.get("custom_emoji_id") {
+                    None => 0,
+                    Some(value) => json_int64_field(value).map_err(format_error)?,
+                };
+                if custom_emoji_id == 0 {
+                    return Err("Invalid custom emoji identifier specified".to_string());
+                }
+                let mut entity = TextEntity::new(EType::CustomEmoji, offset, length);
+                entity.custom_emoji_id = custom_emoji_id;
+                entity
+            }
+            "textEntityTypeExpandableBlockQuote" => {
+                TextEntity::new(EType::ExpandableBlockQuote, offset, length)
+            }
+            "textEntityTypeDateTime" => {
+                let date = match entity_type.get("unix_time") {
+                    None => 0,
+                    Some(value) => json_int32_field(value).map_err(format_error)?,
+                };
+                if date <= 0 {
+                    return Err("Invalid date specified".to_string());
+                }
+                let date_flags = formatting_type_flags(entity_type.get("formatting_type"))
+                    .map_err(format_error)?;
+                let mut entity = TextEntity::new(EType::FormattedDate, offset, length);
+                entity.date = date;
+                entity.date_flags = date_flags;
+                entity
+            }
+            "textEntityTypeTonAddress" => TextEntity::new(EType::TonAddress, offset, length),
+            other => return Err(format_error(format!("Unknown class \"{}\"", other))),
+        };
+
+        if !allow_all && !is_user_entity(entity.etype) {
+            continue;
+        }
+        result.push(entity);
+    }
+    Ok(result)
+}
+
 fn json_int32_field(value: &Json) -> Result<i32, String> {
     let literal = match value {
         Json::Null => return Ok(0),
@@ -3881,6 +5766,65 @@ fn json_int32_field(value: &Json) -> Result<i32, String> {
 
 fn parse_entities_error(message: &str) -> String {
     error_object(400, &format!("Can't parse entities: {}", message))
+}
+
+/// the formattedText argument shared by parseMarkdown and getMarkdownText
+fn read_formatted_text(request: &Json, allow_all: bool) -> Result<(String, Vec<TextEntity>), String> {
+    let format_error =
+        |message: String| format!("Failed to parse JSON object as TDLib request: {}", message);
+    let text_object = match request.get("text") {
+        None | Some(Json::Null) => return Err("Text must be non-empty".to_string()),
+        Some(text @ Json::Obj(_)) => text,
+        Some(other) => {
+            return Err(format_error(format!(
+                "Expected Object, but receive {}",
+                json_type_name(other)
+            )))
+        }
+    };
+    let text = match text_object.get("text") {
+        None | Some(Json::Null) => String::new(),
+        Some(Json::Str(value)) => value.clone(),
+        Some(other) => {
+            return Err(format_error(format!(
+                "Expected String, but receive {}",
+                json_type_name(other)
+            )))
+        }
+    };
+    let entities = get_message_entities(text_object.get("entities"), allow_all)?;
+    Ok((text, entities))
+}
+
+fn parse_markdown_request(request: &Json) -> String {
+    let (mut text, mut entities) = match read_formatted_text(request, true) {
+        Ok(text) => text,
+        Err(message) => return error_object(400, &message),
+    };
+    if let Err(message) = fix_formatted_text(&mut text, &mut entities) {
+        return error_object(400, &message);
+    }
+
+    let (text, entities) = parse_markdown_v3(text.as_bytes(), entities);
+    let mut text = bytes_to_string(text);
+    let mut entities = entities;
+    if let Err(message) = fix_formatted_text(&mut text, &mut entities) {
+        return error_object(400, &message);
+    }
+    formatted_text_json(&text, &entities)
+}
+
+fn get_markdown_text_request(request: &Json) -> String {
+    let (mut text, mut entities) = match read_formatted_text(request, false) {
+        Ok(text) => text,
+        Err(message) => return error_object(400, &message),
+    };
+    if let Err(message) = fix_formatted_text(&mut text, &mut entities) {
+        return error_object(400, &message);
+    }
+
+    let (text, entities) = get_markdown_v3(text, entities);
+    formatted_text_json(&text, &entities)
 }
 
 // td_api::textParseMode::ID values, used when "@type" is given as a number
@@ -4008,6 +5952,8 @@ fn execute(request: &str) -> String {
             None => error_object(400, "Text must be encoded in UTF-8"),
         },
         "parseTextEntities" => parse_text_entities(&json),
+        "parseMarkdown" => parse_markdown_request(&json),
+        "getMarkdownText" => get_markdown_text_request(&json),
         "getJsonValue" => match json.get("json").and_then(Json::as_str) {
             Some(text) => match Json::parse(text) {
                 Some(value) => {
