@@ -11,7 +11,8 @@
 覆盖边界:
     只覆盖 `tdjson` C ABI 的 `td_execute` 面与生成表的一致性。
     覆盖不到：有状态客户端路径（`td_send`/`td_receive`，见 backlog B1）、
-    `getLanguagePackString` 的成功路径（B7）、畸形 JSON 文本的报错文案（B9）。
+    `getLanguagePackString` 的成功路径（B7）、超 DBL_MAX 的浮点字面量（B10）、
+    请求/字符串里的非法 UTF-8（Rust 侧按 UTF-8 处理，TDLib 保留原始字节）。
 
 失效条件:
     oracle 换了构建（md5 变）、Rust 换了 target/linker、或 `td/` 的 schema/数据表更新——

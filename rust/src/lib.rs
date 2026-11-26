@@ -1167,15 +1167,16 @@ enum Json {
 }
 
 impl Json {
-    fn parse(text: &str) -> Option<Json> {
+    /// td::json_decode: max depth 100, trailing content rejected, messages verbatim
+    fn parse(text: &str) -> Result<Json, String> {
         let bytes = text.as_bytes();
         let mut pos = 0usize;
-        let value = parse_value(bytes, &mut pos)?;
+        let value = parse_value(bytes, &mut pos, 100)?;
         skip_json_ws(bytes, &mut pos);
         if pos != bytes.len() {
-            return None;
+            return Err("Expected string end".to_string());
         }
-        Some(value)
+        Ok(value)
     }
 
     fn get(&self, key: &str) -> Option<&Json> {
@@ -1208,98 +1209,126 @@ fn skip_json_ws(bytes: &[u8], pos: &mut usize) {
     }
 }
 
-fn parse_value(bytes: &[u8], pos: &mut usize) -> Option<Json> {
+fn json_starts_with(bytes: &[u8], pos: usize, token: &[u8]) -> bool {
+    bytes.len() >= pos + token.len() && &bytes[pos..pos + token.len()] == token
+}
+
+fn parse_value(bytes: &[u8], pos: &mut usize, depth: i32) -> Result<Json, String> {
+    if depth < 0 {
+        return Err("Too big object depth".to_string());
+    }
     skip_json_ws(bytes, pos);
-    match *bytes.get(*pos)? {
-        b'{' => {
+    match bytes.get(*pos).copied() {
+        Some(b'{') => {
             *pos += 1;
             let mut members = Vec::new();
             skip_json_ws(bytes, pos);
             if bytes.get(*pos) == Some(&b'}') {
                 *pos += 1;
-                return Some(Json::Obj(members));
+                return Ok(Json::Obj(members));
             }
             loop {
-                skip_json_ws(bytes, pos);
-                let key = match parse_value(bytes, pos)? {
-                    Json::Str(value) => value,
-                    _ => return None,
-                };
+                if *pos >= bytes.len() {
+                    return Err("Unexpected string end".to_string());
+                }
+                let key = parse_json_string(bytes, pos)?;
                 skip_json_ws(bytes, pos);
                 if bytes.get(*pos) != Some(&b':') {
-                    return None;
+                    return Err("':' expected".to_string());
                 }
                 *pos += 1;
-                let value = parse_value(bytes, pos)?;
+                let value = parse_value(bytes, pos, depth - 1)?;
                 members.push((key, value));
                 skip_json_ws(bytes, pos);
                 match bytes.get(*pos) {
-                    Some(b',') => *pos += 1,
                     Some(b'}') => {
                         *pos += 1;
-                        return Some(Json::Obj(members));
+                        return Ok(Json::Obj(members));
                     }
-                    _ => return None,
+                    Some(b',') => {
+                        *pos += 1;
+                        skip_json_ws(bytes, pos);
+                    }
+                    _ if *pos >= bytes.len() => {
+                        return Err("Unexpected string end".to_string())
+                    }
+                    _ => return Err("Unexpected symbol while parsing JSON Object".to_string()),
                 }
             }
         }
-        b'[' => {
+        Some(b'[') => {
             *pos += 1;
             let mut items = Vec::new();
             skip_json_ws(bytes, pos);
             if bytes.get(*pos) == Some(&b']') {
                 *pos += 1;
-                return Some(Json::Arr(items));
+                return Ok(Json::Arr(items));
             }
             loop {
-                items.push(parse_value(bytes, pos)?);
+                if *pos >= bytes.len() {
+                    return Err("Unexpected string end".to_string());
+                }
+                items.push(parse_value(bytes, pos, depth - 1)?);
                 skip_json_ws(bytes, pos);
                 match bytes.get(*pos) {
-                    Some(b',') => *pos += 1,
                     Some(b']') => {
                         *pos += 1;
-                        return Some(Json::Arr(items));
+                        return Ok(Json::Arr(items));
                     }
-                    _ => return None,
+                    Some(b',') => {
+                        *pos += 1;
+                        skip_json_ws(bytes, pos);
+                    }
+                    _ if *pos >= bytes.len() => {
+                        return Err("Unexpected string end".to_string())
+                    }
+                    _ => return Err("Unexpected symbol while parsing JSON Array".to_string()),
                 }
             }
         }
-        b'"' => parse_json_string(bytes, pos).map(Json::Str),
-        b't' => {
-            if bytes.len() >= *pos + 4 && &bytes[*pos..*pos + 4] == b"true" {
+        Some(b'"') => parse_json_string(bytes, pos).map(Json::Str),
+        Some(b't') => {
+            if json_starts_with(bytes, *pos, b"true") {
                 *pos += 4;
-                Some(Json::Bool(true))
+                Ok(Json::Bool(true))
             } else {
-                None
+                Err("Token starts with 't' -- true expected".to_string())
             }
         }
-        b'f' => {
-            if bytes.len() >= *pos + 5 && &bytes[*pos..*pos + 5] == b"false" {
+        Some(b'f') => {
+            if json_starts_with(bytes, *pos, b"false") {
                 *pos += 5;
-                Some(Json::Bool(false))
+                Ok(Json::Bool(false))
             } else {
-                None
+                Err("Token starts with 'f' -- false expected".to_string())
             }
         }
-        b'n' => {
-            if bytes.len() >= *pos + 4 && &bytes[*pos..*pos + 4] == b"null" {
+        Some(b'n') => {
+            if json_starts_with(bytes, *pos, b"null") {
                 *pos += 4;
-                Some(Json::Null)
+                Ok(Json::Null)
             } else {
-                None
+                Err("Token starts with 'n' -- null expected".to_string())
             }
         }
-        _ => parse_json_number(bytes, pos),
+        Some(b'-' | b'+' | b'.' | b'0'..=b'9') => Ok(parse_json_number(bytes, pos)),
+        Some(0) | None => Err("Unexpected string end".to_string()),
+        Some(byte) => {
+            if byte.is_ascii() && byte != 0 {
+                Err(format!("Unexpected symbol '{}'", byte as char))
+            } else {
+                Err("Unexpected symbol".to_string())
+            }
+        }
     }
 }
 
-fn parse_json_number(bytes: &[u8], pos: &mut usize) -> Option<Json> {
+fn parse_json_number(bytes: &[u8], pos: &mut usize) -> Json {
     let start = *pos;
     let mut is_float = false;
     while *pos < bytes.len() {
         match bytes[*pos] {
-            b'-' | b'+' => *pos += 1,
-            b'0'..=b'9' => *pos += 1,
+            b'-' | b'+' | b'0'..=b'9' => *pos += 1,
             b'.' | b'e' | b'E' => {
                 is_float = true;
                 *pos += 1;
@@ -1307,74 +1336,107 @@ fn parse_json_number(bytes: &[u8], pos: &mut usize) -> Option<Json> {
             _ => break,
         }
     }
-    if start == *pos {
-        return None;
-    }
-    let text = std::str::from_utf8(&bytes[start..*pos]).ok()?;
+    let text = String::from_utf8_lossy(&bytes[start..*pos]).into_owned();
     if is_float {
-        text.parse::<f64>()
-            .ok()
-            .map(|value| Json::Float(value, text.to_string()))
-    } else {
-        match text.parse::<i64>() {
-            Ok(value) => Some(Json::Int(value, text.to_string())),
-            Err(_) => Some(Json::Num(text.to_string())),
+        return Json::Float(to_double_prefix(&text), text);
+    }
+    match text.parse::<i64>() {
+        Ok(value) => Json::Int(value, text),
+        Err(_) => Json::Num(text),
+    }
+}
+
+/// td::to_double: the stringstream reads the longest numeric prefix, 0.0 when it can't
+fn to_double_prefix(text: &str) -> f64 {
+    let mut end = text.len();
+    while end > 0 {
+        if let Ok(value) = text[..end].parse::<f64>() {
+            return value;
+        }
+        end -= 1;
+    }
+    0.0
+}
+
+fn parse_json_string(bytes: &[u8], pos: &mut usize) -> Result<String, String> {
+    if bytes.get(*pos) != Some(&b'"') {
+        return Err("Opening '\"' expected".to_string());
+    }
+    *pos += 1;
+    let mut out: Vec<u8> = Vec::new();
+    loop {
+        let byte = match bytes.get(*pos) {
+            Some(byte) => *byte,
+            None => return Err("Closing '\"' not found".to_string()),
+        };
+        *pos += 1;
+        match byte {
+            b'"' => return Ok(String::from_utf8_lossy(&out).into_owned()),
+            b'\\' => {
+                let escape = match bytes.get(*pos) {
+                    Some(escape) => *escape,
+                    None => return Err("Closing '\"' not found".to_string()),
+                };
+                *pos += 1;
+                match escape {
+                    b'b' => out.push(8),
+                    b'f' => out.push(12),
+                    b'n' => out.push(10),
+                    b'r' => out.push(13),
+                    b't' => out.push(9),
+                    b'u' => {
+                        let mut code = parse_json_hex4(bytes, pos)?;
+                        if code > 0xd7ff
+                            && code < 0xe000
+                            && *pos + 6 <= bytes.len()
+                            && bytes[*pos] == b'\\'
+                            && bytes[*pos + 1] == b'u'
+                        {
+                            let saved = *pos;
+                            *pos += 2;
+                            let low = parse_json_hex4(bytes, pos)?;
+                            if low > 0xd7ff && low < 0xe000 {
+                                code = (((code & 0x3ff) << 10) | (low & 0x3ff)) + 0x10000;
+                            } else {
+                                *pos = saved;
+                            }
+                        }
+                        match char::from_u32(code) {
+                            Some(character) => {
+                                let mut buffer = [0u8; 4];
+                                out.extend_from_slice(character.encode_utf8(&mut buffer).as_bytes());
+                            }
+                            None => out.extend_from_slice("\u{fffd}".as_bytes()),
+                        }
+                    }
+                    other => out.push(other),
+                }
+            }
+            other => out.push(other),
         }
     }
 }
 
-fn parse_json_string(bytes: &[u8], pos: &mut usize) -> Option<String> {
-    if bytes.get(*pos) != Some(&b'"') {
-        return None;
+fn parse_json_hex4(bytes: &[u8], pos: &mut usize) -> Result<u32, String> {
+    if *pos + 4 > bytes.len() {
+        return Err("\\u has less than 4 symbols".to_string());
     }
-    *pos += 1;
-    let mut out = String::new();
-    let mut high_surrogate: Option<u32> = None;
-    loop {
-        let byte = *bytes.get(*pos)?;
+    let mut code = 0u32;
+    for _ in 0..4 {
+        let digit = hex_value_byte(bytes[*pos])
+            .ok_or_else(|| "Invalid \\u -- not hex digit".to_string())?;
+        code = code * 16 + digit;
         *pos += 1;
-        match byte {
-            b'"' => return Some(out),
-            b'\\' => {
-                let escape = *bytes.get(*pos)?;
-                *pos += 1;
-                match escape {
-                    b'"' => out.push('"'),
-                    b'\\' => out.push('\\'),
-                    b'/' => out.push('/'),
-                    b'b' => out.push('\u{8}'),
-                    b'f' => out.push('\u{c}'),
-                    b'n' => out.push('\n'),
-                    b'r' => out.push('\r'),
-                    b't' => out.push('\t'),
-                    b'u' => {
-                        let hex = std::str::from_utf8(bytes.get(*pos..*pos + 4)?).ok()?;
-                        *pos += 4;
-                        let code = u32::from_str_radix(hex, 16).ok()?;
-                        if (0xd800..0xdc00).contains(&code) {
-                            high_surrogate = Some(code);
-                            continue;
-                        }
-                        if (0xdc00..0xe000).contains(&code) {
-                            let high = high_surrogate.take()?;
-                            let combined = 0x10000 + ((high - 0xd800) << 10) + (code - 0xdc00);
-                            out.push(char::from_u32(combined)?);
-                            continue;
-                        }
-                        high_surrogate = None;
-                        out.push(char::from_u32(code)?);
-                    }
-                    _ => return None,
-                }
-            }
-            _ => {
-                let start = *pos - 1;
-                let width = utf8_width(byte);
-                let slice = bytes.get(start..start + width)?;
-                out.push(std::str::from_utf8(slice).ok()?.chars().next()?);
-                *pos = start + width;
-            }
-        }
+    }
+    Ok(code)
+}
+
+fn hex_value_byte(byte: u8) -> Option<u32> {
+    match byte {
+        b'0'..=b'9' => Some(u32::from(byte - b'0')),
+        b'a'..=b'f' => Some(u32::from(byte - b'a') + 10),
+        b'A'..=b'F' => Some(u32::from(byte - b'A') + 10),
+        _ => None,
     }
 }
 
@@ -3024,7 +3086,7 @@ fn emit_typed_json_value(value: &Json, out: &mut String) {
         )),
         Json::Num(literal) => out.push_str(&format!(
             "{{\"@type\":\"jsonValueNumber\",\"value\":{:.6}}}",
-            literal.parse::<f64>().unwrap_or(0.0)
+            to_double_prefix(literal)
         )),
         Json::Str(text) => {
             out.push_str("{\"@type\":\"jsonValueString\",\"value\":\"");
@@ -3083,7 +3145,7 @@ fn emit_json_text(value: &Json, out: &mut String) -> Result<(), String> {
                 None | Some(Json::Null) => 0.0,
                 Some(Json::Int(number, _)) => *number as f64,
                 Some(Json::Float(number, _)) => *number,
-                Some(Json::Num(literal)) => literal.parse::<f64>().unwrap_or(0.0),
+                Some(Json::Num(literal)) => to_double_prefix(literal),
                 Some(other) => return Err(expected_type_error("Number", other)),
             };
             out.push_str(&format!("{:.6}", number));
@@ -3256,7 +3318,7 @@ fn push_receiver_id(payload: &str) -> Result<i64, String> {
     if payload == "{}" {
         return Ok(0);
     }
-    let Some(mut root) = Json::parse(payload) else {
+    let Ok(mut root) = Json::parse(payload) else {
         return Err("Failed to parse payload as JSON object".to_string());
     };
     if !matches!(root, Json::Obj(_)) {
@@ -7183,6 +7245,50 @@ fn tag_level(tag: &str) -> Option<i32> {
         .map(|(_, level)| *level)
 }
 
+/// td/utils/port/path.cpp realpath: lexical resolution, native separators, drive case kept
+fn absolute_path(path: &str) -> String {
+    let unified = path.replace('\\', "/");
+    let bytes = unified.as_bytes();
+    let mut prefix = String::new();
+    let mut rest = unified.as_str();
+    if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
+        prefix = unified[..2].to_string();
+        rest = &unified[2..];
+    }
+    let mut parts: Vec<String> = Vec::new();
+    if prefix.is_empty() && !rest.starts_with('/') {
+        if let Ok(cwd) = std::env::current_dir() {
+            let cwd = cwd.to_string_lossy().replace('\\', "/");
+            let cwd_bytes = cwd.as_bytes();
+            let mut cwd_rest = cwd.as_str();
+            if cwd_bytes.len() >= 2 && cwd_bytes[1] == b':' {
+                prefix = cwd[..2].to_string();
+                cwd_rest = &cwd[2..];
+            }
+            for part in cwd_rest.split('/') {
+                if !part.is_empty() && part != "." {
+                    parts.push(part.to_string());
+                }
+            }
+        }
+    }
+    for part in rest.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => {
+                parts.pop();
+            }
+            other => parts.push(other.to_string()),
+        }
+    }
+    let joined = parts.join("\\");
+    if prefix.is_empty() {
+        format!("\\{}", joined)
+    } else {
+        format!("{}\\{}", prefix, joined)
+    }
+}
+
 fn log_action(kind: &str, json: &Json) -> Option<String> {
     match kind {
         "getLogVerbosityLevel" => {
@@ -7200,17 +7306,20 @@ fn log_action(kind: &str, json: &Json) -> Option<String> {
         }
         "getLogStream" => {
             let state = LOG_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-            let body = match state.stream {
-                "logStreamEmpty" => "{\"@type\":\"logStreamEmpty\"}".to_string(),
-                "logStreamFile" => format!(
-                    "{{\"@type\":\"logStreamFile\",\"path\":\"{}\",\"max_file_size\":{},\"redirect_stderr\":{}}}",
-                    state.stream_path,
-                    state.stream_max_file_size,
-                    if state.stream_redirect_stderr { "true" } else { "false" }
-                ),
-                _ => "{\"@type\":\"logStreamDefault\"}".to_string(),
-            };
-            Some(body)
+            match state.stream {
+                "logStreamEmpty" => Some("{\"@type\":\"logStreamEmpty\"}".to_string()),
+                "logStreamFile" => {
+                    let mut body = String::from("{\"@type\":\"logStreamFile\",\"path\":\"");
+                    json_escape(&state.stream_path, &mut body);
+                    body.push_str(&format!(
+                        "\",\"max_file_size\":{},\"redirect_stderr\":{}}}",
+                        state.stream_max_file_size,
+                        if state.stream_redirect_stderr { "true" } else { "false" }
+                    ));
+                    Some(body)
+                }
+                _ => Some("{\"@type\":\"logStreamDefault\"}".to_string()),
+            }
         }
         "setLogStream" => {
             let stream = match request_object(json, "log_stream") {
@@ -7240,6 +7349,26 @@ fn log_action(kind: &str, json: &Json) -> Option<String> {
                     Ok(value) => redirect_stderr = value,
                     Err(message) => return Some(request_error(&message)),
                 }
+            }
+            if kind_name == "logStreamFile" {
+                if max_file_size <= 0 {
+                    return Some(error_object(400, "Max log file size must be positive"));
+                }
+                if path.is_empty() {
+                    return Some(error_object(400, "Log file path must be non-empty"));
+                }
+                let opened = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .write(true)
+                    .open(&path);
+                if opened.is_err() {
+                    return Some(error_object(
+                        400,
+                        &format!("File \"{}\" can't be opened/created for appending", path),
+                    ));
+                }
+                path = absolute_path(&path);
             }
             let mut state = LOG_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             state.stream = match kind_name {
@@ -7574,8 +7703,14 @@ fn append_extra(result: String, extra: &str) -> String {
 }
 
 fn execute(request: &str) -> String {
-    let Some(json) = Json::parse(request) else {
-        return error_object(400, "tdjson_rs: malformed request");
+    let json = match Json::parse(request) {
+        Ok(json) => json,
+        Err(message) => {
+            return error_object(
+                400,
+                &format!("Failed to parse request as JSON object: {}", message),
+            )
+        }
     };
     if !matches!(json, Json::Obj(_)) {
         return error_object(400, "Expected a JSON object");
@@ -7651,12 +7786,12 @@ fn execute_object(json: &Json) -> String {
         "parseMarkdown" => parse_markdown_request(json),
         "getMarkdownText" => get_markdown_text_request(json),
         "getJsonValue" => match Json::parse(&req!(request_string(json, "json"))) {
-            Some(value) => {
+            Ok(value) => {
                 let mut out = String::new();
                 emit_typed_json_value(&value, &mut out);
                 out
             }
-            None => error_object(400, "Failed to parse JSON object"),
+            Err(message) => error_object(400, &message),
         },
         "getJsonString" => match req!(request_object(json, "json_value")) {
             Some(value) => {

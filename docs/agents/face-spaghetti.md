@@ -43,13 +43,13 @@
 
 | 项 | 值 |
 |---|---|
-| 快照日期 | 2026-11-26（round 1 = `6c4661eb4`；round 2 = T19 + T15–T18，见 F052） |
+| 快照日期 | 2026-11-26（round 1 = `6c4661eb4`；round 2 = T19 + T15–T18（F052）；round 3 = T17 的 logStreamFile + T21 的 json_decode 文案（F056）） |
 | 基线提交 | `6c4661eb4`（round 1） |
 | 机器记录 | `docs/gate-2026-11-26.json` |
 | 复跑命令 | `python tools/verify.py` |
-| 当时结果 | round 1：六项门禁全绿、仪器 279 PASS、`failures=0`；round 2：七项全绿、573 PASS（MATCH 284）、`failures=0`（F052） |
-| 已知缺口 | B1（有状态客户端，需测试 DC 账号）、B7（语言包成功路径需 pack 数据）、B9（畸形 JSON 文案，兼作 CONTROL）、B10（超 DBL_MAX 浮点） |
+| 当时结果 | round 1：六项全绿、279 PASS；round 2：七项全绿、573 PASS（MATCH 284，F052）；round 3：七项全绿、645 PASS（MATCH 318，F056） |
+| 已知缺口 | B1（有状态客户端，需测试 DC 账号）、B7（语言包成功路径需 pack 数据）、B10（超 DBL_MAX 浮点，兼作 CONTROL）；另：请求/字符串里的非法 UTF-8 与孤立代理对两侧表示不同 |
 
-换目标或大改前先重跑 `tools/verify.py`；数字变了就把旧快照行置 `过期`，另起一行记新快照（round 1 是 F044，round 2 是 F052）。
+换目标或大改前先重跑 `tools/verify.py`；数字变了就把旧快照行置 `过期`，另起一行记新快照（round 1 = F044，round 2 = F052，round 3 = F056）。
 
 仪器自己加载运行时：`tools/tdjson_diff.py` 用 `os.add_dll_directory` 挂上 `C:/msys64/ucrt64/bin`——CPython 3.8+ 的 `CDLL` 走 `LOAD_LIBRARY_SEARCH_DEFAULT_DIRS`，`PATH` 不参与依赖查找，所以不必再导出 PATH。

@@ -12,7 +12,8 @@
     只覆盖 `td_execute` 这一条纯函数路径（不登录、不联网）。
     覆盖不到的：`td_send` / `td_receive` / `td_json_client_*` 的有状态客户端路径；
     `tddb` / `td/mtproto` / `tdactor` / `tdutils` 在 C ABI 之下，不在本仪器范围内；
-    非 ASCII 文本（emoji/中文）的 UTF-16 偏移尚未入 corpus（F007 待证）。
+    超 DBL_MAX 的浮点字面量（B10，作 CONTROL）、请求与字符串里的非法 UTF-8（两侧表示不同）。
+    逐格覆盖状态见 docs/coverage-domain.md。
 
 失效条件:
     以下任一变化都必须重判 gate 并更新 docs/facts.md：
@@ -21,9 +22,15 @@
       - `td_api.tl` 变更导致 action/object 序列化格式变化。
 
 CONTROL 组的纪律:
-    CONTROL 只能放**长期不实现**的动作。它靠「Rust 未实现」制造差异，一旦该动作被实现，
-    这个 case 必然转为相同，`failures=0` 与「实现正确」就自相矛盾——把它移进 MATCH，
-    并换一个仍未实现的动作进 CONTROL。`getOption` 与 `searchStringsByPrefix` 各踩过一次。
+    CONTROL 放**记录在案、带回流条件**的已知差异，行内必须写明它是缺陷（目前：B10 的
+    `1e999` 超 DBL_MAX 浮点）。差异一旦被修复，这个 case 必然转为相同——届时把它移进
+    MATCH，并如实标注「已无已知差异」，不要为了凑负例去伪造一条。
+    历史上的两次踩坑：`getOption` / `searchStringsByPrefix` 曾靠「Rust 未实现」制造差异，
+    实现正确后判据自相矛盾；T19 修完类型错配后，那两条也已移进 MATCH。
+
+自检（每次运行都跑）:
+    两个 dll 的 md5 必须不同（防止拿 oracle 跟自己比）、每条 MATCH 输出非空、
+    MATCH 语料条数不低于下限（防止语料被误删后「全绿」）。
 """
 
 from __future__ import annotations
@@ -323,12 +330,45 @@ MATCH = [
     '{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"ab","entities":[{"@type":"textEntity","offset":0,"length":2,"type":{"@type":"textEntityTypeTextUrl","url":"https://e.com"}}]}}',
     '{"@type":"searchStringsByPrefix","strings":["ab","ab"],"query":"ab","limit":10,"return_sorted":true}',
     '{"@type":"searchStringsByPrefix","strings":["ba","ab","ab"],"query":"a","limit":10,"return_sorted":true}',
-]
-
-# 已知差异（backlog B9）：畸形 JSON 文本的 `json_decode` 报错文案未移植，两侧都是 400。
-CONTROL = [
     'not json',
     '{',
+    'null',
+    '"x"',
+    '{"a":1}',
+    '{"@type":"getTextEntities",}',
+    '{"@type":"getTextEntities" "text":"a"}',
+    '{"@type":"getTextEntities","text":"a"',
+    "{'a':1}",
+    'tru',
+    'falsey',
+    'nul',
+    '{"@type":"getTextEntities","text":"a"} x',
+    '{"@type":"getTextEntities","text":"a"}}',
+    '{"a":1,,}',
+    '[,1]',
+    '[1,]',
+    '{"a"}',
+    '{"a":}',
+    '{"@type":"getTextEntities","text":"\\\\ud83d"}',
+    '{"@type":"getTextEntities","text":"\\\\u12"}',
+    '{"@type":"getTextEntities","text":"\\\\uzzzz"}',
+    '{"@type":"getTextEntities","text":"caf\\u00e9"}',
+    '{"@type":"getTextEntities","text":"a\\\\/b"}',
+    '{"@type":"getTextEntities","text":"a\\\\u0000b"}',
+    '{"@type":"getJsonValue","json":"1-2"}',
+    '{"@type":"getJsonValue","json":"1.2.3"}',
+    '{"@type":"getJsonValue","json":"+"}',
+    '{"@type":"getJsonValue","json":"-"}',
+    '{"@type":"getJsonValue","json":"[1,]"}',
+    '{"@type":"getJsonValue","json":""}',
+    '{"@type":"getJsonValue","json":"{\\"a\\":1,}"}',
+    '{"@type":"getPushReceiverId","payload":"[]"}',
+    '{"@type":"getPushReceiverId","payload":"not json"}',
+]
+
+# 已知差异（backlog B10）：超 DBL_MAX 的浮点字面量，C++ 给 DBL_MAX 的十进制、Rust 给 inf。
+CONTROL = [
+    '{"@type":"getJsonValue","json":"1e999"}',
 ]
 
 # 有状态 action 只在有序序列里有意义：每段序列对两个 dll 各跑一遍，逐项比结果。
@@ -359,6 +399,24 @@ SEQUENCES = [
         '{"@type":"addLogMessage","verbosity_level":1,"text":"seq-probe"}',
         '{"@type":"getLogTags"}',
     ],
+    [
+        '{"@type":"getLogStream"}',
+        '{"@type":"setLogStream","log_stream":{"@type":"logStreamFile","path":"work/logs/seq-a.log","max_file_size":4096,"redirect_stderr":true}}',
+        '{"@type":"getLogStream"}',
+        '{"@type":"setLogStream","log_stream":{"@type":"logStreamFile","path":"work/logs/seq-b.log","max_file_size":1024}}',
+        '{"@type":"getLogStream"}',
+        '{"@type":"setLogStream","log_stream":{"@type":"logStreamFile","path":"work/logs/sub/../seq-c.log","max_file_size":2048,"redirect_stderr":false}}',
+        '{"@type":"getLogStream"}',
+        '{"@type":"setLogStream","log_stream":{"@type":"logStreamFile","path":"work/logs/seq-d.log","max_file_size":0}}',
+        '{"@type":"getLogStream"}',
+        '{"@type":"setLogStream","log_stream":{"@type":"logStreamFile","path":"","max_file_size":4096}}',
+        '{"@type":"setLogStream","log_stream":{"@type":"logStreamFile","path":"C:/no_such_dir_xyz/a.log","max_file_size":4096}}',
+        '{"@type":"getLogStream"}',
+        '{"@type":"setLogStream","log_stream":{"@type":"logStreamEmpty"}}',
+        '{"@type":"getLogStream"}',
+        '{"@type":"setLogStream","log_stream":{"@type":"logStreamDefault"}}',
+        '{"@type":"getLogStream"}',
+    ],
 ]
 
 
@@ -384,6 +442,15 @@ def add_runtime_dirs() -> None:
             os.add_dll_directory(str(candidate))
 
 
+LOG_DIR = Path("work/logs")
+
+
+def ensure_log_dir() -> bool:
+    # logStreamFile 序列要往这里写文件；目录不在就会静默走成「打不开」分支
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    return LOG_DIR.is_dir()
+
+
 def run(lib, case: str) -> str | None:
     raw = lib.td_execute(case.encode())
     return None if raw is None else raw.decode()
@@ -407,8 +474,28 @@ def main(argv: list[str]) -> int:
     print(f"oracle md5={actual}")
 
     add_runtime_dirs()
+    if not ensure_log_dir():
+        print(f"FAIL log dir missing: {LOG_DIR}")
+        return 1
     cpp = load(CPP)
     rs = load(RS)
+
+    print("\n== self-test: 管道不能空转 ==")
+    self_checks = [
+        ("两个 dll 必须不同", actual != md5(RS), "oracle 与 rust 的 md5 相同，等于拿自己比自己"),
+        ("MATCH 语料下限", len(MATCH) >= 300, f"只有 {len(MATCH)} 条，语料可能被误删"),
+        ("CONTROL 非空", len(CONTROL) >= 1, "没有已知差异作负例时，至少要有一条记录在案的差异"),
+    ]
+    empty_cells = 0
+    for case in MATCH:
+        output = run(cpp, case)
+        if output is None or output == "":
+            empty_cells += 1
+    self_checks.append(("MATCH 输出非空", empty_cells == 0, f"{empty_cells} 条没有任何输出"))
+    for name, ok, detail in self_checks:
+        if not ok:
+            failures.append(f"self-test failed: {name} ({detail})")
+        print(f"{'PASS' if ok else 'FAIL'} {name}{'' if ok else ': ' + detail}")
 
     print("\n== floor: oracle 重复 3 次必须逐字节稳定 ==")
     for case in MATCH:
