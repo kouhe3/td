@@ -1,4 +1,5 @@
 * text=auto
+*.rs -text
 
 *.cpp text whitespace=blank-at-eol,space-before-tab,blank-at-eof,tab-in-indent
 *.hpp text whitespace=blank-at-eol,space-before-tab,blank-at-eof,tab-in-indent
