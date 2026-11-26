@@ -1,39 +1,61 @@
-"""Generate the td_api function table (name + constructor id) from the TL scheme.
+"""Generate the td_api function table (name + constructor id) from the build's own id table.
 
 命令:
     python tools/gen_api_functions.py            # 重写 rust/src/api_functions.rs
     python tools/gen_api_functions.py --check    # 与已提交的表逐字节比对
 
 判据:
-    `td/generate/scheme/td_api.tl` 里 `---functions---` 之前的每条定义，去掉结尾 `;`
-    后按 `zlib.crc32` 求构造 id（与 C++ `tl-parser/crc32.c` 的 `compute_crc32` 同算法，
-    输入是 `<name> <args> = <result>` 的单空格形式）。已用它复算 td_api.h 里的
-    `getTextEntities`（-341490693）与 `textEntityTypeBold`（-1128210000）两组常量。
+    id 取自构建产物 `td/generate/auto/td/telegram/td_api.h` 的 `static const std::int32_t ID`
+    ——那是 C++ 生成器对**规范化后**的 TL 声明求的 crc32（`tl-parser.c` 的 `tl_buf_add_tree`），
+    与直接对源码行求 crc32 并不总是相同（3,464 个定义里有 422 个不同，F091）。
+    函数名集合取自 `td/generate/scheme/td_api.tl` 的 `---functions---` 段。
 
 覆盖边界:
     只覆盖 `---functions---` 段（函数）；`---types---` 段的对象不在表里——`@type` 给对象名时
     TDLib 回 `Unknown class`，用不查表即可。
 
 失效条件:
-    `td_api.tl` 的函数段变更（上游同步）后必须重跑本脚本，否则 Rust 侧对 `@type` 的名字/数字
-    解析会与 oracle 分叉。
+    `td_api.tl` 的函数段或生成的头文件变更（上游同步 / 重新构建）后必须重跑本脚本，否则
+    Rust 侧对 `@type` 的名字/数字解析会与 oracle 分叉。
+
+前置:
+    需要先构建一次（`td/generate/auto/` 是 gitignored 的构建产物）；`tools/verify.py` 的
+    build 门禁排在本门禁之前。
 """
 
 from __future__ import annotations
 
 import re
 import sys
-import zlib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "td" / "generate" / "scheme" / "td_api.tl"
 OUT = ROOT / "rust" / "src" / "api_functions.rs"
+HEADER = ROOT / "td" / "generate" / "auto" / "td" / "telegram" / "td_api.h"
 
 DEFINITION = re.compile(r"^([A-Za-z0-9_.]+)\s+.*=\s*([A-Za-z0-9_.]+);$")
 
 
+def header_ids() -> dict[str, int]:
+    if not HEADER.is_file():
+        raise SystemExit(f"FAIL {HEADER.relative_to(ROOT)} missing; run a build first (tools/verify.py does)")
+    ids: dict[str, int] = {}
+    name = None
+    for line in HEADER.read_text(encoding="utf-8", errors="replace").splitlines():
+        match = re.match(r"class (\w+) final : public", line)
+        if match:
+            name = match.group(1)
+            continue
+        match = re.match(r"\s*static const std::int32_t ID = (-?\d+);", line)
+        if match and name is not None:
+            ids[name] = int(match.group(1))
+            name = None
+    return ids
+
+
 def functions() -> list[tuple[int, str]]:
+    ids = header_ids()
     text = SOURCE.read_text(encoding="utf-8")
     marker = text.index("---functions---")
     section = text[marker + len("---functions---") :]
@@ -41,6 +63,7 @@ def functions() -> list[tuple[int, str]]:
     if end != -1:
         section = section[:end]
     rows: list[tuple[int, str]] = []
+    missing: list[str] = []
     for line in section.splitlines():
         line = line.strip()
         if not line or line.startswith("//"):
@@ -48,9 +71,13 @@ def functions() -> list[tuple[int, str]]:
         match = DEFINITION.match(line)
         if match is None:
             raise SystemExit(f"unparsed definition: {line!r}")
-        name, result = match.groups()
-        crc = zlib.crc32(line[:-1].encode())
-        rows.append((crc - (1 << 32) if crc & 0x80000000 else crc, name))
+        name = match.group(1)
+        if name not in ids:
+            missing.append(name)
+            continue
+        rows.append((ids[name], name))
+    if missing:
+        raise SystemExit(f"FAIL ids missing from {HEADER.name}: {missing[:5]}")
     rows.sort(key=lambda row: row[1])
     return rows
 

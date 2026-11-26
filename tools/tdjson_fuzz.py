@@ -34,6 +34,9 @@ import tdjson_diff as instrument
 
 SYNCHRONOUS_SOURCE = Path(__file__).resolve().parents[1] / "td/telegram/SynchronousRequests.cpp"
 
+# 有状态 action 的随机序列段数；每段自带恢复步骤
+SEQUENCE_COUNT = 20
+
 # 全局状态类 action：有序序列才可判（tdjson_diff.py 的 SEQUENCE 段）
 STATEFUL = {
     "addLogMessage",
@@ -92,6 +95,30 @@ def class_of(definitions: dict[str, tuple[list[tuple[str, str]], str]], name: st
     return definitions[name][1].split("=", 1)[1].strip()
 
 
+HEADER_IDS = gen_tl_schema.header_ids()
+
+
+def constructor_id(name: str) -> int | None:
+    """The build's own id table (F091); builtins without a dispatch id return None."""
+    return HEADER_IDS.get(name)
+
+
+def bytes_allowlist() -> set[str]:
+    """Actions whose corpus already contains invalid-UTF-8 cells (F063), i.e. safe to mutate that way.
+
+    Anywhere else invalid UTF-8 can reach td::JsonBuilder, which CHECK-fails and kills the oracle
+    process instead of returning an error.
+    """
+    names: set[str] = set()
+    for case in instrument.MATCH:
+        if not isinstance(case, bytes):
+            continue
+        match = re.search(rb'"@type":"([A-Za-z]+)"', case)
+        if match:
+            names.add(match.group(1).decode())
+    return names
+
+
 def constructors_of(definitions: dict[str, tuple[list[tuple[str, str]], str]], class_name: str) -> list[str]:
     return sorted(
         name
@@ -132,7 +159,7 @@ def value_of(
         return rng.choice([None, 5, "x", []])
     if roll < 0.30:
         return {}
-    if depth >= 2:
+    if depth >= 3:
         return {"@type": base} if class_of(definitions, base) != base else {}
     if class_of(definitions, base) == base:
         options = constructors_of(definitions, base)
@@ -148,15 +175,20 @@ def object_of(
     rng: random.Random,
     depth: int,
 ):
-    obj: dict[str, object] = {"@type": name}
-    for field, kind in definitions[name][0]:
+    # "@type" may be the dispatch id from the build's own table instead of the name (F082, F091)
+    dispatch_id = constructor_id(name)
+    type_name: object = name
+    if dispatch_id is not None and rng.random() <= 0.2:
+        type_name = dispatch_id
+    obj: dict[str, object] = {"@type": type_name}
+    for field, field_kind in definitions[name][0]:
         roll = rng.random()
         if roll < 0.10:
             continue
         if roll < 0.22:
             obj[field] = rng.choice(WRONG_VALUES)
         else:
-            obj[field] = value_of(definitions, kind, rng, depth)
+            obj[field] = value_of(definitions, field_kind, rng, depth)
     return obj
 
 
@@ -200,17 +232,34 @@ def mutate(rng: random.Random, text: bytes) -> bytes:
     return bytes(data)
 
 
+def inject_bad_utf8(rng: random.Random, payload: bytes) -> bytes:
+    """Drop one invalid byte inside the first string literal that has room for it.
+
+    Only used for actions whose corpus already carries invalid-UTF-8 cells (F063); everywhere else
+    the oracle can CHECK-abort instead of answering.
+    """
+    quotes = [index for index, byte in enumerate(payload) if byte == 0x22]
+    if len(quotes) < 2:
+        return payload
+    position = quotes[rng.randrange(len(quotes) - 1)] + 1
+    return payload[:position] + bytes([rng.choice([0xFF, 0xFE, 0xC0, 0x80])]) + payload[position:]
+
+
 def build_corpus(seed: int, cases: int) -> list[tuple[str, bytes]]:
     rng = random.Random(seed)
     definitions = gen_tl_schema.parse_schema()
     targets = sorted(set(synchronous_functions()) - STATEFUL)
+    unsafe_ok = bytes_allowlist()
     corpus: list[tuple[str, bytes]] = []
 
     for index in range(cases * len(targets)):
         name = targets[index % len(targets)]
         request = function_call(definitions, name, rng)
         text = json.dumps(request, ensure_ascii=False, separators=(",", ":"))
-        corpus.append((name, text.encode()))
+        payload = text.encode()
+        if name in unsafe_ok and rng.random() < 0.2:
+            payload = inject_bad_utf8(rng, payload)
+        corpus.append((name, payload))
 
     # 变异：从手写语料里取种子（跳过 getLanguagePackString 与其空路径），做字节级改动
     seeds = [
@@ -236,6 +285,81 @@ def corpus_md5(corpus: list[tuple[str, bytes]]) -> str:
         digest.update(payload)
         digest.update(b"\x01")
     return digest.hexdigest()
+
+
+LOG_TAGS = [
+    "td_requests",
+    "notifications",
+    "proxy",
+    "sqlite",
+    "td_init",
+    "update_file",
+    "raw_mtproto",
+    "no_such_tag",
+]
+LOG_DIR = "work/logs-fuzz"
+
+
+def log_step(rng: random.Random, index: int) -> bytes:
+    """One stateful request; paths stay inside work/logs-fuzz so nothing escapes the repo."""
+    levels = [-1, 0, 1, 2, 3, 5, 7, 8]
+    tag = rng.choice(LOG_TAGS)
+    choice = rng.randrange(7)
+    if choice == 0:
+        request = {"@type": "getLogVerbosityLevel"}
+    elif choice == 1:
+        request = {"@type": "setLogVerbosityLevel", "new_verbosity_level": rng.choice(levels)}
+    elif choice == 2:
+        request = {"@type": "getLogTagVerbosityLevel", "tag": tag}
+    elif choice == 3:
+        request = {"@type": "setLogTagVerbosityLevel", "tag": tag, "new_verbosity_level": rng.choice(levels)}
+    elif choice == 4:
+        request = {
+            "@type": "addLogMessage",
+            # level 0 是 fatal：oracle 会直接 abort（F093），所以只用 >= 1
+            "verbosity_level": rng.choice([1, 2, 3, 5, 7, 8]),
+            "text": rng.choice(TEXT_SAMPLES),
+        }
+    elif choice == 5:
+        request = {"@type": "getLogStream"}
+    else:
+        stream: dict[str, object] = rng.choice(
+            [
+                {"@type": "logStreamDefault"},
+                {"@type": "logStreamEmpty"},
+                {
+                    "@type": "logStreamFile",
+                    "path": f"{LOG_DIR}/seq-{index}.log",
+                    "max_file_size": rng.choice([0, 1, 1024, 4096]),
+                },
+            ]
+        )
+        request = {"@type": "setLogStream", "log_stream": stream}
+    return json.dumps(request, ensure_ascii=False, separators=(",", ":")).encode()
+
+
+def build_log_sequences(seed: int, count: int) -> list[list[bytes]]:
+    """Stateful actions are only comparable as ordered sequences, and every sequence restores state."""
+    rng = random.Random(seed * 31 + 7)
+    # 每个 tag 的默认级别是 oracle 的内置常量，读不到就先统一设成 3：这样任何一段的结果
+    # 都不依赖它前面跑过什么（否则第一遍和第二遍会不同）
+    reset = [
+        json.dumps(
+            {"@type": "setLogTagVerbosityLevel", "tag": tag, "new_verbosity_level": 3},
+            separators=(",", ":"),
+        ).encode()
+        for tag in LOG_TAGS
+        if tag != "no_such_tag"
+    ]
+    reset += [
+        b'{"@type":"setLogVerbosityLevel","new_verbosity_level":5}',
+        b'{"@type":"setLogStream","log_stream":{"@type":"logStreamDefault"}}',
+    ]
+    sequences: list[list[bytes]] = []
+    for index in range(count):
+        steps = [log_step(rng, index) for _ in range(rng.randrange(3, 7))]
+        sequences.append(reset + steps + reset)
+    return sequences
 
 
 def main(argv: list[str]) -> int:
@@ -300,10 +424,42 @@ def main(argv: list[str]) -> int:
     if empty * 10 > len(corpus):
         failures.append(f"{empty} of {len(corpus)} cases produced no output (pipeline suspect)")
 
+    print("\n== 有状态 action：随机序列（每段结束恢复 default / 5） ==")
+    Path(LOG_DIR).mkdir(parents=True, exist_ok=True)
+    sequences = build_log_sequences(args.seed, SEQUENCE_COUNT)
+
+    def run_sequences(lib) -> list[list[str | None]]:
+        return [[instrument.run(lib, step) for step in sequence] for sequence in sequences]
+
+    cpp_sequences = run_sequences(cpp)
+    cpp_sequences_again = run_sequences(cpp)
+    rs_sequences = run_sequences(rs)
+    sequence_steps = sum(len(sequence) for sequence in sequences)
+    unstable = sum(1 for a, b in zip(cpp_sequences, cpp_sequences_again) if a != b)
+    if unstable:
+        failures.append(f"{unstable} of {len(sequences)} log sequences are not stable on the oracle")
+    diverged_sequences = 0
+    for index, (cpp_rows, rs_rows) in enumerate(zip(cpp_sequences, rs_sequences)):
+        if cpp_rows == rs_rows:
+            continue
+        diverged_sequences += 1
+        step_index = next(i for i, (a, b) in enumerate(zip(cpp_rows, rs_rows)) if a != b)
+        failures.append(f"log sequence {index} step {step_index} differs")
+        print(f"FAIL sequence {index} step {step_index}: {instrument.label(sequences[index][step_index])}")
+        print(f"  cpp: {cpp_rows[step_index]}")
+        print(f"  rs : {rs_rows[step_index]}")
+    print(
+        f"{'PASS' if not unstable and not diverged_sequences else 'FAIL'} "
+        f"{len(sequences)} 段 / {sequence_steps} 步：unstable={unstable} diverged={diverged_sequences}"
+    )
+
     print("\nper-action cases:")
     for name in targets:
         print(f"  {name}: {per_action.get(name, 0)}")
-    print(f"\ncases={len(corpus)} diverged={differenced} empty={empty} failures={len(failures)}")
+    print(
+        f"\ncases={len(corpus)} sequences={len(sequences)}/{sequence_steps}steps diverged={differenced} "
+        f"empty={empty} failures={len(failures)}"
+    )
     for failure in failures[:20]:
         print(f"  - {failure}")
     return 1 if failures else 0

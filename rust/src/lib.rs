@@ -6797,7 +6797,11 @@ fn json_int64_field(value: &Json) -> Result<i64, String> {
         Json::Null => return Ok(0),
         Json::Int(_, literal) | Json::Float(_, literal) | Json::Num(literal) => literal,
         Json::Str(bytes) => {
-            owned = String::from_utf8_lossy(bytes).into_owned();
+            // detail::get_to_integer_safe_error checks UTF-8 before quoting the literal
+            owned = match std::str::from_utf8(bytes) {
+                Ok(text) => text.to_string(),
+                Err(_) => return Err(UTF8_MESSAGE.to_string()),
+            };
             &owned
         }
         other => {
@@ -7078,7 +7082,11 @@ fn json_int32_field(value: &Json) -> Result<i32, String> {
         Json::Null => return Ok(0),
         Json::Int(_, literal) | Json::Float(_, literal) | Json::Num(literal) => literal,
         Json::Str(bytes) => {
-            owned = String::from_utf8_lossy(bytes).into_owned();
+            // detail::get_to_integer_safe_error checks UTF-8 before quoting the literal
+            owned = match std::str::from_utf8(bytes) {
+                Ok(text) => text.to_string(),
+                Err(_) => return Err(UTF8_MESSAGE.to_string()),
+            };
             &owned
         }
         other => return Err(format!("Expected Number, but receive {}", json_type_name(other))),
@@ -7494,6 +7502,10 @@ fn log_action(kind: &str, json: &Json) -> Option<String> {
                 Ok(level) => level,
                 Err(message) => return Some(request_error(&message)),
             };
+            // Logging::set_verbosity_level rejects negatives (level 0 is the fatal level)
+            if new_level < 0 {
+                return Some(error_object(400, "Wrong new verbosity level specified"));
+            }
             let mut state = LOG_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             state.level = new_level;
             Some(ok_object())
@@ -7615,7 +7627,8 @@ fn log_action(kind: &str, json: &Json) -> Option<String> {
             let mut state = LOG_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
             match state.tag_levels.iter_mut().find(|(name, _)| *name == tag) {
                 Some(entry) => {
-                    entry.1 = new_level;
+                    // the oracle clamps a per-tag level to at least 1 (0 is the fatal level)
+                    entry.1 = new_level.max(1);
                     Some(ok_object())
                 }
                 None => Some(error_object(400, "Log tag is not found")),
@@ -7787,6 +7800,20 @@ fn request_error(message: &str) -> String {
     )
 }
 
+const UTF8_MESSAGE: &str = "Strings must be encoded in UTF-8";
+
+/// Marks an undecodable "@type": ClientJson::from_response replaces such a message with UTF8_MESSAGE
+/// and drops the parse prefix, while a field-level UTF-8 error keeps it (F092).
+const BARE_UTF8_SENTINEL: &str = "\u{1}undecodable-@type";
+
+fn validation_error(message: &str) -> String {
+    if message == BARE_UTF8_SENTINEL {
+        error_object(400, UTF8_MESSAGE)
+    } else {
+        request_error(message)
+    }
+}
+
 fn expected_type_error(expected: &str, value: &Json) -> String {
     format!("Expected {}, but receive {}", expected, json_type_name(value))
 }
@@ -7862,7 +7889,7 @@ fn validate_object(value: &Json) -> Result<(), String> {
         None => return Err("Can't find field \"@type\"".to_string()),
         Some(Json::Str(bytes)) => match std::str::from_utf8(bytes) {
             Ok(name) => name,
-            Err(_) => return Err("Strings must be encoded in UTF-8".to_string()),
+            Err(_) => return Err(BARE_UTF8_SENTINEL.to_string()),
         },
         // The oracle also accepts the constructor id instead of the name (F082).
         Some(Json::Int(_, literal)) | Some(Json::Float(_, literal)) | Some(Json::Num(literal)) => {
@@ -8029,16 +8056,18 @@ fn execute_object(json: &Json) -> String {
     let kind = match json.get("@type") {
         None => return request_error("Can't find field \"@type\""),
         Some(Json::Str(bytes)) => match std::str::from_utf8(bytes) {
-            Err(_) => return request_error("Strings must be encoded in UTF-8"),
+            // an undecodable "@type" is the only way to get invalid UTF-8 into an error message, and
+            // ClientJson::from_response rewrites such a message to this exact text (F092)
+            Err(_) => return error_object(400, UTF8_MESSAGE),
             Ok(name) => {
                 if SYNCHRONOUS_ACTIONS.contains(&name) {
                     if let Err(message) = validate_arguments(name, &json) {
-                        return request_error(&message);
+                        return validation_error(&message);
                     }
                     name
                 } else if api_functions::FUNCTIONS.iter().any(|(_, known)| *known == name) {
                     if let Err(message) = validate_arguments(name, &json) {
-                        return request_error(&message);
+                        return validation_error(&message);
                     }
                     return error_object(400, "The method can't be executed synchronously");
                 } else {
@@ -8051,13 +8080,13 @@ fn execute_object(json: &Json) -> String {
             match api_functions::FUNCTIONS.iter().find(|(id, _)| *id == constructor) {
                 Some((_, name)) if SYNCHRONOUS_ACTIONS.contains(name) => {
                     if let Err(message) = validate_arguments(name, &json) {
-                        return request_error(&message);
+                        return validation_error(&message);
                     }
                     *name
                 }
                 Some((_, name)) => {
                     if let Err(message) = validate_arguments(name, &json) {
-                        return request_error(&message);
+                        return validation_error(&message);
                     }
                     return error_object(400, "The method can't be executed synchronously");
                 }
@@ -8369,15 +8398,13 @@ fn country_info_json(country: &country_table::Country) -> String {
 
 #[no_mangle]
 pub extern "C" fn td_execute(request: *const c_char) -> *const c_char {
-    if request.is_null() {
-        return set_result(String::new());
-    }
-    let bytes = unsafe { CStr::from_ptr(request) }.to_bytes();
+    // td_json_client.cpp substitutes an empty request for NULL, and its parse error is the answer
+    let bytes: &[u8] = if request.is_null() {
+        b""
+    } else {
+        unsafe { CStr::from_ptr(request) }.to_bytes()
+    };
     set_result(execute(bytes))
-}
-
-fn unimplemented(name: &str) -> *const c_char {
-    set_result(format!("tdjson_rs: {} not implemented", name))
 }
 
 // Stateful client lane (B1a). The oracle answers `setTdlibParameters` with a fixed
@@ -8398,6 +8425,9 @@ struct ClientState {
     burst_sent: bool,
     auth: AuthState,
     pending: VecDeque<String>,
+    // `td_json_client_*` (ClientJson) answers on its own queue and omits "@client_id"; it also
+    // replays the settled 125-option table instead of the first run's 127 (F090)
+    legacy: bool,
 }
 
 impl Default for ClientState {
@@ -8407,6 +8437,7 @@ impl Default for ClientState {
             burst_sent: false,
             auth: AuthState::WaitParameters,
             pending: VecDeque::new(),
+            legacy: false,
         }
     }
 }
@@ -8578,8 +8609,16 @@ fn auth_response(client_id: c_int, kind: &str, json: &Json) -> Option<Vec<String
 }
 
 fn send_request(client_id: c_int, bytes: &[u8]) {
-    let Ok(json) = Json::parse(bytes) else {
-        return;
+    let json = match Json::parse(bytes) {
+        Ok(json) => json,
+        Err(message) => {
+            // ClientJson::send turns an unparsable request into a testReturnError function, so the
+            // failure comes back as a response instead of being dropped (F090)
+            let line = client_error(client_id, 400, &format!("Failed to parse request as JSON object: {}", message));
+            // the oracle still answers this after authorizationStateClosed, unlike a real request
+            queue_line(client_id, line);
+            return;
+        }
     };
     let kind = match json.get("@type") {
         Some(Json::Str(name)) => name,
@@ -8609,6 +8648,12 @@ fn send_request(client_id: c_int, bytes: &[u8]) {
     }
 
     let response = auth_response(client_id, kind, &json);
+    let closed = kind == "logOut";
+    deliver(client_id, Some(closed), response);
+}
+
+/// Queue responses for one client: the one-time global burst first, then the request's own lines.
+fn deliver(client_id: c_int, closes: Option<bool>, response: Option<Vec<String>>) {
     let Ok(mut clients) = CLIENTS.lock() else {
         return;
     };
@@ -8630,19 +8675,97 @@ fn send_request(client_id: c_int, bytes: &[u8]) {
             state.pending.push_back(line);
         }
     }
-    if kind == "logOut" {
+    if closes == Some(true) {
         state.auth = AuthState::Closed;
     }
+}
+
+fn queue_line(client_id: c_int, line: String) {
+    let Ok(mut clients) = CLIENTS.lock() else {
+        return;
+    };
+    let Some(state) = clients.get_mut((client_id - 1) as usize) else {
+        return;
+    };
+    if !state.parameters_set {
+        return;
+    }
+    if !state.burst_sent {
+        state.burst_sent = true;
+        for row in client_options::GLOBAL_BURST_TEMPLATE.iter() {
+            state.pending.push_back(row.replace("{CLIENT_ID}", &client_id.to_string()));
+        }
+    }
+    state.pending.push_back(line);
 }
 
 fn pop_pending() -> Option<String> {
     let mut clients = CLIENTS.lock().ok()?;
     for state in clients.iter_mut() {
-        if let Some(text) = state.pending.pop_front() {
-            return Some(text);
+        // ClientManager::receive only serves clients created by td_create_client_id
+        if !state.legacy {
+            if let Some(text) = state.pending.pop_front() {
+                return Some(text);
+            }
         }
     }
     None
+}
+
+fn pop_pending_for(client_id: c_int) -> Option<String> {
+    let mut clients = CLIENTS.lock().ok()?;
+    let state = clients.get_mut((client_id - 1) as usize)?;
+    if let Some(text) = state.pending.pop_front() {
+        return Some(text);
+    }
+    None
+}
+
+/// ClientJson::receive passes client_id 0 to from_response, so "@client_id" is never appended
+fn strip_client_id(text: &str) -> String {
+    let marker = ",\"@client_id\":";
+    let Some(index) = text.rfind(marker) else {
+        return text.to_string();
+    };
+    let number = text[index + marker.len()..].strip_suffix('}').unwrap_or("");
+    if number.is_empty() || !number.bytes().all(|byte| byte.is_ascii_digit()) {
+        return text.to_string();
+    }
+    let mut stripped = text[..index].to_string();
+    stripped.push('}');
+    stripped
+}
+
+fn legacy_client_id(client: *mut c_void) -> Option<c_int> {
+    if client.is_null() {
+        None
+    } else {
+        Some(unsafe { *(client as *const c_int) })
+    }
+}
+
+fn wait_timeout(timeout: c_double) -> Option<std::time::Instant> {
+    if timeout.is_finite() && timeout > 0.0 {
+        Some(std::time::Instant::now() + std::time::Duration::from_secs_f64(timeout))
+    } else {
+        None
+    }
+}
+
+fn receive_until(deadline: Option<std::time::Instant>, mut next: impl FnMut() -> Option<String>) -> Option<String> {
+    loop {
+        if let Some(text) = next() {
+            return Some(text);
+        }
+        // a zero timeout means "poll once", not "wait forever"
+        let Some(deadline) = deadline else {
+            return None;
+        };
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
 }
 
 #[no_mangle]
@@ -8665,20 +8788,9 @@ pub extern "C" fn td_send(client_id: c_int, request: *const c_char) {
 
 #[no_mangle]
 pub extern "C" fn td_receive(timeout: c_double) -> *const c_char {
-    let wait = if timeout.is_finite() && timeout > 0.0 {
-        timeout
-    } else {
-        0.0
-    };
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs_f64(wait);
-    loop {
-        if let Some(text) = pop_pending() {
-            return set_result(text);
-        }
-        if std::time::Instant::now() >= deadline {
-            return std::ptr::null();
-        }
-        std::thread::sleep(std::time::Duration::from_millis(2));
+    match receive_until(wait_timeout(timeout), pop_pending) {
+        Some(text) => set_result(text),
+        None => std::ptr::null(),
     }
 }
 
@@ -8687,17 +8799,40 @@ pub extern "C" fn td_set_log_message_callback(_max_verbosity_level: c_int, _call
 
 #[no_mangle]
 pub extern "C" fn td_json_client_create() -> *mut c_void {
-    std::ptr::null_mut()
+    let client_id = NEXT_CLIENT_ID.fetch_add(1, Ordering::SeqCst);
+    if let Ok(mut clients) = CLIENTS.lock() {
+        clients.push(ClientState {
+            legacy: true,
+            ..ClientState::default()
+        });
+    }
+    // the handle is the client id on the heap; ClientJson is an opaque pointer too
+    Box::into_raw(Box::new(client_id)) as *mut c_void
 }
 
 #[no_mangle]
-pub extern "C" fn td_json_client_send(_client: *mut c_void, _request: *const c_char) {
-    unimplemented("td_json_client_send");
+pub extern "C" fn td_json_client_send(client: *mut c_void, request: *const c_char) {
+    let Some(client_id) = legacy_client_id(client) else {
+        return;
+    };
+    // ClientJson substitutes an empty request for a NULL pointer
+    let bytes: &[u8] = if request.is_null() {
+        b""
+    } else {
+        unsafe { CStr::from_ptr(request) }.to_bytes()
+    };
+    send_request(client_id, bytes);
 }
 
 #[no_mangle]
-pub extern "C" fn td_json_client_receive(_client: *mut c_void, _timeout: c_double) -> *const c_char {
-    std::ptr::null()
+pub extern "C" fn td_json_client_receive(client: *mut c_void, timeout: c_double) -> *const c_char {
+    let Some(client_id) = legacy_client_id(client) else {
+        return std::ptr::null();
+    };
+    match receive_until(wait_timeout(timeout), || pop_pending_for(client_id)) {
+        Some(text) => set_result(strip_client_id(&text)),
+        None => std::ptr::null(),
+    }
 }
 
 #[no_mangle]
@@ -8706,4 +8841,14 @@ pub extern "C" fn td_json_client_execute(_client: *mut c_void, request: *const c
 }
 
 #[no_mangle]
-pub extern "C" fn td_json_client_destroy(_client: *mut c_void) {}
+pub extern "C" fn td_json_client_destroy(client: *mut c_void) {
+    if client.is_null() {
+        return;
+    }
+    let client_id = unsafe { *Box::from_raw(client as *mut c_int) };
+    if let Ok(mut clients) = CLIENTS.lock() {
+        if let Some(state) = clients.get_mut((client_id - 1) as usize) {
+            state.pending.clear();
+        }
+    }
+}

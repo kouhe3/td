@@ -40,7 +40,7 @@
 | `parseTextEntities` | measured（F028, F029, F030, F051：`<tg-time>`/`<tg-emoji>`、未闭合标签、version 0/缺省） | — |
 | `parseMarkdown` / `getMarkdownText` | measured（F031–F034, F051：v3 roundtrip 自检与降级路径） | — |
 | `searchStringsByPrefix` | measured（F035, F051：大小写、重复项并列次序；F057：18 组抽样；F062：U+0020–U+FFFF 全表 1,658,474 次比较零分歧） | — |
-| 8 个日志类 action | measured（F036, F037, F038, F053, F059；`SEQUENCE` 段 5 段 41 步，含隔离目录下的文件流、三条错误路径与 junction 路径） | — |
+| 8 个日志类 action | measured（F036, F037, F038, F053, F059, F094；`SEQUENCE` 段 6 段 51 步，含隔离目录下的文件流、三条错误路径与 junction 路径；另加随机序列 20 段/444 步） | `addLogMessage` 的 level ≤ 0 会让 oracle abort（F093），不可判 |
 | `getLanguagePackString` | measured（F039：三道校验 + 无库 404；F087：成功路径 27 条 cell——ordinary / pluralized / deleted / 版本有无 / 表名不匹配 / 打不开的库，fixture 由 `tools/gen_language_pack.py` 现场生成） | — |
 | `searchQuote` | measured（F043, F051：负 offset / 越界长度实体、越界 quote_position） | — |
 | `getPhoneNumberInfoSync` | measured（F041, F042, F051：`language_code` 无效，恒用内置 `en` 快照；`888` 前缀） | — |
@@ -61,6 +61,7 @@
 | 全部 1114 个函数的参数解析（含 29 个同步 action）：按 TL 定义顺序、缺失/`null` 取默认、多余字段忽略 | measured（F081：1114 个 argument cell，MATCH 1528） | — |
 | 嵌套对象：抽象类字段必须带 `@type`（缺失 / 未知两种文案）、具体类字段不需要 | measured（F081：`sendMessage.input_message_content`、`getThemeParametersJsonString.theme` 两条样例 + 递归校验） | — |
 | 嵌套 `@type` 用构造号（数字） | measured（F082：正确号接受、未知号 `Unknown constructor 0x00003039`，新增 `CONSTRUCTOR_IDS` 表） | — |
+| `@type` 构造号与函数号取自**构建产物**的 id 表 | measured（F091：源码行 crc32 与规范化 crc32 在 422/3464 个定义上不同；两个生成器改读 `td/generate/auto/.../td_api.h` 后，21 个 action 的随机 id 形态零分歧） | — |
 | 具体类字段：`@type` 不校验（可以是任意值或缺失），**但已声明的字段递归校验** | measured（F082 前半 + F084 更正：F082 的三条样本用的都是不存在的字段名 `bg_color`；`folder.name.text:true` → `Expected Object, but receive Boolean`） | — |
 | `null` 在任何位置都是「取默认值」，包括 `vector<T>` 的元素自身与 vector 字段 | measured（F086） | — |
 | `bool` 字段接受数字与数字字符串（回退 `from_json(int32)`），失败文案仍报原类型 | measured（F085：`include_contacts:"true"` → `Expected Boolean, but receive String`；`include_bots:1` 接受） | — |
@@ -71,6 +72,7 @@
 | 项 | 状态 | blocker / 回流条件 |
 |---|---|---|
 | 首启序列：`td_create_client_id` → `td_send(setTdlibParameters)` → drain 到 `waitPhoneNumber`（129 行 = 127 `updateOption` + 2 `updateAuthorizationState`） | measured（F076：`tools/client_diff.py`，A/A 地板 + 变异自检 + 两侧逐行相同） | — |
+| 遗留 C ABI：`td_json_client_create/send/receive/destroy/execute`（auth lane 143 行 = 现代表去掉 `@client_id` + 1 条畸形请求回包） | measured（F090：`tools/client_diff.py` 的 legacy 段；oracle 内部一致性「遗留 lane == 现代 lane 去掉 `@client_id`」也一并断言） | `destroy` 之后再用句柄是 UB，不测 |
 | 动态值 `unix_time` / `utc_time_offset` / `commit_hash` | measured（F076：语义校验——与实际时刻相差 ≤5 s、两侧时区偏移相同、各自可解释） | `commit_hash` 两侧各自烘焙 HEAD，不做相等比较 |
 | `@client_id` 注入（id 从 1 起、每行携带） | measured（F076：两侧 id 都是 1 的断言） | — |
 | 同一进程里的第二个 client | unmeasured | 会多 6 条全局 update 且顺序错位（F077）；判据按「一个进程一个 client」设计 |

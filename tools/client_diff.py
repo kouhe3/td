@@ -99,31 +99,59 @@ def add_runtime_dirs() -> None:
             os.add_dll_directory(str(candidate))
 
 
-def worker(dll: str, db: str, out: str, fresh: bool, auth: bool) -> int:
+def worker(dll: str, db: str, out: str, fresh: bool, auth: bool, legacy: bool) -> int:
     add_runtime_dirs()
     lib = ctypes.CDLL(dll)
-    lib.td_create_client_id.restype = ctypes.c_int
-    lib.td_send.argtypes = [ctypes.c_int, ctypes.c_char_p]
-    lib.td_receive.restype = ctypes.c_char_p
-    lib.td_receive.argtypes = [ctypes.c_double]
     lib.td_execute.restype = ctypes.c_char_p
     lib.td_execute.argtypes = [ctypes.c_char_p]
+    # 先静音再建 client：否则 oracle 的 "Create client" 日志会混进 stderr
+    lib.td_execute(json.dumps({"@type": "setLogVerbosityLevel", "new_verbosity_level": 0}).encode())
+
+    if legacy:
+        # 遗留入口（td_json_client_*）：句柄是 ClientJson*，回包不带 @client_id
+        lib.td_json_client_create.restype = ctypes.c_void_p
+        lib.td_json_client_send.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+        lib.td_json_client_receive.restype = ctypes.c_char_p
+        lib.td_json_client_receive.argtypes = [ctypes.c_void_p, ctypes.c_double]
+        lib.td_json_client_destroy.argtypes = [ctypes.c_void_p]
+        handle = lib.td_json_client_create()
+        if not handle:
+            print(json.dumps({"error": "td_json_client_create returned NULL"}))
+            return 1
+
+        def send(request: bytes) -> None:
+            lib.td_json_client_send(handle, request)
+
+        def receive(timeout: float):
+            return lib.td_json_client_receive(handle, timeout)
+
+        client_id = 0
+    else:
+        lib.td_create_client_id.restype = ctypes.c_int
+        lib.td_send.argtypes = [ctypes.c_int, ctypes.c_char_p]
+        lib.td_receive.restype = ctypes.c_char_p
+        lib.td_receive.argtypes = [ctypes.c_double]
+        client_id = lib.td_create_client_id()
+
+        def send(request: bytes) -> None:
+            lib.td_send(client_id, request)
+
+        def receive(timeout: float):
+            return lib.td_receive(timeout)
 
     database = Path(db)
     if fresh and database.exists():
         shutil.rmtree(database)
     database.mkdir(parents=True, exist_ok=True)
 
-    lib.td_execute(json.dumps({"@type": "setLogVerbosityLevel", "new_verbosity_level": 0}).encode())
-    client_id = lib.td_create_client_id()
     started = int(time.time())
     params = dict(PARAMS, database_directory=str(database), files_directory=str(database / "files"))
-    lib.td_send(client_id, json.dumps({"@type": "setTdlibParameters", **params}).encode())
+    send(json.dumps({"@type": "setTdlibParameters", **params}).encode())
 
     rows: list[str] = []
     deadline = time.time() + 30
     while time.time() < deadline:
-        raw = lib.td_receive(0.3)
+        raw = receive(0.3)
         if not raw:
             continue
         text = raw.decode("utf-8", "replace")
@@ -136,12 +164,21 @@ def worker(dll: str, db: str, out: str, fresh: bool, auth: bool) -> int:
             break
     if auth:
         for request in AUTH_REQUESTS:
-            lib.td_send(client_id, json.dumps(request).encode())
+            send(json.dumps(request).encode())
             end = time.time() + 0.8
             while time.time() < end:
-                raw = lib.td_receive(0.2)
+                raw = receive(0.2)
                 if raw:
                     rows.append(raw.decode("utf-8", "replace"))
+    if legacy:
+        # ClientJson::send 把解析不了的请求变成 testReturnError，所以得到的是一条 error 回包
+        send(b"not json")
+        end = time.time() + 2
+        while time.time() < end:
+            raw = receive(0.2)
+            if raw:
+                rows.append(raw.decode("utf-8", "replace"))
+        lib.td_json_client_destroy(handle)
 
     Path(out).write_text("\n".join(rows), encoding="utf-8")
     print(json.dumps({"client_id": client_id, "lines": len(rows), "started": started}))
@@ -152,6 +189,11 @@ def normalize(row: str) -> str:
     for pattern, replacement in DYNAMIC:
         row = pattern.sub(replacement, row)
     return row
+
+
+def strip_client_id(row: str) -> str:
+    # 现代表在最后追加 ,"@client_id":N；遗留表不追加（ClientJson::receive 传 client_id 0）
+    return re.sub(r',"@client_id":\d+\}$', "}", row)
 
 
 def compare(left: list[str], right: list[str]) -> str | None:
@@ -201,7 +243,9 @@ def mutate(rows: list[str]) -> list[str]:
     raise SystemExit("FAIL self-test: no version option to mutate")
 
 
-def capture(dll: Path, tag: str, database: str, fresh: bool = True, auth: bool = False) -> tuple[list[str], dict]:
+def capture(
+    dll: Path, tag: str, database: str, fresh: bool = True, auth: bool = False, legacy: bool = False
+) -> tuple[list[str], dict]:
     base = ROOT / "work" / "client" / tag
     database_path = ROOT / "work" / "client" / database / "db"
     out = base / "rows.jsonl"
@@ -211,6 +255,8 @@ def capture(dll: Path, tag: str, database: str, fresh: bool = True, auth: bool =
         command.append("--reuse")
     if auth:
         command.append("--auth")
+    if legacy:
+        command.append("--legacy")
     process = subprocess.run(
         command,
         capture_output=True,
@@ -225,7 +271,7 @@ def capture(dll: Path, tag: str, database: str, fresh: bool = True, auth: bool =
 
 def main(argv: list[str]) -> int:
     if argv[:1] == ["--capture"]:
-        return worker(argv[1], argv[2], argv[3], "--reuse" not in argv, "--auth" in argv)
+        return worker(argv[1], argv[2], argv[3], "--reuse" not in argv, "--auth" in argv, "--legacy" in argv)
 
     failures: list[str] = []
     if not CPP.is_file():
@@ -322,6 +368,48 @@ def main(argv: list[str]) -> int:
     if not ok:
         failures.append("self-test failed: auth mutation not detected")
     print(f"{'PASS' if ok else 'FAIL'} auth mutation detected" + ("" if ok else ": 比较器对一条改过的 response 仍报相同"))
+
+    print("\n== legacy: td_json_client_* 的同一条 auth lane（回包不带 @client_id） ==")
+    cpp_legacy, _ = capture(CPP, "cpp-legacy", "cpp-legacy", fresh=True, auth=True, legacy=True)
+    rs_legacy, _ = capture(RS, "rs-legacy", "rs-legacy", fresh=True, auth=True, legacy=True)
+
+    has_id_cpp = sum(1 for row in cpp_legacy if "@client_id" in row)
+    has_id_rs = sum(1 for row in rs_legacy if "@client_id" in row)
+    has_id_modern = sum(1 for row in cpp_auth if "@client_id" in row)
+    # 遗留回包一律不带 @client_id（ClientJson::receive 传 client_id 0），现代表每行都带
+    ok = has_id_cpp == 0 and has_id_rs == 0 and has_id_modern == len(cpp_auth)
+    if not ok:
+        failures.append(f"legacy @client_id shape: cpp={has_id_cpp} rs={has_id_rs} modern={has_id_modern}")
+    print(
+        f"{'PASS' if ok else 'FAIL'} @client_id 只出现在现代表"
+        + ("" if ok else f": cpp={has_id_cpp}/{len(cpp_legacy)} rs={has_id_rs}/{len(rs_legacy)} modern={has_id_modern}/{len(cpp_auth)}")
+    )
+
+    # oracle 内部一致性：遗留 lane 去掉末尾那条畸形请求回包，就是现代表去掉 @client_id
+    modern_stripped = [strip_client_id(normalize(row)) for row in cpp_auth]
+    legacy_normalized = [normalize(row) for row in cpp_legacy[:-1]]
+    ok = legacy_normalized == modern_stripped
+    if not ok:
+        mismatch = next((i for i, (a, b) in enumerate(zip(legacy_normalized, modern_stripped)) if a != b), -1)
+        failures.append(f"legacy != modern minus @client_id at line {mismatch}")
+    print(
+        f"{'PASS' if ok else 'FAIL'} cpp 遗留 lane = 现代 lane 去掉 @client_id"
+        + ("" if ok else f": 首个差异在第 {mismatch} 行")
+    )
+
+    diff = compare(cpp_legacy, rs_legacy)
+    if diff:
+        failures.append("legacy lane differs: " + diff.split("\n")[0])
+    print(f"{'PASS' if diff is None else 'FAIL'} cpp vs rs (legacy auth)" + ("" if diff is None else f"\n{diff}"))
+
+    malformed = [row for row in cpp_legacy if '"code":400' in row and "Failed to parse request as JSON object" in row]
+    ok = len(malformed) == 1 and len(rs_legacy) == len(cpp_legacy)
+    if not ok:
+        failures.append(f"legacy malformed send: cpp {len(malformed)} error rows, lens {len(cpp_legacy)}/{len(rs_legacy)}")
+    print(
+        f"{'PASS' if ok else 'FAIL'} 畸形请求回一条 400"
+        + ("" if ok else f": cpp={len(malformed)} rows, lines {len(cpp_legacy)}/{len(rs_legacy)}")
+    )
 
     print("\n== self-test: 变异必须被检出 ==")
     diff = compare(cpp_a, mutate(cpp_a))

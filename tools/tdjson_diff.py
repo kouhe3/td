@@ -607,6 +607,19 @@ SEQUENCES = [
         '{"@type":"setLogTagVerbosityLevel","tag":"td_requests","new_verbosity_level":3}',
         '{"@type":"getLogTagVerbosityLevel","tag":"td_requests"}',
     ],
+    # 负的全局 verbosity 被拒；tag verbosity 被夹到 >= 1（F094）
+    [
+        '{"@type":"getLogVerbosityLevel"}',
+        '{"@type":"setLogVerbosityLevel","new_verbosity_level":-1}',
+        '{"@type":"getLogVerbosityLevel"}',
+        '{"@type":"getLogTagVerbosityLevel","tag":"raw_mtproto"}',
+        '{"@type":"setLogTagVerbosityLevel","tag":"raw_mtproto","new_verbosity_level":0}',
+        '{"@type":"getLogTagVerbosityLevel","tag":"raw_mtproto"}',
+        '{"@type":"setLogTagVerbosityLevel","tag":"raw_mtproto","new_verbosity_level":-5}',
+        '{"@type":"getLogTagVerbosityLevel","tag":"raw_mtproto"}',
+        '{"@type":"setLogTagVerbosityLevel","tag":"raw_mtproto","new_verbosity_level":14}',
+        '{"@type":"getLogTagVerbosityLevel","tag":"raw_mtproto"}',
+    ],
     [
         '{"@type":"getLogStream"}',
         '{"@type":"setLogStream","log_stream":{"@type":"logStreamEmpty"}}',
@@ -660,6 +673,8 @@ def load(path: Path, language_pack_side: str):
     lib = ctypes.CDLL(str(path))
     lib.td_execute.restype = ctypes.c_char_p
     lib.td_execute.argtypes = [ctypes.c_char_p]
+    lib.td_json_client_execute.restype = ctypes.c_char_p
+    lib.td_json_client_execute.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
     lib.language_pack_root = str(LANGPACK_ROOT / language_pack_side).replace("\\", "/").encode()
     return lib
 
@@ -806,6 +821,25 @@ def main(argv: list[str]) -> int:
         print(f"{'PASS' if ok else 'FAIL'} {label(case)}")
         print(f"  cpp: {a}")
         print(f"  rs : {b}")
+
+    print("\n== NULL 指针：两份 dll 对空请求的答案必须相同 ==")
+    # C 侧把 NULL 当空字符串：td_json_client.cpp 用 `request == nullptr ? "" : request`
+    null_cases = [
+        ("td_execute(NULL)", lambda lib: lib.td_execute(None)),
+        ("td_json_client_execute(NULL, NULL)", lambda lib: lib.td_json_client_execute(None, None)),
+    ]
+    for name, call in null_cases:
+        a = call(cpp)
+        b = call(rs)
+        a = None if a is None else a.decode()
+        b = None if b is None else b.decode()
+        ok = a == b and a is not None and a != ""
+        if not ok:
+            failures.append(f"null pointer differs: {name}")
+        print(f"{'PASS' if ok else 'FAIL'} {name}")
+        print(f"  cpp: {a}")
+        if a != b:
+            print(f"  rs : {b}")
 
     print("\n== SEQUENCE: 有状态 action 按有序序列比 ==  ")
     for index, sequence in enumerate(SEQUENCES):
