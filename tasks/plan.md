@@ -10,7 +10,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 - 不在范围内：`tddb` / `td/mtproto` / `tdactor` / `tdutils`（合计 6.4 万行）——它们在该边界之下，互操作要匹配 C++ ABI，不可行（记 `unmeasured`，见 `docs/coverage-domain.md`）。
 - 不碰上游 C++ 源码；Rust 侧工程在本仓库 `rust/`（T6 已从 `C:/tmp/td-rs-probe` 移入），本仓库同时放台账、仪器、计划与实现。
 
-## 进度（2026-11-26，round 13）
+## 进度（2026-11-26，round 14）
 
 两个口径分开看，不要混成一句百分比。
 
@@ -20,15 +20,18 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 |---|---|---|
 | 同步 action | 29/29 逐字节对齐 | `tools/tdjson_diff.py` 的 MATCH / SEQUENCE 段 |
 | 全部函数的参数解析 | 1114/1114 | `tools/tdjson_diff.py` 的 `argument_cells()`（由 `td_api.tl` 生成） |
+| 语言包成功路径 | 27 条 cell（含 ordinary / pluralized / deleted / 版本有无） | `tools/gen_language_pack.py` + `docs/facts.md` F087 |
+| 随机语料 | 21 个无状态 action、12 个种子 25,496 条零分歧 | `uv run python tools/tdjson_fuzz.py`、F088 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
-| 判据 cell 总数 | 1534 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 定义域 | 48 行 measured、6 行 unmeasured（后者均不可判或缺引擎） | `docs/coverage-domain.md` 每行状态 |
+| 判据 cell 总数 | 1561 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
+| 门禁 | 11 项（新增 fuzz） | `uv run python tools/verify.py` |
+| 定义域 | 51 行 measured、4 行 unmeasured（后者均不可判或缺引擎） | `docs/coverage-domain.md` 每行状态 |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
 
 | 项 | 数字 | 复现 |
 |---|---|---|
-| 手写 Rust | 8,575 行 | `wc -l rust/src/lib.rs` |
+| 手写 Rust | 8,708 行 | `wc -l rust/src/lib.rs` |
 | 生成 / 数据表 | 13,324 行 | `wc -l rust/src/{api_functions,client_options,tl_schema,emoji_table,mime_tables,country_table}.rs` |
 | 上游 C++（不含 `auto/`） | 380,965 行 | `find td -name '*.cpp' -o -name '*.h' \| grep -v /auto/ \| xargs wc -l \| tail -1` |
 
@@ -72,8 +75,10 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T30 | B1c 未授权状态机 lane：首个非 `setTdlibParameters` 请求补 6 条全局突发表 + 5 个请求的响应（空号码 / checkCode / checkPassword / getMe / logOut→Closed）；判据 = `tools/client_diff.py` 的 auth 段逐行比较（平铺 142 行） | F079 | done（142 行逐行相同、`failures=0`；九门禁全绿，17.5 s） |
 | T31 | B1d 真实登录形态：生产 DC 六步共 222 行（一次性实测，不进回归）。Rust 侧不回放登录段——没有 MTProto 引擎，回放只能验证自己写死的表 | F080 | done（形态与清理过程进台账；等价性仍 `unmeasured`） |
 | T32 | T20 第一阶段：`tools/gen_tl_schema.py` 从 `td_api.tl` 生成 3470 条定义的参数表（`rust/src/tl_schema.rs`，1114 函数 + 2356 构造）；Rust 在 `td_execute` 里对**全部函数**（含 29 个同步 action）先做 JSON 参数解析，抽象类要 `@type`、具体类不要；判据 = 1114 个 argument cell（MATCH 1528）逐字节相同 | F081 | done（`failures=0`；十项门禁全绿，17.7 s） |
-| T33 | 补嵌套 `@type` 两条路径：抽象类字段接受构造号（新增 `CONSTRUCTOR_IDS` 表 + `Unknown constructor 0x…`）、具体类字段只校验对象不校验字段；判据 = 6 条新 cell（`input_message_content` 的数字号/未知号/递归、`theme` 的错 `@type`/错字段/标量） | F082 | done（MATCH 1534、`failures=0`；十项门禁全绿） |
+| T33 | 补嵌套 `@type` 两条路径：抽象类字段接受构造号（新增 `CONSTRUCTOR_IDS` 表 + `Unknown constructor 0x…`）、具体类字段只要求是对象（「不校验字段」这半条被 F084 更正）；判据 = 6 条新 cell（`input_message_content` 的数字号/未知号/递归、`theme` 的错 `@type`/错字段/标量） | F082 | done（MATCH 1534、`failures=0`；十项门禁全绿） |
 | T34 | B1e 参数 lane 普查：6 个 `setTdlibParameters` 变体（语言 ×2、设备、系统版本、应用版本、加密 key）对首启序列的影响 | F083 | done（全部 129 行相同、两次运行一致；唯一敏感项是 `use_test_dc`） |
+| T35 | B7：`getLanguagePackString` 的成功路径。只读 `td/telegram/LanguagePackManager.cpp` 与 `tddb/td/db/SqliteKeyValue` 就能确定格式——库是调用方给的 SQLite 文件，表名 `"kv_<target>_<code>"`，值 `1<ordinary>` / `2<zero>\0…\0<other>` / 其它=deleted；`tdlib-data` 公开仓库已 404，且根本不需要它。判据 = `tools/gen_language_pack.py` 现场造两侧同名 fixture，27 条 cell 逐字节相同 | F087, F039 | done（`failures=0`；B7 关闭） |
+| T36 | 随机语料 lane：`tools/tdjson_fuzz.py`——按 `td_api.tl` 结构化生成（21 个无状态 action）+ 手写语料的字节级变异，种子唯一决定语料，每轮打印 `corpus md5`，oracle 连跑两遍做 A/A 地板。判据 = 两次侧逐字节相同；接进 `verify.py` 做第 3 项门禁 | F088 | done（12 个种子 25,496 条零分歧；上线前抓到 4 类真实分歧：嵌套具体类字段、`null` 元素、`bool` 取数字、`return_none_for_empty_query`，见 F084–F086） |
 
 ## 变更记录
 
@@ -91,3 +96,5 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-26 | F063 | T26 | 用户批准设计改动：请求按字节读、`Json::Str` 改字节串。实测 TDLib 是**逐 action 拒绝**而非透传，因此只需要「解析保留字节 + 各点校验」，不必改动作内部算法 |
 | 2026-11-26 | F065–F074 | T27 | 测试 DC 的固定码规则实测已过期（F070）；改走**生产 DC**：验证码由既有 Telethon 会话代读、2FA 一次通过（F073）。范围也随之收窄——首次运行的 option 突发确定性（F074），不需要 binlog 格式，只需录制表 + kv（F072），B1 从「项目级未知」变成「有边界的实现任务」 |
 | 2026-11-26 | F076 | T28, 仪器 | 用户批准 B1a：只做首次运行 lane（129 行）；第二次运行的 kv 与登录段留给后续轮次。判据从 `tdjson_diff.py` 扩到 `verify.py`（新增 CLIENT 段），gate 重判为 round 3 |
+| 2026-11-26 | F087 | T35, 仪器 | B7 的 blocker 不成立：`getLanguagePackString` 的库由调用方给路径、格式在本仓库源码里，`tdlib-data` 更是已 404。改为 `tools/gen_language_pack.py` 现场造库；Rust 侧为此引入 `rusqlite`（bundled，零系统依赖），每侧读自己的 fixture 副本 |
+| 2026-11-26 | F084–F086 | T33, T36, Rust 实现 | 随机语料抓到 4 类分歧，判据随之更严：具体构造名的字段**递归校验**（F084 更正 T33 的「不校验字段」）、`null` 在任何位置取默认（F086）、`bool` 接受数字与数字字符串（F085）。三处都是 Rust 侧错，oracle 侧未动 |

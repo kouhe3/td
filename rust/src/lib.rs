@@ -2869,6 +2869,8 @@ fn search_strings_by_prefix_request(request: &Json) -> String {
             let mut strings = Vec::with_capacity(values.len());
             for value in values {
                 match value {
+                    // from_json(string) keeps the default for Null
+                    Json::Null => strings.push(Vec::new()),
                     Json::Str(bytes) => match std::str::from_utf8(bytes) {
                         Ok(text) => strings.push(text.as_bytes().to_vec()),
                         Err(_) => return error_object(400, "Strings must be encoded in UTF-8"),
@@ -3298,7 +3300,12 @@ fn json_array_len(value: Option<&Json>) -> usize {
 }
 
 fn json_flag(value: Option<&Json>) -> bool {
-    matches!(value, Some(Json::Bool(true)))
+    // from_json(bool): a Boolean keeps its value, anything else goes through from_json(int32)
+    match value {
+        Some(Json::Bool(flag)) => *flag,
+        Some(other) => json_int32_field(other).map_or(false, |number| number != 0),
+        None => false,
+    }
 }
 
 fn chat_folder_default_icon_name(folder: Option<&Json>) -> Option<String> {
@@ -7297,6 +7304,128 @@ fn is_valid_language_key(key: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'.' | b'-'))
 }
 
+/// `LanguagePackManager::add_language_database` + `SqliteKeyValue`: the language pack is a SQLite
+/// database (`PRAGMA journal_mode=WAL`, no encryption) with one `kv_<target>_<code>` table per language.
+struct LanguagePackDatabase {
+    connection: rusqlite::Connection,
+    table: String,
+}
+
+impl LanguagePackDatabase {
+    fn open(path: &str, language_pack: &str, language_code: &str) -> Option<LanguagePackDatabase> {
+        let table = format!("\"kv_{}_{}\"", language_pack, language_code);
+        let connection = rusqlite::Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_WRITE | rusqlite::OpenFlags::SQLITE_OPEN_CREATE,
+        )
+        .ok()?;
+        connection
+            .execute(&format!("CREATE TABLE IF NOT EXISTS {} (k BLOB PRIMARY KEY, v BLOB)", table), [])
+            .ok()?;
+        Some(LanguagePackDatabase { connection, table })
+    }
+
+    fn get(&self, key: &str) -> Option<Vec<u8>> {
+        let mut statement = self
+            .connection
+            .prepare(&format!("SELECT v FROM {} WHERE k = ?1", self.table))
+            .ok()?;
+        // SqliteKeyValue binds both key and value as blobs; TEXT never equals BLOB in SQLite
+        let mut rows = statement.query([key.as_bytes()]).ok()?;
+        match rows.next() {
+            Ok(Some(row)) => row.get::<_, Vec<u8>>(0).ok(),
+            _ => None,
+        }
+    }
+}
+
+/// `td::full_split`: empty input yields no parts, a trailing delimiter yields a final empty part.
+fn split_nul(bytes: &[u8]) -> Vec<&[u8]> {
+    if bytes.is_empty() {
+        return Vec::new();
+    }
+    bytes.split(|byte| *byte == 0).collect()
+}
+
+/// `LanguagePackManager::load_database_language_version`: empty or missing means "no version" (-1).
+fn database_language_version(value: Option<Vec<u8>>) -> i32 {
+    match value {
+        None => -1,
+        Some(value) if value.is_empty() => -1,
+        // td::to_integer<int32> returns T() on malformed input
+        Some(value) => std::str::from_utf8(&value)
+            .ok()
+            .and_then(|text| text.parse::<i32>().ok())
+            .unwrap_or(0),
+    }
+}
+
+fn deleted_language_pack_string_json() -> String {
+    "{\"@type\":\"languagePackStringValueDeleted\"}".to_string()
+}
+
+/// `load_language_string_unsafe` + `get_language_pack_string_value_object`: the stored blob is
+/// `1<ordinary>`, `2<zero>\0<one>\0<two>\0<few>\0<many>\0<other>`, or anything else for "deleted".
+fn language_pack_string_value_json(value: &[u8]) -> String {
+    match value[0] {
+        b'1' => {
+            let mut body = String::new();
+            json_escape(&String::from_utf8_lossy(&value[1..]), &mut body);
+            format!("{{\"@type\":\"languagePackStringValueOrdinary\",\"value\":\"{}\"}}", body)
+        }
+        b'2' => {
+            let parts = split_nul(&value[1..]);
+            if parts.len() != 6 {
+                return deleted_language_pack_string_json();
+            }
+            let names = ["zero_value", "one_value", "two_value", "few_value", "many_value", "other_value"];
+            let mut body = String::new();
+            for (index, part) in parts.iter().enumerate() {
+                if index > 0 {
+                    body.push(',');
+                }
+                body.push('"');
+                body.push_str(names[index]);
+                body.push_str("\":\"");
+                json_escape(&String::from_utf8_lossy(part), &mut body);
+                body.push('"');
+            }
+            format!("{{\"@type\":\"languagePackStringValuePluralized\",{}}}", body)
+        }
+        _ => deleted_language_pack_string_json(),
+    }
+}
+
+fn language_pack_string_json(path: &str, language_pack: &str, language_code: &str, key: &str) -> String {
+    if path.is_empty() {
+        // add_language_database("") opens no database at all
+        return error_object(404, "Not Found");
+    }
+    let Some(database) = LanguagePackDatabase::open(path, language_pack, language_code) else {
+        // a database that can't be opened (or isn't SQLite) behaves like an empty one
+        return error_object(404, "Not Found");
+    };
+    let version = database_language_version(database.get("!version"));
+    match database.get(key) {
+        // a missing key is "deleted" only when the pack is versioned; otherwise the pack isn't loaded
+        None => {
+            if version == -1 {
+                error_object(404, "Not Found")
+            } else {
+                deleted_language_pack_string_json()
+            }
+        }
+        Some(value) if value.is_empty() => {
+            if version == -1 {
+                error_object(404, "Not Found")
+            } else {
+                deleted_language_pack_string_json()
+            }
+        }
+        Some(value) => language_pack_string_value_json(&value),
+    }
+}
+
 fn log_verbosity_json(level: i32) -> String {
     format!("{{\"@type\":\"logVerbosityLevel\",\"verbosity_level\":{}}}", level)
 }
@@ -7664,7 +7793,7 @@ fn expected_type_error(expected: &str, value: &Json) -> String {
 
 // F081: td_execute parses the whole request object before deciding that the method is not
 // synchronous. This table-driven validator covers the top-level fields of all 1114 functions;
-// nested object fields are outside this lane (they stay unmeasured in coverage-domain).
+// nested object fields are validated recursively as td::from_json does (F084).
 fn validate_arguments(name: &str, json: &Json) -> Result<(), String> {
     let Some((_, fields)) = tl_schema::ARGUMENTS.iter().find(|(known, _)| *known == name) else {
         return Ok(());
@@ -7686,6 +7815,10 @@ fn validate_fields(json: &Json, fields: &[(&str, &str)]) -> Result<(), String> {
 }
 
 fn validate_value(value: &Json, type_name: &str) -> Result<(), String> {
+    // every td::from_json overload treats Null as "keep the default", vectors included
+    if matches!(value, Json::Null) {
+        return Ok(());
+    }
     let base = type_name.trim_end_matches('?');
     if let Some(inner) = base.strip_prefix("vector<").and_then(|rest| rest.strip_suffix('>')) {
         return match value {
@@ -7700,8 +7833,11 @@ fn validate_value(value: &Json, type_name: &str) -> Result<(), String> {
             Json::Str(_) => Ok(()),
             other => Err(expected_type_error("String", other)),
         },
+        // from_json(bool) falls back to from_json(int32) for any non-Boolean value, so numbers and
+        // numeric strings are accepted; the failure message still names the original JSON type
         "bool" | "Bool" => match value {
             Json::Bool(_) => Ok(()),
+            other if json_int32_field(other).is_ok() => Ok(()),
             other => Err(expected_type_error("Boolean", other)),
         },
         "double" | "Double" => match value {
@@ -7709,16 +7845,13 @@ fn validate_value(value: &Json, type_name: &str) -> Result<(), String> {
             other => Err(expected_type_error("Number", other)),
         },
         _ => match value {
-            // A field typed as a concrete constructor only has to be an object: the oracle
-            // ignores both its "@type" and its field types there (F082). An abstract class
-            // resolves "@type" to a constructor and validates that constructor's fields.
-            Json::Obj(_) => {
-                if tl_schema::CONSTRUCTORS.iter().any(|(known, _)| *known == base) {
-                    Ok(())
-                } else {
-                    validate_object(value)
-                }
-            }
+            // A field typed as a concrete constructor ignores its "@type" but still validates every
+            // declared field it finds (td/tl/tl_json.h from_json is_constructible overload). An
+            // abstract class resolves "@type" to a constructor and validates that constructor.
+            Json::Obj(_) => match tl_schema::CONSTRUCTORS.iter().find(|(known, _)| *known == base) {
+                Some((_, fields)) => validate_fields(value, fields),
+                None => validate_object(value),
+            },
             other => Err(expected_type_error("Object", other)),
         },
     }
@@ -8043,7 +8176,7 @@ fn execute_object(json: &Json) -> String {
             body
         }
         "getLanguagePackString" => {
-            req!(request_string(json, "language_pack_database_path"));
+            let database_path = req!(request_string(json, "language_pack_database_path"));
             let pack = req!(request_string(json, "localization_target"));
             let code = req!(request_string(json, "language_pack_id"));
             let key = req!(request_string(json, "key"));
@@ -8056,7 +8189,7 @@ fn execute_object(json: &Json) -> String {
             if !is_valid_language_key(&key) {
                 return error_object(400, "Key is invalid");
             }
-            error_object(404, "Not Found")
+            language_pack_string_json(&database_path, &pack, &code, &key)
         }
         _ => error_object(400, "The method can't be executed synchronously"),
     }

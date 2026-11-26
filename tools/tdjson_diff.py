@@ -46,11 +46,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gen_language_pack
+
 CPP = Path("C:/tmp/td-build/libtdjson.dll")
 RS = Path(__file__).resolve().parents[1] / "rust/target/x86_64-pc-windows-gnu/release/tdjson_rs.dll"
 EXPECTED_CPP_MD5 = "0398814038978aaeef7f8d6ac62bb8ff"
 SCHEMA = Path(__file__).resolve().parents[1] / "td/generate/scheme/td_api.tl"
 API_FUNCTIONS = Path(__file__).resolve().parents[1] / "rust/src/api_functions.rs"
+LANGPACK_ROOT = Path("work/langpack")
 
 MATCH = [
     '{"@type":"getTextEntities","text":"@abc @a #bd"}',
@@ -526,6 +530,63 @@ def argument_cells() -> list[str]:
 
 MATCH += argument_cells()
 
+
+def language_pack_cells() -> list[str]:
+    """B7: `getLanguagePackString` reads a SQLite language pack database (see gen_language_pack.py).
+
+    `@LP@` is replaced per side, because the C++ side writes `!key_count` back into the database it
+    reads; each side therefore reads its own byte-identical copy.
+    """
+    rows = [
+        ("full.db", "android", "en", "Continue"),
+        ("full.db", "android", "en", "Plural"),
+        ("full.db", "android", "en", "TrailingNul"),
+        ("full.db", "android", "en", "TooFew"),
+        ("full.db", "android", "en", "ManyParts"),
+        ("full.db", "android", "en", "OnePart"),
+        ("full.db", "android", "en", "EmptyOrdinary"),
+        ("full.db", "android", "en", "Deleted"),
+        ("full.db", "android", "en", "Zero"),
+        ("full.db", "android", "en", "Utf8"),
+        ("full.db", "android", "en", "Escapes"),
+        ("full.db", "android", "en", "Controls"),
+        # 缺失的 key 在有版本的库里是 deleted，在没有版本的库里是 404
+        ("full.db", "android", "en", "Absent"),
+        ("no-version.db", "android", "en", "Continue"),
+        ("no-version.db", "android", "en", "Gone"),
+        ("no-version.db", "android", "en", "Absent"),
+        # !version 非数字 → td::to_integer 给 0；空 blob → -1
+        ("bad-version.db", "android", "en", "Present"),
+        ("bad-version.db", "android", "en", "Absent"),
+        ("empty-version.db", "android", "en", "Present"),
+        ("empty-version.db", "android", "en", "Absent"),
+        # 表名按 (localization_target, language_pack_id) 拼；不匹配就是 404
+        ("other-target.db", "ios", "de", "Continue"),
+        ("other-target.db", "android", "en", "Continue"),
+        ("custom.db", "android", "Xy", "Continue"),
+        ("custom.db", "android", "en", "Continue"),
+        # 打不开的库按空库处理
+        ("garbage.db", "android", "en", "Continue"),
+        ("absent.db", "android", "en", "Continue"),
+        ("", "android", "en", "Continue"),
+    ]
+    return [
+        json.dumps(
+            {
+                "@type": "getLanguagePackString",
+                "language_pack_database_path": f"@LP@/{database}" if database else "",
+                "localization_target": target,
+                "language_pack_id": code,
+                "key": key,
+            },
+            separators=(",", ":"),
+        )
+        for database, target, code, key in rows
+    ]
+
+
+MATCH += language_pack_cells()
+
 # 当前没有已知差异（B10 已修）。再出现时放这里，并在 docs/facts.md 写明它是缺陷、带回流条件。
 CONTROL = []
 
@@ -595,10 +656,11 @@ def md5(path: Path) -> str:
     return h.hexdigest()
 
 
-def load(path: Path):
+def load(path: Path, language_pack_side: str):
     lib = ctypes.CDLL(str(path))
     lib.td_execute.restype = ctypes.c_char_p
     lib.td_execute.argtypes = [ctypes.c_char_p]
+    lib.language_pack_root = str(LANGPACK_ROOT / language_pack_side).replace("\\", "/").encode()
     return lib
 
 
@@ -611,6 +673,17 @@ def add_runtime_dirs() -> None:
 
 LOG_DIR = Path("work/logs")
 LINK_DIR = Path("work/logs-link")
+
+
+def ensure_language_pack_dirs() -> bool:
+    # 语言包 lane 的 fixture：每侧一份副本，因为 C++ 会把 !key_count 写回它读的库
+    try:
+        for side in gen_language_pack.SIDES:
+            gen_language_pack.build(LANGPACK_ROOT / side)
+    except OSError as error:
+        print(f"FAIL language pack fixtures: {error}")
+        return False
+    return all((LANGPACK_ROOT / side / "full.db").is_file() for side in gen_language_pack.SIDES)
 
 
 def ensure_log_dir() -> bool:
@@ -638,6 +711,7 @@ def label(case) -> str:
 
 def run(lib, case) -> str | None:
     payload = case if isinstance(case, bytes) else case.encode()
+    payload = payload.replace(b"@LP@", lib.language_pack_root)
     raw = lib.td_execute(payload)
     return None if raw is None else raw.decode()
 
@@ -666,14 +740,28 @@ def main(argv: list[str]) -> int:
     if not ensure_link_dir():
         print(f"FAIL junction missing: {LINK_DIR}")
         return 1
-    cpp = load(CPP)
-    rs = load(RS)
+    if not ensure_language_pack_dirs():
+        print(f"FAIL language pack fixtures missing: {LANGPACK_ROOT}")
+        return 1
+    cpp = load(CPP, "cpp")
+    rs = load(RS, "rs")
 
     print("\n== self-test: 管道不能空转 ==")
+    # fixture 坏掉时语言包 lane 会退化成 404 == 404，两条都 PASS；用一条已知可读的样本兜住
+    pack_probe = run(
+        cpp,
+        '{"@type":"getLanguagePackString","language_pack_database_path":"@LP@/full.db",'
+        '"localization_target":"android","language_pack_id":"en","key":"Continue"}',
+    )
     self_checks = [
         ("两个 dll 必须不同", actual != md5(RS), "oracle 与 rust 的 md5 相同，等于拿自己比自己"),
         ("MATCH 语料下限", len(MATCH) >= 300, f"只有 {len(MATCH)} 条，语料可能被误删"),
         ("CONTROL 无重复", len(set(CONTROL)) == len(CONTROL), "CONTROL 里有重复条目"),
+        (
+            "语言包 fixture 可读",
+            "languagePackStringValueOrdinary" in (pack_probe or ""),
+            f"oracle 读不到 fixture：{pack_probe}",
+        ),
     ]
     empty_cells = 0
     for case in MATCH:

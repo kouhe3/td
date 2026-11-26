@@ -7,5 +7,9 @@ edition = "2021"
 name = "tdjson_rs"
 crate-type = ["cdylib"]
 
+[dependencies]
+# getLanguagePackString reads the same SQLite language pack database as TDLib
+rusqlite = { version = "0.41", features = ["bundled"] }
+
 [profile.release]
 panic = "abort"

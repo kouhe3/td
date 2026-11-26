@@ -41,7 +41,7 @@
 | `parseMarkdown` / `getMarkdownText` | measured（F031–F034, F051：v3 roundtrip 自检与降级路径） | — |
 | `searchStringsByPrefix` | measured（F035, F051：大小写、重复项并列次序；F057：18 组抽样；F062：U+0020–U+FFFF 全表 1,658,474 次比较零分歧） | — |
 | 8 个日志类 action | measured（F036, F037, F038, F053, F059；`SEQUENCE` 段 5 段 41 步，含隔离目录下的文件流、三条错误路径与 junction 路径） | — |
-| `getLanguagePackString` | measured（F039：三道校验 + 无库 404） | 成功路径需要真实的语言包数据库文件（`tdlib-data`），回流条件 = 拿到 pack 数据后另立判据（见 backlog B7） |
+| `getLanguagePackString` | measured（F039：三道校验 + 无库 404；F087：成功路径 27 条 cell——ordinary / pluralized / deleted / 版本有无 / 表名不匹配 / 打不开的库，fixture 由 `tools/gen_language_pack.py` 现场生成） | — |
 | `searchQuote` | measured（F043, F051：负 offset / 越界长度实体、越界 quote_position） | — |
 | `getPhoneNumberInfoSync` | measured（F041, F042, F051：`language_code` 无效，恒用内置 `en` 快照；`888` 前缀） | — |
 
@@ -61,7 +61,10 @@
 | 全部 1114 个函数的参数解析（含 29 个同步 action）：按 TL 定义顺序、缺失/`null` 取默认、多余字段忽略 | measured（F081：1114 个 argument cell，MATCH 1528） | — |
 | 嵌套对象：抽象类字段必须带 `@type`（缺失 / 未知两种文案）、具体类字段不需要 | measured（F081：`sendMessage.input_message_content`、`getThemeParametersJsonString.theme` 两条样例 + 递归校验） | — |
 | 嵌套 `@type` 用构造号（数字） | measured（F082：正确号接受、未知号 `Unknown constructor 0x00003039`，新增 `CONSTRUCTOR_IDS` 表） | — |
-| 具体类字段的 `@type` 与字段类型都不校验（只要求是对象） | measured（F082：`theme` 的错 `@type`、`bg_color:true`、标量三条） | — |
+| 具体类字段：`@type` 不校验（可以是任意值或缺失），**但已声明的字段递归校验** | measured（F082 前半 + F084 更正：F082 的三条样本用的都是不存在的字段名 `bg_color`；`folder.name.text:true` → `Expected Object, but receive Boolean`） | — |
+| `null` 在任何位置都是「取默认值」，包括 `vector<T>` 的元素自身与 vector 字段 | measured（F086） | — |
+| `bool` 字段接受数字与数字字符串（回退 `from_json(int32)`），失败文案仍报原类型 | measured（F085：`include_contacts:"true"` → `Expected Boolean, but receive String`；`include_bots:1` 接受） | — |
+| 随机语料（21 个无状态 action 的结构化生成 + 手写语料的字节变异） | measured（F088：12 个种子共 25,496 条零分歧；抓到的 4 类真实分歧——嵌套具体类字段、`null` 元素、`bool` 取数字、`return_none_for_empty_query`——已修，见 F084–F086） | 8 个有状态日志 action 只能按有序序列判 |
 
 ## 客户端 lane（首次运行、第二次运行、未授权状态机、真实登录记录）
 
