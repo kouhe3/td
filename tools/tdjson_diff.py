@@ -40,6 +40,13 @@ MATCH = [
     '{"@type":"getTextEntities","text":"\\ud83d\\ude00 @abcd"}',
     '{"@type":"getTextEntities","text":"\\u4e2d\\u6587 #\\u6807\\u7b7e"}',
     '{"@type":"getTextEntities","text":"#abc\\ud83d\\ude00"}',
+    '{"@type":"getTextEntities","text":"$AAPL and $btc"}',
+    '{"@type":"getTextEntities","text":"/start@somebot and /help"}',
+    '{"@type":"getTextEntities","text":"4111111111111111"}',
+    '{"@type":"getTextEntities","text":"4276 3800 1234 5678"}',
+    '{"@type":"getTextEntities","text":"watch 01:23:45 now"}',
+    '{"@type":"getTextEntities","text":"at 1:23 ok"}',
+    '{"@type":"getTextEntities","text":"#sometag@somebot"}',
 ]
 
 CONTROL = [
