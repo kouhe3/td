@@ -1,6 +1,7 @@
 """Same-process differential harness: C++ libtdjson.dll vs Rust tdjson_rs.dll over the C ABI.
 
 命令:
+    cargo build --release --target x86_64-pc-windows-gnu --manifest-path rust/Cargo.toml
     python tools/tdjson_diff.py [--skip-md5]
 
 判据:
@@ -28,7 +29,7 @@ import sys
 from pathlib import Path
 
 CPP = Path("C:/tmp/td-build/libtdjson.dll")
-RS = Path("C:/tmp/td-rs-probe/target/x86_64-pc-windows-gnu/release/tdjson_rs.dll")
+RS = Path(__file__).resolve().parents[1] / "rust/target/x86_64-pc-windows-gnu/release/tdjson_rs.dll"
 EXPECTED_CPP_MD5 = "0398814038978aaeef7f8d6ac62bb8ff"
 
 MATCH = [

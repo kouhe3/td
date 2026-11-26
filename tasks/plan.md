@@ -19,6 +19,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T3 | 对齐其余实体类：email / url / cashtag / bankCardNumber / tonAddress / mediaTimestamp | F008 | planned |
 | T4 | 按 `td_api.tl` 枚举 `td_execute` 可执行 action，建 corpus（先在 oracle 上取参考输出） | F001 | planned |
 | T5 | 决定生成面策略：Rust 侧自建 TL 代码生成器 vs 手写子集（依据 `td/generate` 的 44 文件 49.4 万行） | F002 | planned |
+| T6 | 把 Rust crate 从 `C:/tmp/td-rs-probe` 移进仓库 `rust/`，仪器改指仓库内产物 | F003 | done |
 
 ## 变更记录
 

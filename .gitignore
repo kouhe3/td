@@ -8,6 +8,7 @@
 !/docs/coverage-domain.md
 !/docs/plans/
 /work/
+/rust/target/
 /tdlib/
 vcpkg/
 .clang-tidy
