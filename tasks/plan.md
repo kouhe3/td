@@ -8,7 +8,33 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 
 - 在范围内：`td_execute` 的 action/object 语义（先 `getTextEntities`，再按 `td_api.tl` 扩）。
 - 不在范围内：`tddb` / `td/mtproto` / `tdactor` / `tdutils`（合计 6.4 万行）——它们在该边界之下，互操作要匹配 C++ ABI，不可行（记 `unmeasured`，见 `docs/coverage-domain.md`）。
-- 不碰上游 C++ 源码；Rust 侧工程在仓库外（`C:/tmp/td-rs-probe`），本仓库只放台账、仪器与计划。
+- 不碰上游 C++ 源码；Rust 侧工程在本仓库 `rust/`（T6 已从 `C:/tmp/td-rs-probe` 移入），本仓库同时放台账、仪器、计划与实现。
+
+## 进度（2026-11-26，round 13）
+
+两个口径分开看，不要混成一句百分比。
+
+**① `tdjson` C ABI 上可离线判定的部分——基本做完**
+
+| 项 | 数字 | 复现 |
+|---|---|---|
+| 同步 action | 29/29 逐字节对齐 | `tools/tdjson_diff.py` 的 MATCH / SEQUENCE 段 |
+| 全部函数的参数解析 | 1114/1114 | `tools/tdjson_diff.py` 的 `argument_cells()`（由 `td_api.tl` 生成） |
+| 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
+| 判据 cell 总数 | 1534 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
+| 定义域 | 48 行 measured、6 行 unmeasured（后者均不可判或缺引擎） | `docs/coverage-domain.md` 每行状态 |
+
+**② 作为「TDLib 的 Rust 重写」——远未开始**
+
+| 项 | 数字 | 复现 |
+|---|---|---|
+| 手写 Rust | 8,575 行 | `wc -l rust/src/lib.rs` |
+| 生成 / 数据表 | 13,324 行 | `wc -l rust/src/{api_functions,client_options,tl_schema,emoji_table,mime_tables,country_table}.rs` |
+| 上游 C++（不含 `auto/`） | 380,965 行 | `find td -name '*.cpp' -o -name '*.h' \| grep -v /auto/ \| xargs wc -l \| tail -1` |
+
+代码量比 2.3%，但这个数字不当进度用：`tddb` / `td/mtproto` / `tdactor` / `tdutils`（约 6.4 万行）一行没碰，客户端状态机只有「消息表回放」——真实登录的 222 条消息（F080）是录制来的，不是 Rust 侧算出来的。
+
+**一句话**：「`tdjson` 的可判表面」约等于完成，「TDLib 本体」约等于没开始，中间隔的是 MTProto 引擎。
 
 ## 任务
 
