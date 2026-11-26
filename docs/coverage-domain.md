@@ -34,7 +34,10 @@
 | `cleanFileName` | measured（F021） | 超长（>64 stem / >16 ext）、纯符号名：回流 T10 |
 | `getTextEmojiRanges` | measured（F020） | 孤立 ZWJ、不完整序列、双肤色组合：回流 T10 |
 | `getJsonValue` / `getJsonString` | measured（F022） | 重复键、超大指数、非法 JSON 的错误文案：回流 T10 |
-| 同步 action 其余 10 项 | unmeasured（已枚举，见 F016） | 逐项建 corpus：T10 |
+| `getThemeParametersJsonString` | measured（F023） | 超出 24 位的颜色值、缺字段：回流 T10 |
+| `getChatFolderDefaultIconName` | measured（F024） | 非白名单 icon 名与各 include 组合的交叉：回流 T10 |
+| `getPushReceiverId` | measured（F025） | `p` 解不出 9 字节、`data` 非对象、负 `user_id`：回流 T10 |
+| 同步 action 其余 16 项（白名单共 29，见 F026） | unmeasured | 逐项建 corpus：T10 |
 
 ## 边界之外（永久不在本仪器范围）
 

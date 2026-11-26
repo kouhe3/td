@@ -1955,6 +1955,146 @@ fn emit_json_text(value: &Json, out: &mut String) {
     }
 }
 
+fn color_text(color: i64) -> String {
+    format!("#{:06x}", color as u32 & 0xFF_FF_FF)
+}
+
+fn theme_parameters_json_string(theme: Option<&Json>) -> String {
+    let Some(theme) = theme else {
+        return String::new();
+    };
+    if matches!(theme, Json::Null) {
+        return String::new();
+    }
+    const FIELDS: [(&str, &str); 15] = [
+        ("bg_color", "background_color"),
+        ("secondary_bg_color", "secondary_background_color"),
+        ("text_color", "text_color"),
+        ("hint_color", "hint_color"),
+        ("link_color", "link_color"),
+        ("button_color", "button_color"),
+        ("button_text_color", "button_text_color"),
+        ("header_bg_color", "header_background_color"),
+        ("bottom_bar_bg_color", "bottom_bar_background_color"),
+        ("section_bg_color", "section_background_color"),
+        ("section_separator_color", "section_separator_color"),
+        ("accent_text_color", "accent_text_color"),
+        ("section_header_text_color", "section_header_text_color"),
+        ("subtitle_text_color", "subtitle_text_color"),
+        ("destructive_text_color", "destructive_text_color"),
+    ];
+    let mut out = String::from("{");
+    for (index, (json_key, field)) in FIELDS.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        out.push('"');
+        out.push_str(json_key);
+        out.push_str("\":\"");
+        out.push_str(&color_text(theme.get(field).and_then(Json::as_i64).unwrap_or(0)));
+        out.push('"');
+    }
+    out.push('}');
+    out
+}
+
+const FOLDER_ICON_NAMES: [&str; 30] = [
+    "All", "Unread", "Unmuted", "Bots", "Channels", "Groups", "Private", "Custom", "Setup", "Cat", "Crown",
+    "Favorite", "Flower", "Game", "Home", "Love", "Mask", "Party", "Sport", "Study", "Trade", "Travel", "Work",
+    "Airplane", "Book", "Light", "Like", "Money", "Note", "Palette",
+];
+
+fn json_array_len(value: Option<&Json>) -> usize {
+    match value {
+        Some(Json::Arr(items)) => items.len(),
+        _ => 0,
+    }
+}
+
+fn json_flag(value: Option<&Json>) -> bool {
+    matches!(value, Some(Json::Bool(true)))
+}
+
+fn chat_folder_default_icon_name(folder: Option<&Json>) -> Option<String> {
+    let folder = folder?;
+    if let Some(name) = folder.get("icon").and_then(|icon| icon.get("name")).and_then(Json::as_str) {
+        if FOLDER_ICON_NAMES.contains(&name) {
+            return Some(name.to_string());
+        }
+    }
+    if json_array_len(folder.get("pinned_chat_ids")) > 0
+        || json_array_len(folder.get("included_chat_ids")) > 0
+        || json_array_len(folder.get("excluded_chat_ids")) > 0
+    {
+        return Some("Custom".to_string());
+    }
+    let contacts = json_flag(folder.get("include_contacts")) || json_flag(folder.get("include_non_contacts"));
+    let bots = json_flag(folder.get("include_bots"));
+    let groups = json_flag(folder.get("include_groups"));
+    let channels = json_flag(folder.get("include_channels"));
+    if contacts {
+        if !bots && !groups && !channels {
+            return Some("Private".to_string());
+        }
+    } else if !bots && !channels {
+        if !groups {
+            return Some("Custom".to_string());
+        }
+        return Some("Groups".to_string());
+    } else if !bots && !groups {
+        return Some("Channels".to_string());
+    } else if !groups && !channels {
+        return Some("Bots".to_string());
+    }
+    let exclude_read = json_flag(folder.get("exclude_read"));
+    let exclude_muted = json_flag(folder.get("exclude_muted"));
+    if exclude_read && !exclude_muted {
+        return Some("Unread".to_string());
+    }
+    if exclude_muted && !exclude_read {
+        return Some("Unmuted".to_string());
+    }
+    Some("Custom".to_string())
+}
+
+fn base64url_prefix_value(text: &str) -> Option<i64> {
+    let prefix: &[u8] = text.as_bytes().get(..12)?;
+    let decoded = base64_decode_strict(prefix, true)?;
+    if decoded.len() != 9 {
+        return None;
+    }
+    let mut bytes = [0u8; 8];
+    bytes.copy_from_slice(&decoded[..8]);
+    Some(i64::from_le_bytes(bytes))
+}
+
+fn push_receiver_id(payload: &str) -> Result<i64, String> {
+    if payload == "{}" {
+        return Ok(0);
+    }
+    let Some(Json::Obj(_)) = Json::parse(payload) else {
+        return Err("Failed to parse payload as JSON object".to_string());
+    };
+    let mut root = Json::parse(payload).unwrap_or(Json::Null);
+    if let Some(data) = root.get("data") {
+        root = data.clone();
+    }
+    if let Some(encrypted) = root.get("p").and_then(Json::as_str) {
+        if encrypted.len() < 12 {
+            return Err("Encrypted payload is too small".to_string());
+        }
+        return base64url_prefix_value(encrypted)
+            .ok_or_else(|| "Failed to base64url-decode payload".to_string());
+    }
+    if let Some(user_id) = root.get("user_id").and_then(Json::as_i64) {
+        if user_id <= 0 {
+            return Err(format!("Receive wrong user_id {}", user_id));
+        }
+        return Ok(user_id);
+    }
+    Ok(0)
+}
+
 fn execute(request: &str) -> String {
     let Some(json) = Json::parse(request) else {
         return error_object(400, "tdjson_rs: malformed request");
@@ -2014,6 +2154,25 @@ fn execute(request: &str) -> String {
             }
             None => text_object(""),
         },
+        "getThemeParametersJsonString" => {
+            text_object(&theme_parameters_json_string(json.get("theme")))
+        }
+        "getChatFolderDefaultIconName" => match chat_folder_default_icon_name(json.get("folder")) {
+            Some(name) => {
+                let mut out = String::from("{\"@type\":\"chatFolderIcon\",\"name\":\"");
+                json_escape(&name, &mut out);
+                out.push_str("\"}");
+                out
+            }
+            None => error_object(400, "Chat folder must be non-empty"),
+        },
+        "getPushReceiverId" => {
+            let payload = json.get("payload").and_then(Json::as_str).unwrap_or("");
+            match push_receiver_id(payload) {
+                Ok(id) => format!("{{\"@type\":\"pushReceiverId\",\"id\":\"{}\"}}", id),
+                Err(message) => error_object(400, &message),
+            }
+        }
         other => error_object(
             400,
             &format!("tdjson_rs: unimplemented request type {}", other),
