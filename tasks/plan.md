@@ -36,6 +36,10 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T20 | 第二阶段生成面：按 ADR-0002 复用 TL 生成器产出 types/functions（F040 已验证），前提是 B1 有结论 | F040 | blocked（B1） |
 | T21 | 原 B9：把 `td::json_decode` 的解析器消息逐条移植（含深度上限、尾部内容、宽松数字前缀），顺带修 `getJsonValue` 的内层文案；CONTROL 改为 B10 一条 + 自检四断言 | F054, F055 | done（34 条 cell，instrument 645 PASS） |
 | T22 | lane 尾巴：`/botCommand` 边界与词前缀否决、银行卡各卡组织长度表（Visa/MC/Amex/UnionPay/MIR 与 2220/2221/2720/2204/2205 边界）、searchStringsByPrefix 变音符号归一化 18 组 | F057 | done（57 条 cell，实现无需改动） |
+| T23 | 原 B10：归因 `to_double` 的溢出语义（libstdc++ `num_get` 给 ±DBL_MAX）并夹紧 Rust 侧的 ±inf；修完 CONTROL 清空 | F060 | done（17 条数值 cell，instrument 793 PASS） |
+| T24 | 符号链接 lane：junction 实测 `realpath` 不解析链接（`GetFullPathNameW`），词法实现无需改；链接由仪器自建并进 SEQUENCE | F059 | done（6 步序列） |
+| T25 | 归一化全表：对 U+0020–U+FFFF 逐码点 × 27 查询扫 `searchStringsByPrefix`，1,658,474 次比较零分歧（把 F057 的 18 组抽样升级为全表） | F062 | done（一次性探针，结论进台账） |
+| T26 | 非法 UTF-8 设计改动：`td_execute` 按字节读请求、`Json::Str` 改 `Vec<u8>`、孤立代理按 C++ 编原始三字节；各 action 的拒绝文案逐条对齐（`Text/Strings must be encoded in UTF-8`、`JSON has invalid encoding`、`cleanFileName` → 空、实体字段带类型名前缀） | F063 | done（22 条 bytes cell，instrument 837 PASS） |
 
 ## 变更记录
 
@@ -48,3 +52,6 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-26 | F053 | T17 | `logStreamFile` 走隔离目录 `work/logs`（仪器自己建目录并自检存在），序列跑完必须恢复 `logStreamDefault` |
 | 2026-11-26 | F054, F055 | T21 | B9 关闭；CONTROL 收敛为 B10 一条，管道正确性改由自检四断言保证（不再用「未实现」造差异） |
 | 2026-11-26 | F057 | T22 | 三条尾巴 lane 全部与 oracle 一致、无需改实现；`coverage-domain` 的 unmeasured 只剩「符号链接路径」「归一化全表」「非法 UTF-8」三处 |
+| 2026-11-26 | F059, F060 | T23, T24 | 符号链接 lane 与浮点溢出都收掉；CONTROL 清空（当前无已知差异），`unmeasured` 只剩「归一化全表抽样」「非法 UTF-8」两处 |
+| 2026-11-26 | F062 | T25 | 归一化改成全表扫描（码点 × 27 查询），`unmeasured` 只剩「非法 UTF-8 / 孤立代理对」一处，且它需要设计改动 |
+| 2026-11-26 | F063 | T26 | 用户批准设计改动：请求按字节读、`Json::Str` 改字节串。实测 TDLib 是**逐 action 拒绝**而非透传，因此只需要「解析保留字节 + 各点校验」，不必改动作内部算法 |

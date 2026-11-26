@@ -1161,15 +1161,15 @@ enum Json {
     // literals that don't fit i64: TDLib keeps them and fails later with
     // "Can't parse as an integer string"
     Num(String),
-    Str(String),
+    // bytes, not String: TDLib keeps raw bytes and the actions decide whether they are UTF-8
+    Str(Vec<u8>),
     Arr(Vec<Json>),
     Obj(Vec<(String, Json)>),
 }
 
 impl Json {
     /// td::json_decode: max depth 100, trailing content rejected, messages verbatim
-    fn parse(text: &str) -> Result<Json, String> {
-        let bytes = text.as_bytes();
+    fn parse(bytes: &[u8]) -> Result<Json, String> {
         let mut pos = 0usize;
         let value = parse_value(bytes, &mut pos, 100)?;
         skip_json_ws(bytes, &mut pos);
@@ -1188,7 +1188,14 @@ impl Json {
 
     fn as_str(&self) -> Option<&str> {
         match self {
-            Json::Str(value) => Some(value),
+            Json::Str(bytes) => std::str::from_utf8(bytes).ok(),
+            _ => None,
+        }
+    }
+
+    fn as_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Json::Str(bytes) => Some(bytes),
             _ => None,
         }
     }
@@ -1238,7 +1245,7 @@ fn parse_value(bytes: &[u8], pos: &mut usize, depth: i32) -> Result<Json, String
                 }
                 *pos += 1;
                 let value = parse_value(bytes, pos, depth - 1)?;
-                members.push((key, value));
+                members.push((String::from_utf8_lossy(&key).into_owned(), value));
                 skip_json_ws(bytes, pos);
                 match bytes.get(*pos) {
                     Some(b'}') => {
@@ -1351,14 +1358,23 @@ fn to_double_prefix(text: &str) -> f64 {
     let mut end = text.len();
     while end > 0 {
         if let Ok(value) = text[..end].parse::<f64>() {
-            return value;
+            // libstdc++ 的 num_get 在溢出时给出 ±DBL_MAX，Rust 给 ±inf
+            return if value.is_infinite() {
+                if value > 0.0 {
+                    f64::MAX
+                } else {
+                    -f64::MAX
+                }
+            } else {
+                value
+            };
         }
         end -= 1;
     }
     0.0
 }
 
-fn parse_json_string(bytes: &[u8], pos: &mut usize) -> Result<String, String> {
+fn parse_json_string(bytes: &[u8], pos: &mut usize) -> Result<Vec<u8>, String> {
     if bytes.get(*pos) != Some(&b'"') {
         return Err("Opening '\"' expected".to_string());
     }
@@ -1371,7 +1387,7 @@ fn parse_json_string(bytes: &[u8], pos: &mut usize) -> Result<String, String> {
         };
         *pos += 1;
         match byte {
-            b'"' => return Ok(String::from_utf8_lossy(&out).into_owned()),
+            b'"' => return Ok(out),
             b'\\' => {
                 let escape = match bytes.get(*pos) {
                     Some(escape) => *escape,
@@ -1401,19 +1417,33 @@ fn parse_json_string(bytes: &[u8], pos: &mut usize) -> Result<String, String> {
                                 *pos = saved;
                             }
                         }
-                        match char::from_u32(code) {
-                            Some(character) => {
-                                let mut buffer = [0u8; 4];
-                                out.extend_from_slice(character.encode_utf8(&mut buffer).as_bytes());
-                            }
-                            None => out.extend_from_slice("\u{fffd}".as_bytes()),
-                        }
+                        // 孤立代理对按 TDLib 的 append_utf8_character_unsafe 编成原始三字节，
+                        // 下游 check_utf8 会判成「not encoded in UTF-8」
+                        push_utf8_unsafe(&mut out, code);
                     }
                     other => out.push(other),
                 }
             }
             other => out.push(other),
         }
+    }
+}
+
+fn push_utf8_unsafe(out: &mut Vec<u8>, code: u32) {
+    if code < 0x80 {
+        out.push(code as u8);
+    } else if code < 0x800 {
+        out.push(0xc0 | (code >> 6) as u8);
+        out.push(0x80 | (code & 0x3f) as u8);
+    } else if code < 0x10000 {
+        out.push(0xe0 | (code >> 12) as u8);
+        out.push(0x80 | ((code >> 6) & 0x3f) as u8);
+        out.push(0x80 | (code & 0x3f) as u8);
+    } else {
+        out.push(0xf0 | (code >> 18) as u8);
+        out.push(0x80 | ((code >> 12) & 0x3f) as u8);
+        out.push(0x80 | ((code >> 6) & 0x3f) as u8);
+        out.push(0x80 | (code & 0x3f) as u8);
     }
 }
 
@@ -2835,7 +2865,10 @@ fn search_strings_by_prefix_request(request: &Json) -> String {
             let mut strings = Vec::with_capacity(values.len());
             for value in values {
                 match value {
-                    Json::Str(text) => strings.push(text.clone().into_bytes()),
+                    Json::Str(bytes) => match std::str::from_utf8(bytes) {
+                        Ok(text) => strings.push(text.as_bytes().to_vec()),
+                        Err(_) => return error_object(400, "Strings must be encoded in UTF-8"),
+                    },
                     other => {
                         return error_object(
                             400,
@@ -2855,7 +2888,10 @@ fn search_strings_by_prefix_request(request: &Json) -> String {
     };
     let mut query = match request.get("query") {
         None | Some(Json::Null) => Vec::new(),
-        Some(Json::Str(text)) => text.clone().into_bytes(),
+        Some(Json::Str(bytes)) => match std::str::from_utf8(bytes) {
+            Ok(text) => text.as_bytes().to_vec(),
+            Err(_) => return error_object(400, "Strings must be encoded in UTF-8"),
+        },
         Some(other) => {
             return error_object(
                 400,
@@ -3088,9 +3124,9 @@ fn emit_typed_json_value(value: &Json, out: &mut String) {
             "{{\"@type\":\"jsonValueNumber\",\"value\":{:.6}}}",
             to_double_prefix(literal)
         )),
-        Json::Str(text) => {
+        Json::Str(bytes) => {
             out.push_str("{\"@type\":\"jsonValueString\",\"value\":\"");
-            json_escape(text, out);
+            json_escape(&String::from_utf8_lossy(bytes), out);
             out.push_str("\"}");
         }
         Json::Arr(items) => {
@@ -3318,7 +3354,7 @@ fn push_receiver_id(payload: &str) -> Result<i64, String> {
     if payload == "{}" {
         return Ok(0);
     }
-    let Ok(mut root) = Json::parse(payload) else {
+    let Ok(mut root) = Json::parse(payload.as_bytes()) else {
         return Err("Failed to parse payload as JSON object".to_string());
     };
     if !matches!(root, Json::Obj(_)) {
@@ -3332,7 +3368,7 @@ fn push_receiver_id(payload: &str) -> Result<i64, String> {
     }
     if let Some(value) = root.get("p") {
         let encrypted = match value {
-            Json::Str(text) => text.clone(),
+            Json::Str(bytes) => String::from_utf8_lossy(bytes).into_owned(),
             Json::Int(_, literal) | Json::Float(_, literal) | Json::Num(literal) => literal.clone(),
             _ => return Err("Field \"p\" must be of type String".to_string()),
         };
@@ -3344,8 +3380,8 @@ fn push_receiver_id(payload: &str) -> Result<i64, String> {
     }
     if let Some(value) = root.get("user_id") {
         let literal = match value {
-            Json::Int(_, literal) | Json::Float(_, literal) | Json::Num(literal) => literal,
-            Json::Str(text) => text,
+            Json::Int(_, literal) | Json::Float(_, literal) | Json::Num(literal) => literal.clone(),
+            Json::Str(bytes) => String::from_utf8_lossy(bytes).into_owned(),
             _ => return Err("Field \"user_id\" must be a Number".to_string()),
         };
         let Some(user_id) = to_integer_safe_i64(literal.as_bytes()) else {
@@ -6745,10 +6781,14 @@ fn json_type_name(value: &Json) -> &'static str {
 }
 
 fn json_int64_field(value: &Json) -> Result<i64, String> {
-    let literal = match value {
+    let owned;
+    let literal: &str = match value {
         Json::Null => return Ok(0),
         Json::Int(_, literal) | Json::Float(_, literal) | Json::Num(literal) => literal,
-        Json::Str(text) => text,
+        Json::Str(bytes) => {
+            owned = String::from_utf8_lossy(bytes).into_owned();
+            &owned
+        }
         other => {
             return Err(format!(
                 "Expected String or Number, but receive {}",
@@ -6800,7 +6840,9 @@ const DATE_TIME_FORMATTING_CONSTRUCTORS: [(i32, &str); 5] = [
 
 fn json_class_name<'a>(value: &'a Json, constructors: &[(i32, &'static str)]) -> Result<&'a str, String> {
     match value.get("@type") {
-        Some(Json::Str(name)) => Ok(name),
+        Some(Json::Str(bytes)) => {
+            Ok(std::str::from_utf8(bytes).unwrap_or("\u{fffd}"))
+        }
         Some(Json::Int(_, literal)) | Some(Json::Float(_, literal)) | Some(Json::Num(literal)) => {
             let constructor = to_integer_i32(literal.as_bytes());
             match constructors.iter().find(|(id, _)| *id == constructor) {
@@ -6923,8 +6965,11 @@ fn get_message_entities(entities: Option<&Json>, allow_all: bool) -> Result<Vec<
             "textEntityTypeCode" => TextEntity::new(EType::Code, offset, length),
             "textEntityTypePre" => TextEntity::new(EType::Pre, offset, length),
             "textEntityTypePreCode" => {
-                let argument = entity_type.get("language").and_then(Json::as_str).unwrap_or("");
-                let mut language = argument.as_bytes().to_vec();
+                let mut language = entity_type
+                    .get("language")
+                    .and_then(Json::as_bytes)
+                    .unwrap_or(b"")
+                    .to_vec();
                 if !clean_input_string(&mut language) {
                     return Err("MessageEntityPreCode.language must be encoded in UTF-8".to_string());
                 }
@@ -6933,8 +6978,11 @@ fn get_message_entities(entities: Option<&Json>, allow_all: bool) -> Result<Vec<
                 entity
             }
             "textEntityTypeTextUrl" => {
-                let url = entity_type.get("url").and_then(Json::as_str).unwrap_or("");
-                let mut url = url.as_bytes().to_vec();
+                let mut url = entity_type
+                    .get("url")
+                    .and_then(Json::as_bytes)
+                    .unwrap_or(b"")
+                    .to_vec();
                 if !clean_input_string(&mut url) {
                     return Err("MessageEntityTextUrl.url must be encoded in UTF-8".to_string());
                 }
@@ -7014,10 +7062,14 @@ fn get_message_entities(entities: Option<&Json>, allow_all: bool) -> Result<Vec<
 }
 
 fn json_int32_field(value: &Json) -> Result<i32, String> {
-    let literal = match value {
+    let owned;
+    let literal: &str = match value {
         Json::Null => return Ok(0),
         Json::Int(_, literal) | Json::Float(_, literal) | Json::Num(literal) => literal,
-        Json::Str(text) => text,
+        Json::Str(bytes) => {
+            owned = String::from_utf8_lossy(bytes).into_owned();
+            &owned
+        }
         other => return Err(format!("Expected Number, but receive {}", json_type_name(other))),
     };
     match to_integer_safe_i32(literal.as_bytes()) {
@@ -7046,7 +7098,10 @@ fn read_formatted_text(request: &Json, allow_all: bool) -> Result<(String, Vec<T
     };
     let text = match text_object.get("text") {
         None | Some(Json::Null) => String::new(),
-        Some(Json::Str(value)) => value.clone(),
+        Some(Json::Str(bytes)) => match std::str::from_utf8(bytes) {
+            Ok(value) => value.to_string(),
+            Err(_) => return Err("Strings must be encoded in UTF-8".to_string()),
+        },
         Some(other) => {
             return Err(format_error(format!(
                 "Expected String, but receive {}",
@@ -7101,8 +7156,11 @@ fn parse_text_entities(request: &Json) -> String {
         )
     };
     let text = match request.get("text") {
-        None | Some(Json::Null) => "",
-        Some(Json::Str(text)) => text,
+        None | Some(Json::Null) => String::new(),
+        Some(Json::Str(bytes)) => match std::str::from_utf8(bytes) {
+            Ok(text) => text.to_string(),
+            Err(_) => return error_object(400, "Text must be encoded in UTF-8"),
+        },
         Some(other) => {
             return format_error(format!(
                 "Expected String, but receive {}",
@@ -7124,10 +7182,13 @@ fn parse_text_entities(request: &Json) -> String {
         format_error(format!("Unknown constructor 0x{:08x}", constructor as u32))
     };
     let is_html = match parse_mode.get("@type") {
-        Some(Json::Str(name)) => match name.as_str() {
-            "textParseModeHTML" => true,
-            "textParseModeMarkdown" => false,
-            other => return format_error(format!("Unknown class \"{}\"", other)),
+        Some(Json::Str(bytes)) => match std::str::from_utf8(bytes) {
+            Err(_) => return format_error("Strings must be encoded in UTF-8".to_string()),
+            Ok(name) => match name {
+                "textParseModeHTML" => true,
+                "textParseModeMarkdown" => false,
+                other => return format_error(format!("Unknown class \"{}\"", other)),
+            },
         },
         Some(Json::Int(_, literal)) | Some(Json::Float(_, literal)) | Some(Json::Num(literal)) => {
             match to_integer_i32(literal.as_bytes()) {
@@ -7600,7 +7661,7 @@ fn expected_type_error(expected: &str, value: &Json) -> String {
 fn request_string(json: &Json, key: &str) -> Result<String, String> {
     match json.get(key) {
         None | Some(Json::Null) => Ok(String::new()),
-        Some(Json::Str(text)) => Ok(text.clone()),
+        Some(Json::Str(bytes)) => Ok(String::from_utf8_lossy(bytes).into_owned()),
         Some(other) => Err(expected_type_error("String", other)),
     }
 }
@@ -7624,6 +7685,23 @@ fn request_object<'a>(json: &'a Json, key: &str) -> Result<Option<&'a Json>, Str
         None | Some(Json::Null) => Ok(None),
         Some(value @ Json::Obj(_)) => Ok(Some(value)),
         Some(other) => Err(expected_type_error("Object", other)),
+    }
+}
+
+/// 返回 None 表示字段存在但不是合法 UTF-8（TDLib 让各 action 自己决定怎么报）
+fn request_text(json: &Json, key: &str) -> Result<Option<String>, String> {
+    match json.get(key) {
+        None | Some(Json::Null) => Ok(Some(String::new())),
+        Some(Json::Str(bytes)) => Ok(std::str::from_utf8(bytes).ok().map(str::to_string)),
+        Some(other) => Err(expected_type_error("String", other)),
+    }
+}
+
+fn request_bytes<'a>(json: &'a Json, key: &str) -> Result<&'a [u8], String> {
+    match json.get(key) {
+        None | Some(Json::Null) => Ok(b""),
+        Some(Json::Str(bytes)) => Ok(bytes.as_slice()),
+        Some(other) => Err(expected_type_error("String", other)),
     }
 }
 
@@ -7658,9 +7736,9 @@ fn encode_json_text(value: &Json) -> String {
         Json::Int(_, literal) | Json::Float(_, literal) | Json::Num(literal) => {
             out.push_str(literal)
         }
-        Json::Str(text) => {
+        Json::Str(bytes) => {
             out.push('"');
-            json_escape(text, &mut out);
+            json_escape(&String::from_utf8_lossy(bytes), &mut out);
             out.push('"');
         }
         Json::Arr(items) => {
@@ -7702,7 +7780,7 @@ fn append_extra(result: String, extra: &str) -> String {
     out
 }
 
-fn execute(request: &str) -> String {
+fn execute(request: &[u8]) -> String {
     let json = match Json::parse(request) {
         Ok(json) => json,
         Err(message) => {
@@ -7726,15 +7804,18 @@ fn execute(request: &str) -> String {
 fn execute_object(json: &Json) -> String {
     let kind = match json.get("@type") {
         None => return request_error("Can't find field \"@type\""),
-        Some(Json::Str(name)) => {
-            if SYNCHRONOUS_ACTIONS.contains(&name.as_str()) {
-                name.as_str()
-            } else if api_functions::FUNCTIONS.iter().any(|(_, known)| *known == name) {
-                return error_object(400, "The method can't be executed synchronously");
-            } else {
-                return request_error(&format!("Unknown class \"{}\"", name));
+        Some(Json::Str(bytes)) => match std::str::from_utf8(bytes) {
+            Err(_) => return request_error("Strings must be encoded in UTF-8"),
+            Ok(name) => {
+                if SYNCHRONOUS_ACTIONS.contains(&name) {
+                    name
+                } else if api_functions::FUNCTIONS.iter().any(|(_, known)| *known == name) {
+                    return error_object(400, "The method can't be executed synchronously");
+                } else {
+                    return request_error(&format!("Unknown class \"{}\"", name));
+                }
             }
-        }
+        },
         Some(Json::Int(_, literal)) | Some(Json::Float(_, literal)) | Some(Json::Num(literal)) => {
             let constructor = to_integer_i32(literal.as_bytes());
             match api_functions::FUNCTIONS.iter().find(|(id, _)| *id == constructor) {
@@ -7760,9 +7841,18 @@ fn execute_object(json: &Json) -> String {
     }
     match kind {
         "searchQuote" => search_quote_request(json),
-        "getTextEntities" => entities_json(&req!(request_string(json, "text"))),
-        "getTextEmojiRanges" => emoji_ranges_json(&req!(request_string(json, "text"))),
-        "checkQuickReplyShortcutName" => check_shortcut_name(&req!(request_string(json, "name"))),
+        "getTextEntities" => match req!(request_text(json, "text")) {
+            Some(text) => entities_json(&text),
+            None => error_object(400, "Text must be encoded in UTF-8"),
+        },
+        "getTextEmojiRanges" => match req!(request_text(json, "text")) {
+            Some(text) => emoji_ranges_json(&text),
+            None => error_object(400, "Text must be encoded in UTF-8"),
+        },
+        "checkQuickReplyShortcutName" => match req!(request_text(json, "name")) {
+            Some(name) => check_shortcut_name(&name),
+            None => error_object(200, "Strings must be encoded in UTF-8"),
+        },
         "getCountryFlagEmoji" => {
             text_object(&country_flag_emoji(&req!(request_string(json, "country_code"))))
         }
@@ -7780,19 +7870,28 @@ fn execute_object(json: &Json) -> String {
         "getFileExtension" => {
             text_object(mime_type_extension(&req!(request_string(json, "mime_type"))))
         }
-        "cleanFileName" => text_object(&clean_filename(&req!(request_string(json, "file_name")))),
+        "cleanFileName" => match req!(request_text(json, "file_name")) {
+            Some(file_name) => text_object(&clean_filename(&file_name)),
+            None => text_object(""),
+        },
         "searchStringsByPrefix" => search_strings_by_prefix_request(json),
         "parseTextEntities" => parse_text_entities(json),
         "parseMarkdown" => parse_markdown_request(json),
         "getMarkdownText" => get_markdown_text_request(json),
-        "getJsonValue" => match Json::parse(&req!(request_string(json, "json"))) {
-            Ok(value) => {
-                let mut out = String::new();
-                emit_typed_json_value(&value, &mut out);
-                out
+        "getJsonValue" => {
+            let raw = req!(request_bytes(json, "json"));
+            match std::str::from_utf8(raw) {
+                Err(_) => error_object(400, "JSON has invalid encoding"),
+                Ok(text) => match Json::parse(text.as_bytes()) {
+                    Ok(value) => {
+                        let mut out = String::new();
+                        emit_typed_json_value(&value, &mut out);
+                        out
+                    }
+                    Err(message) => error_object(400, &message),
+                },
             }
-            Err(message) => error_object(400, &message),
-        },
+        }
         "getJsonString" => match req!(request_object(json, "json_value")) {
             Some(value) => {
                 let mut out = String::new();
@@ -8033,8 +8132,8 @@ pub extern "C" fn td_execute(request: *const c_char) -> *const c_char {
     if request.is_null() {
         return set_result(String::new());
     }
-    let text = unsafe { CStr::from_ptr(request) }.to_string_lossy().into_owned();
-    set_result(execute(&text))
+    let bytes = unsafe { CStr::from_ptr(request) }.to_bytes();
+    set_result(execute(bytes))
 }
 
 fn unimplemented(name: &str) -> *const c_char {

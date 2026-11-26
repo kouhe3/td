@@ -32,15 +32,15 @@
 | `getFileExtension` | measured（F019, F051：大小写、反向缺失 MIME、空串） | — |
 | `cleanFileName` | measured（F021, F051：64/65 字符 stem、16/17 字符 ext、纯符号名） | — |
 | `getTextEmojiRanges` | measured（F020, F051：孤立 ZWJ、不完整序列、双肤色、标签序列） | — |
-| `getJsonValue` / `getJsonString` | measured（F022, F051：重复键、空白、成员缺 `value`、未知 `@type`；F054：非法 JSON 文案） | 超 DBL_MAX 浮点（B10）未对齐 |
+| `getJsonValue` / `getJsonString` | measured（F022, F051：重复键、空白、成员缺 `value`、未知 `@type`；F054：非法 JSON 文案；F060：±DBL_MAX 溢出与下溢，17 条） | — |
 | `getThemeParametersJsonString` | measured（F023, F051：越界与负颜色、空对象） | — |
 | `getChatFolderDefaultIconName` | measured（F024, F051：include/exclude/pinned 交叉、空 title） | — |
 | `getPushReceiverId` | measured（F025, F051：非对象 payload、`data` 非对象、`p`/`user_id` 类型错配） | — |
 | `getOption` | measured（F027：`version` 与两种拒绝） | `commit_hash` 绑定构建时 HEAD，两侧各自烘焙 → 仓库前进即不同，不构成可判 cell（unmeasured） |
 | `parseTextEntities` | measured（F028, F029, F030, F051：`<tg-time>`/`<tg-emoji>`、未闭合标签、version 0/缺省） | — |
 | `parseMarkdown` / `getMarkdownText` | measured（F031–F034, F051：v3 roundtrip 自检与降级路径） | — |
-| `searchStringsByPrefix` | measured（F035, F051：变音符号、大小写、重复项并列次序；F057：18 组变音符号归一化） | 归一化全表未逐字符枚举（只抽样 18 组） |
-| 8 个日志类 action | measured（F036, F037, F038, F053；`SEQUENCE` 段 4 段 35 步，含隔离目录下的文件流与三条错误路径） | 符号链接形态的路径规范化未测（C++ 的 realpath 会解析链接） |
+| `searchStringsByPrefix` | measured（F035, F051：大小写、重复项并列次序；F057：18 组抽样；F062：U+0020–U+FFFF 全表 1,658,474 次比较零分歧） | — |
+| 8 个日志类 action | measured（F036, F037, F038, F053, F059；`SEQUENCE` 段 5 段 41 步，含隔离目录下的文件流、三条错误路径与 junction 路径） | — |
 | `getLanguagePackString` | measured（F039：三道校验 + 无库 404） | 成功路径需要真实的语言包数据库文件（`tdlib-data`），回流条件 = 拿到 pack 数据后另立判据（见 backlog B7） |
 | `searchQuote` | measured（F043, F051：负 offset / 越界长度实体、越界 quote_position） | — |
 | `getPhoneNumberInfoSync` | measured（F041, F042, F051：`language_code` 无效，恒用内置 `en` 快照；`888` 前缀） | — |
@@ -57,7 +57,7 @@
 | `@type`：缺失 / 未知字符串 / 未知构造号 / 已知但不同步 / 非 String-Integer | measured（F046, F047） | 数字形态只覆盖 `td_api.tl` 函数段（1114 条）内的构造号 |
 | `@extra` 回显（含错误响应；数字保留原始字面量） | measured（F048） | — |
 | 畸形 JSON 文本的 `json_decode` 报错文案（12 条消息 + 深度上限 + 尾部内容） | measured（F054） | — |
-| 请求 / 字符串里的非法 UTF-8、孤立代理对 | unmeasured | C++ 保留原始字节，Rust 侧走 lossy 与 U+FFFD；回流：需要逐字节表示非 UTF-8 时把它改成字节串 |
+| 请求 / 字符串里的非法 UTF-8、孤立代理对（22 条 bytes cell，各 action 的拒绝文案逐条对齐） | measured（F063） | — |
 
 ## 边界之外（永久不在本仪器范围）
 

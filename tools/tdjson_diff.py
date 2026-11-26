@@ -11,9 +11,11 @@
 覆盖边界:
     只覆盖 `td_execute` 这一条纯函数路径（不登录、不联网）。
     覆盖不到的：`td_send` / `td_receive` / `td_json_client_*` 的有状态客户端路径；
-    `tddb` / `td/mtproto` / `tdactor` / `tdutils` 在 C ABI 之下，不在本仪器范围内；
-    超 DBL_MAX 的浮点字面量（B10，作 CONTROL）、请求与字符串里的非法 UTF-8（两侧表示不同）。
+    `tddb` / `td/mtproto` / `tdactor` / `tdutils` 在 C ABI 之下，不在本仪器范围内。
     逐格覆盖状态见 docs/coverage-domain.md。
+
+语料条目可以是 `str`（按 UTF-8 编码发出）或 `bytes`（原样发出，用来喂非法 UTF-8 与
+孤立代理对）；打印时用 `label()` 做 backslashreplace，避免把非法字节写进 stdout。
 
 失效条件:
     以下任一变化都必须重判 gate 并更新 docs/facts.md：
@@ -22,11 +24,11 @@
       - `td_api.tl` 变更导致 action/object 序列化格式变化。
 
 CONTROL 组的纪律:
-    CONTROL 放**记录在案、带回流条件**的已知差异，行内必须写明它是缺陷（目前：B10 的
-    `1e999` 超 DBL_MAX 浮点）。差异一旦被修复，这个 case 必然转为相同——届时把它移进
-    MATCH，并如实标注「已无已知差异」，不要为了凑负例去伪造一条。
+    CONTROL 放**记录在案、带回流条件**的已知差异，行内必须写明它是缺陷。B10（超 DBL_MAX
+    浮点）修好之后这里已经清空——**当前没有已知差异**，不要为了凑负例去伪造一条。
     历史上的两次踩坑：`getOption` / `searchStringsByPrefix` 曾靠「Rust 未实现」制造差异，
-    实现正确后判据自相矛盾；T19 修完类型错配后，那两条也已移进 MATCH。
+    实现正确后判据自相矛盾；T19 的类型错配、T21 的畸形 JSON 文案、B10 的浮点溢出也都
+    按同一规则移进了 MATCH。
 
 自检（每次运行都跑）:
     两个 dll 的 md5 必须不同（防止拿 oracle 跟自己比）、每条 MATCH 输出非空、
@@ -38,6 +40,7 @@ from __future__ import annotations
 import ctypes
 import hashlib
 import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -421,12 +424,49 @@ MATCH = [
     '{"@type":"searchStringsByPrefix","strings":["ßeta","zzz"],"query":"seta","limit":10,"return_sorted":true}',
     '{"@type":"searchStringsByPrefix","strings":["ńć","zzz"],"query":"nc","limit":10,"return_sorted":true}',
     '{"@type":"searchStringsByPrefix","strings":["ṣṭ","zzz"],"query":"st","limit":10,"return_sorted":true}',
+    '{"@type":"getJsonValue","json":"1e999"}',
+    '{"@type":"getJsonValue","json":"-1e999"}',
+    '{"@type":"getJsonValue","json":"1e-999"}',
+    '{"@type":"getJsonValue","json":"-1e-999"}',
+    '{"@type":"getJsonValue","json":"1e308"}',
+    '{"@type":"getJsonValue","json":"1.7976931348623157e308"}',
+    '{"@type":"getJsonValue","json":"1.7976931348623159e308"}',
+    '{"@type":"getJsonValue","json":"0.1"}',
+    '{"@type":"getJsonValue","json":"123456789012345678"}',
+    '{"@type":"getJsonValue","json":"1e16"}',
+    '{"@type":"getJsonValue","json":"1e17"}',
+    '{"@type":"getJsonValue","json":"1234567890123456789012345"}',
+    '{"@type":"getJsonString","json_value":{"@type":"jsonValueNumber","value":1e999}}',
+    '{"@type":"getJsonString","json_value":{"@type":"jsonValueNumber","value":1e308}}',
+    '{"@type":"getJsonString","json_value":{"@type":"jsonValueNumber","value":-1e999}}',
+    '{"@type":"getJsonString","json_value":{"@type":"jsonValueNumber","value":0.000001}}',
+    '{"@type":"getJsonString","json_value":{"@type":"jsonValueNumber","value":1e-7}}',
+    b'{"@type":"getTextEntities","text":"\xff\xfe @abc"}',
+    b'{"@type":"getTextEntities","text":"#\xff @abc"}',
+    b'{"@type":"getTextEntities","text":"\\ud800 @abc"}',
+    b'{"@type":"getTextEntities","text":"\\udc00x"}',
+    b'{"@type":"getTextEntities","text":"ab \xff cd"}',
+    b'{"@type":"getTextEmojiRanges","text":"\xff"}',
+    b'{"@type":"getFileMimeType","file_name":"\xff.txt"}',
+    b'{"@type":"getFileMimeType","file_name":"a.\xff"}',
+    b'{"@type":"getFileExtension","mime_type":"text/\xff"}',
+    b'{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"\xff\xfe","entities":[]}}',
+    b'{"@type":"parseMarkdown","text":{"@type":"formattedText","text":"\xff","entities":[]}}',
+    b'{"@type":"parseTextEntities","text":"\xff","parse_mode":{"@type":"textParseModeHTML"}}',
+    b'{"@type":"getJsonValue","json":"\\"\xff\\""}',
+    b'{"@type":"getJsonValue","json":"\xff"}',
+    b'{"@type":"checkQuickReplyShortcutName","name":"\xff"}',
+    b'{"@type":"searchStringsByPrefix","strings":["\xff"],"query":"a","limit":10,"return_sorted":true}',
+    b'{"@type":"searchStringsByPrefix","strings":["abc"],"query":"\xff","limit":10,"return_sorted":true}',
+    b'{"@type":"getOption","name":"\xff"}',
+    b'{"@type":"getCountryFlagEmoji","country_code":"\xff\xff"}',
+    b'{"@type":"cleanFileName","file_name":"\xff.txt"}',
+    b'{"@type":"getPushReceiverId","payload":"{\\"user_id\\":\xff}"}',
+    b'{"@type":"getMarkdownText","text":{"@type":"formattedText","text":"ab","entities":[{"@type":"textEntity","offset":0,"length":2,"type":{"@type":"textEntityTypeTextUrl","url":"\xff"}}]}}',
 ]
 
-# 已知差异（backlog B10）：超 DBL_MAX 的浮点字面量，C++ 给 DBL_MAX 的十进制、Rust 给 inf。
-CONTROL = [
-    '{"@type":"getJsonValue","json":"1e999"}',
-]
+# 当前没有已知差异（B10 已修）。再出现时放这里，并在 docs/facts.md 写明它是缺陷、带回流条件。
+CONTROL = []
 
 # 有状态 action 只在有序序列里有意义：每段序列对两个 dll 各跑一遍，逐项比结果。
 # 每段序列自己负责把状态恢复原值，避免污染其它段落。
@@ -474,6 +514,15 @@ SEQUENCES = [
         '{"@type":"setLogStream","log_stream":{"@type":"logStreamDefault"}}',
         '{"@type":"getLogStream"}',
     ],
+    # C++ 的 realpath 在 Windows 上是 GetFullPathNameW，不解析链接（path.cpp:458 的 TODO）
+    [
+        '{"@type":"setLogStream","log_stream":{"@type":"logStreamFile","path":"work/logs-link/link.log","max_file_size":4096}}',
+        '{"@type":"getLogStream"}',
+        '{"@type":"setLogStream","log_stream":{"@type":"logStreamFile","path":"work/logs-link/../logs-link/up.log","max_file_size":2048}}',
+        '{"@type":"getLogStream"}',
+        '{"@type":"setLogStream","log_stream":{"@type":"logStreamDefault"}}',
+        '{"@type":"getLogStream"}',
+    ],
 ]
 
 
@@ -500,6 +549,7 @@ def add_runtime_dirs() -> None:
 
 
 LOG_DIR = Path("work/logs")
+LINK_DIR = Path("work/logs-link")
 
 
 def ensure_log_dir() -> bool:
@@ -508,8 +558,26 @@ def ensure_log_dir() -> bool:
     return LOG_DIR.is_dir()
 
 
-def run(lib, case: str) -> str | None:
-    raw = lib.td_execute(case.encode())
+def ensure_link_dir() -> bool:
+    # junction 不需要管理员；拿不到就说明输入不存在，链接 lane 会被误判成「打不开」
+    if LINK_DIR.exists():
+        return True
+    if not ensure_log_dir():
+        return False
+    subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(LINK_DIR.resolve()), str(LOG_DIR.resolve())],
+        capture_output=True,
+    )
+    return LINK_DIR.exists()
+
+
+def label(case) -> str:
+    return case if isinstance(case, str) else case.decode("utf-8", "backslashreplace")
+
+
+def run(lib, case) -> str | None:
+    payload = case if isinstance(case, bytes) else case.encode()
+    raw = lib.td_execute(payload)
     return None if raw is None else raw.decode()
 
 
@@ -534,6 +602,9 @@ def main(argv: list[str]) -> int:
     if not ensure_log_dir():
         print(f"FAIL log dir missing: {LOG_DIR}")
         return 1
+    if not ensure_link_dir():
+        print(f"FAIL junction missing: {LINK_DIR}")
+        return 1
     cpp = load(CPP)
     rs = load(RS)
 
@@ -541,7 +612,7 @@ def main(argv: list[str]) -> int:
     self_checks = [
         ("两个 dll 必须不同", actual != md5(RS), "oracle 与 rust 的 md5 相同，等于拿自己比自己"),
         ("MATCH 语料下限", len(MATCH) >= 300, f"只有 {len(MATCH)} 条，语料可能被误删"),
-        ("CONTROL 非空", len(CONTROL) >= 1, "没有已知差异作负例时，至少要有一条记录在案的差异"),
+        ("CONTROL 无重复", len(set(CONTROL)) == len(CONTROL), "CONTROL 里有重复条目"),
     ]
     empty_cells = 0
     for case in MATCH:
@@ -559,8 +630,8 @@ def main(argv: list[str]) -> int:
         outs = {run(cpp, case) for _ in range(3)}
         ok = len(outs) == 1
         if not ok:
-            failures.append(f"floor unstable: {case}")
-        print(f"{'PASS' if ok else 'FAIL'} {case}")
+            failures.append(f"floor unstable: {label(case)}")
+        print(f"{'PASS' if ok else 'FAIL'} {label(case)}")
         if not ok:
             print(f"  outs: {sorted(outs)}")
 
@@ -570,8 +641,8 @@ def main(argv: list[str]) -> int:
         b = run(rs, case)
         ok = a == b and a is not None and a != ""
         if not ok:
-            failures.append(f"match failed: {case}")
-        print(f"{'PASS' if ok else 'FAIL'} {case}")
+            failures.append(f"match failed: {label(case)}")
+        print(f"{'PASS' if ok else 'FAIL'} {label(case)}")
         print(f"  out: {a}")
         if a != b:
             print(f"  rs : {b}")
@@ -582,8 +653,8 @@ def main(argv: list[str]) -> int:
         b = run(rs, case)
         ok = a != b
         if not ok:
-            failures.append(f"control not discriminated: {case}")
-        print(f"{'PASS' if ok else 'FAIL'} {case}")
+            failures.append(f"control not discriminated: {label(case)}")
+        print(f"{'PASS' if ok else 'FAIL'} {label(case)}")
         print(f"  cpp: {a}")
         print(f"  rs : {b}")
 
@@ -597,7 +668,7 @@ def main(argv: list[str]) -> int:
         print(f"{'PASS' if ok else 'FAIL'} sequence {index} ({len(sequence)} steps)")
         for step, cpp_out, rs_out in zip(sequence, cpp_outputs, rs_outputs):
             marker = " " if cpp_out == rs_out else ">"
-            print(f" {marker} {step}")
+            print(f" {marker} {label(step)}")
             print(f"   cpp: {cpp_out}")
             if cpp_out != rs_out:
                 print(f"   rs : {rs_out}")
