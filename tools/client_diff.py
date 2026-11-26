@@ -63,6 +63,27 @@ AUTH_REQUESTS = [
     {"@type": "logOut"},
 ]
 
+# 异步路径（td_send 任意函数）：本地可答的（同步 action / 同步 option / 解析失败）不触发连接突发，
+# 其余进 Td。这里只看每条请求自己的应答，突发由上面的 auth 段负责。
+ASYNC_REQUESTS = [
+    '{"@type":"getOption","name":"version"}',
+    '{"@type":"getOption","name":"commit_hash"}',
+    '{"@type":"getOption","name":"my_id"}',
+    '{"@type":"getOption","name":"no_such_option"}',
+    '{"@type":"getTextEntities","text":"@a"}',
+    '{"@type":"getLogVerbosityLevel"}',
+    '{"@type":"setLogVerbosityLevel","new_verbosity_level":3}',
+    '{"@type":"testReturnError","error":{"@type":"error","code":418,"message":"teapot"}}',
+    '{"@type":"getTextEntities","text":5}',
+    '{"@type":"noSuchType"}',
+    "not json",
+    '{"@type":"getMe","@extra":7}',
+    '{"@type":"getUser","user_id":1}',
+    '{"@type":"sendMessage","chat_id":1,"input_message_content":{"@type":"inputMessageText","text":{"@type":"formattedText","text":"hi","entities":[]}}}',
+    '{"@type":"getOption","name":"version","@extra":{"k":[1,2]}}',
+    '{"@type":-341490693,"text":"@b"}',
+]
+
 DYNAMIC = [
     (
         re.compile(
@@ -82,6 +103,8 @@ DYNAMIC = [
         ),
         r"\1<COMMIT_HASH>\2",
     ),
+    # getOption 直接问 commit_hash 时两侧各自烘焙自己的 HEAD，不构成可判 cell
+    (re.compile(r'("value":")([0-9a-f]{40})(")'), r"\1<COMMIT_HASH>\3"),
 ]
 
 
@@ -99,7 +122,7 @@ def add_runtime_dirs() -> None:
             os.add_dll_directory(str(candidate))
 
 
-def worker(dll: str, db: str, out: str, fresh: bool, auth: bool, legacy: bool) -> int:
+def worker(dll: str, db: str, out: str, fresh: bool, auth: bool, legacy: bool, async_lane: bool = False) -> int:
     add_runtime_dirs()
     lib = ctypes.CDLL(dll)
     lib.td_execute.restype = ctypes.c_char_p
@@ -162,6 +185,27 @@ def worker(dll: str, db: str, out: str, fresh: bool, auth: bool, legacy: bool) -
             and message["authorization_state"]["@type"] == "authorizationStateWaitPhoneNumber"
         ):
             break
+    if async_lane:
+        # 先等到静默：首启末尾的全局突发必须落在这些窗口之外，否则每条请求都会多出 6 行
+        calm = time.time()
+        while time.time() - calm < 0.4:
+            if receive(0.1):
+                calm = time.time()
+        records = []
+        for request in ASYNC_REQUESTS:
+            send(request.encode())
+            answers = []
+            end = time.time() + 0.3
+            while time.time() < end:
+                raw = receive(0.1)
+                if raw:
+                    answers.append(raw.decode("utf-8", "replace"))
+            records.append({"request": request, "rows": answers})
+        Path(out).write_text(
+            "\n".join(json.dumps(record, ensure_ascii=False) for record in records), encoding="utf-8"
+        )
+        print(json.dumps({"client_id": client_id, "lines": len(records), "started": started}))
+        return 0
     if auth:
         for request in AUTH_REQUESTS:
             send(json.dumps(request).encode())
@@ -269,9 +313,41 @@ def capture(
     return rows, meta
 
 
+def capture_async(dll: Path, tag: str, database: str) -> tuple[list[dict], dict]:
+    base = ROOT / "work" / "client" / tag
+    database_path = ROOT / "work" / "client" / database / "db"
+    out = base / "async.jsonl"
+    base.mkdir(parents=True, exist_ok=True)
+    command = [
+        PYTHON,
+        str(Path(__file__).resolve()),
+        "--capture",
+        str(dll),
+        str(database_path),
+        str(out),
+        "--async",
+    ]
+    process = subprocess.run(command, capture_output=True)
+    text = ((process.stdout or b"") + (process.stderr or b"")).decode("utf-8", "replace")
+    if process.returncode != 0 or not out.is_file():
+        raise SystemExit(f"FAIL capture {tag}: rc={process.returncode}\n{text[-2000:]}")
+    # stdout 只有那一行 meta；Tdlib 的日志走 stderr，提高 verbosity 后会混进来
+    meta = json.loads((process.stdout or b"").decode("utf-8", "replace").strip().splitlines()[-1])
+    records = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines() if line.strip()]
+    return records, meta
+
+
 def main(argv: list[str]) -> int:
     if argv[:1] == ["--capture"]:
-        return worker(argv[1], argv[2], argv[3], "--reuse" not in argv, "--auth" in argv, "--legacy" in argv)
+        return worker(
+            argv[1],
+            argv[2],
+            argv[3],
+            "--reuse" not in argv,
+            "--auth" in argv,
+            "--legacy" in argv,
+            "--async" in argv,
+        )
 
     failures: list[str] = []
     if not CPP.is_file():
@@ -410,6 +486,32 @@ def main(argv: list[str]) -> int:
         f"{'PASS' if ok else 'FAIL'} 畸形请求回一条 400"
         + ("" if ok else f": cpp={len(malformed)} rows, lines {len(cpp_legacy)}/{len(rs_legacy)}")
     )
+
+    print("\n== async: td_send 任意函数（每条请求自己的应答，突发归上一段） ==")
+    cpp_async, _ = capture_async(CPP, "cpp-async", "cpp-async")
+    rs_async, _ = capture_async(RS, "rs-async", "rs-async")
+
+    one_row = sum(1 for record in cpp_async if len(record["rows"]) == 1)
+    ok = len(cpp_async) == len(ASYNC_REQUESTS) and len(rs_async) == len(ASYNC_REQUESTS) and one_row == len(ASYNC_REQUESTS)
+    if not ok:
+        failures.append(f"async shape: {len(cpp_async)}/{len(rs_async)} records, {one_row} single-answer windows")
+    print(
+        f"{'PASS' if ok else 'FAIL'} 每条请求恰好一条应答"
+        + ("" if ok else f": cpp={one_row}/{len(cpp_async)} records={len(cpp_async)}/{len(rs_async)}")
+    )
+
+    async_mismatch = 0
+    for cpp_record, rs_record in zip(cpp_async, rs_async):
+        cpp_rows = [normalize(row) for row in cpp_record["rows"]]
+        rs_rows = [normalize(row) for row in rs_record["rows"]]
+        if cpp_rows == rs_rows:
+            continue
+        async_mismatch += 1
+        failures.append(f"async request differs: {cpp_record['request'][:80]}")
+        print(f"FAIL {cpp_record['request'][:100]}")
+        print(f"  cpp: {cpp_rows}")
+        print(f"  rs : {rs_rows}")
+    print(f"{'PASS' if async_mismatch == 0 else 'FAIL'} {len(ASYNC_REQUESTS)} 条异步请求逐条相同")
 
     print("\n== self-test: 变异必须被检出 ==")
     diff = compare(cpp_a, mutate(cpp_a))

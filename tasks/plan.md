@@ -10,7 +10,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 - 不在范围内：`tddb` / `td/mtproto` / `tdactor` / `tdutils`（合计 6.4 万行）——它们在该边界之下，互操作要匹配 C++ ABI，不可行（记 `unmeasured`，见 `docs/coverage-domain.md`）。
 - 不碰上游 C++ 源码；Rust 侧工程在本仓库 `rust/`（T6 已从 `C:/tmp/td-rs-probe` 移入），本仓库同时放台账、仪器、计划与实现。
 
-## 进度（2026-11-26，round 15）
+## 进度（2026-11-26，round 16）
 
 两个口径分开看，不要混成一句百分比。
 
@@ -23,6 +23,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 语言包成功路径 | 27 条 cell（含 ordinary / pluralized / deleted / 版本有无） | `tools/gen_language_pack.py` + `docs/facts.md` F087 |
 | 随机语料 | 21 个无状态 action + 8 个日志 action 的随机序列；11 个种子 16,150 条 + 220 段/4,958 步零分歧 | `uv run python tools/tdjson_fuzz.py`、F095 |
 | 遗留 C ABI | `td_json_client_*` 5 个入口对齐（auth lane 143 行） | `tools/client_diff.py` 的 legacy 段、F090 |
+| 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1561 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
 | 门禁 | 11 项（新增 fuzz） | `uv run python tools/verify.py` |
@@ -82,6 +83,8 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T36 | 随机语料 lane：`tools/tdjson_fuzz.py`——按 `td_api.tl` 结构化生成（21 个无状态 action）+ 手写语料的字节级变异，种子唯一决定语料，每轮打印 `corpus md5`，oracle 连跑两遍做 A/A 地板。判据 = 两次侧逐字节相同；接进 `verify.py` 做第 3 项门禁 | F088 | done（12 个种子 25,496 条零分歧；上线前抓到 4 类真实分歧：嵌套具体类字段、`null` 元素、`bool` 取数字、`return_none_for_empty_query`，见 F084–F086） |
 | T37 | 遗留 C ABI：把 `td_json_client_create/send/receive/destroy` 从桩改成真实实现（自己的队列、不带 `@client_id`、`execute` 忽略句柄），并让畸形请求回一条 `400 Failed to parse request as JSON object: …`；判据 = `tools/client_diff.py` 新增 legacy 段（两侧各一子进程，auth lane 143 行逐行相同）+ oracle 内部一致性「遗留 lane == 现代 lane 去掉 `@client_id`」 | F090 | done（`failures=0`；`td_execute(NULL)` 也顺手对齐成空请求的解析错误） |
 | T38 | 加深随机语料：构造号形态的 `@type`（用构建产物的 id 表）、嵌套深度 3、按 action 白名单注入非法 UTF-8、8 个日志 action 的 20 段自恢复随机序列。过程中发现两个生成器的构造号是错的（源码行 crc32 vs 规范化 crc32，422/3464 不同），改为读 `td/generate/auto/.../td_api.h` | F091–F095 | done（11 个种子 16,150 条 + 220 段/4,958 步零分歧；抓到 6 类真实分歧：id 表、两处 UTF-8 文案、`addLogMessage` abort、两处日志级别夹紧） |
+| T39 | 异步请求路径：`td_send` 任意函数按三支分流——解析错误/同步 action/同步 option 本地作答，其余进 Td（未授权态回 401）；`@extra` 回显插在 `@client_id` 之前；`getOption` 走异步时非同步选项回 `optionValueEmpty`。顺带把 6 条全局 update 改成启动后自发（F097 更正 F079） | F096, F097 | done（`client_diff.py` 的 async 段 16 条请求逐条相同；首启/auth/legacy 三段仍绿） |
+| T40 | 随机语料进门槛：`--seeds` 支持多种子，变异加入结构改动（改/删/加字段、容器压 null）；门禁跑 3 个种子 | F098 | done（2,550 条 + 60 段/1,351 步零分歧） |
 
 ## 变更记录
 
@@ -104,3 +107,5 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-26 | F090 | T37, 仪器 | `td_json_client_*` 从桩改成真实实现；判据不新造：先用 oracle 内部一致性证明「遗留 lane == 现代 lane 去掉 `@client_id`」，再拿两侧跑同一条 auth lane |
 | 2026-11-26 | F091 | T38, 两个生成器 | 构造号改从构建产物 `td_api.h` 读。这是本轮最重的一处：之前的表让 Rust 认 422 个 oracle 不认的 id，手写语料查不出来（它们只用名字），只有随机语料用数字形态才暴露 |
 | 2026-11-26 | F092–F094 | T38, Rust 实现 | 三处判据修正：`@type` 解码失败的文案不带前缀、字段级 UTF-8 失败带前缀、负日志级别的两种夹紧。`addLogMessage` level ≤ 0 是 oracle abort，排除出语料并记不可测（F093） |
+| 2026-11-26 | F096, F097 | T39, 仪器 | 异步路径不再「静默丢弃」：按 Td 的真实分流实现三支，并把 6 条全局 update 从「首个请求触发」改成「启动后自发」。async 段只比每条请求自己的应答，突发归 auth 段——这样判据不受排空时机影响 |
+| 2026-11-26 | F098 | T40, 门槛 | 随机语料从单种子扩到 3 个种子进门槛，变异加入结构改动；门槛总时长 34 s → 50 s 左右，仍是一分钟内 |

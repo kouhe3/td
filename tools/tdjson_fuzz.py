@@ -245,6 +245,57 @@ def inject_bad_utf8(rng: random.Random, payload: bytes) -> bytes:
     return payload[:position] + bytes([rng.choice([0xFF, 0xFE, 0xC0, 0x80])]) + payload[position:]
 
 
+def positions(value) -> list[tuple[object, object]]:
+    """Every (container, key-or-index) in the tree, in a deterministic order."""
+    found: list[tuple[object, object]] = []
+    stack = [value]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, dict):
+            for key in sorted(node):
+                found.append((node, key))
+                stack.append(node[key])
+        elif isinstance(node, list):
+            for index in range(len(node)):
+                found.append((node, index))
+                stack.append(node[index])
+    return found
+
+
+def ast_mutation(rng: random.Random, payload: bytes) -> bytes | None:
+    """Structural edit of one hand-written cell; byte edits rarely keep the JSON parseable."""
+    try:
+        value = json.loads(payload)
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(value, (dict, list)):
+        return None
+    slots = positions(value)
+    if not slots:
+        return None
+    operation = rng.randrange(4)
+    if operation == 0:
+        container, key = slots[rng.randrange(len(slots))]
+        container[key] = rng.choice(WRONG_VALUES)
+    elif operation == 1:
+        dicts = [(node, key) for node, key in slots if isinstance(node[key], dict) and len(node[key]) > 1]
+        if not dicts:
+            return None
+        node, key = dicts[rng.randrange(len(dicts))]
+        nested = node[key]
+        del nested[sorted(nested)[rng.randrange(len(nested))]]
+    elif operation == 2:
+        dicts = [node for node, _ in slots if isinstance(node, dict)]
+        if not dicts:
+            return None
+        target = dicts[rng.randrange(len(dicts))]
+        target[f"bogus_{rng.randrange(100)}"] = rng.choice(WRONG_VALUES)
+    else:
+        container, key = slots[rng.randrange(len(slots))]
+        container[key] = None
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
+
+
 def build_corpus(seed: int, cases: int) -> list[tuple[str, bytes]]:
     rng = random.Random(seed)
     definitions = gen_tl_schema.parse_schema()
@@ -261,7 +312,8 @@ def build_corpus(seed: int, cases: int) -> list[tuple[str, bytes]]:
             payload = inject_bad_utf8(rng, payload)
         corpus.append((name, payload))
 
-    # 变异：从手写语料里取种子（跳过 getLanguagePackString 与其空路径），做字节级改动
+    # 变异：从手写语料里取种子（跳过 getLanguagePackString 与其空路径）。
+    # 一半做结构改动（改/删/加字段、把嵌套对象压成 null），一半做字节级改动
     seeds = [
         case
         for case in instrument.MATCH
@@ -272,7 +324,8 @@ def build_corpus(seed: int, cases: int) -> list[tuple[str, bytes]]:
         payload = case if isinstance(case, bytes) else case.encode()
         if payload[:1] != b"{" or b'"@type"' not in payload:
             continue
-        corpus.append(("mutation", mutate(rng, payload)))
+        structural = ast_mutation(rng, payload) if rng.random() < 0.5 else None
+        corpus.append(("mutation", structural if structural is not None else mutate(rng, payload)))
 
     return corpus
 
@@ -362,40 +415,13 @@ def build_log_sequences(seed: int, count: int) -> list[list[bytes]]:
     return sequences
 
 
-def main(argv: list[str]) -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--seed", type=int, default=20261126)
-    parser.add_argument("--cases", type=int, default=40, help="cases per target before mutations")
-    parser.add_argument("--skip-md5", action="store_true")
-    args = parser.parse_args(argv)
-
-    if not instrument.CPP.is_file():
-        print(f"FAIL oracle missing: {instrument.CPP}")
-        return 1
-    if not instrument.RS.is_file():
-        print(f"FAIL rust dll missing: {instrument.RS}")
-        return 1
-    actual = instrument.md5(instrument.CPP)
-    if not args.skip_md5 and actual != instrument.EXPECTED_CPP_MD5:
-        print(f"FAIL oracle md5 changed: {actual} != {instrument.EXPECTED_CPP_MD5}")
-        return 1
-
-    instrument.add_runtime_dirs()
-    if not instrument.ensure_language_pack_dirs():
-        print(f"FAIL language pack fixtures missing: {instrument.LANGPACK_ROOT}")
-        return 1
-    cpp = instrument.load(instrument.CPP, "cpp")
-    rs = instrument.load(instrument.RS, "rs")
-
-    corpus = build_corpus(args.seed, args.cases)
-    targets = sorted(set(synchronous_functions()) - STATEFUL)
-    print(f"oracle md5={actual}")
-    print(f"seed={args.seed} cases={len(corpus)} corpus md5={corpus_md5(corpus)}")
-    print(f"fuzz targets={len(targets)}: {' '.join(targets)}")
+def run_seed(cpp, rs, seed: int, cases: int, targets: list[str]) -> dict:
+    corpus = build_corpus(seed, cases)
+    print(f"\nseed={seed} cases={len(corpus)} corpus md5={corpus_md5(corpus)}")
 
     failures: list[str] = []
-    empty = 0
     per_action: dict[str, int] = {}
+    empty = 0
     cpp_first = [instrument.run(cpp, payload) for _, payload in corpus]
     cpp_second = [instrument.run(cpp, payload) for _, payload in corpus]
     for index, (name, payload) in enumerate(corpus):
@@ -424,9 +450,7 @@ def main(argv: list[str]) -> int:
     if empty * 10 > len(corpus):
         failures.append(f"{empty} of {len(corpus)} cases produced no output (pipeline suspect)")
 
-    print("\n== 有状态 action：随机序列（每段结束恢复 default / 5） ==")
-    Path(LOG_DIR).mkdir(parents=True, exist_ok=True)
-    sequences = build_log_sequences(args.seed, SEQUENCE_COUNT)
+    sequences = build_log_sequences(seed, SEQUENCE_COUNT)
 
     def run_sequences(lib) -> list[list[str | None]]:
         return [[instrument.run(lib, step) for step in sequence] for sequence in sequences]
@@ -448,17 +472,80 @@ def main(argv: list[str]) -> int:
         print(f"FAIL sequence {index} step {step_index}: {instrument.label(sequences[index][step_index])}")
         print(f"  cpp: {cpp_rows[step_index]}")
         print(f"  rs : {rs_rows[step_index]}")
-    print(
-        f"{'PASS' if not unstable and not diverged_sequences else 'FAIL'} "
-        f"{len(sequences)} 段 / {sequence_steps} 步：unstable={unstable} diverged={diverged_sequences}"
-    )
+
+    return {
+        "seed": seed,
+        "cases": len(corpus),
+        "empty": empty,
+        "diverged": differenced,
+        "sequences": len(sequences),
+        "steps": sequence_steps,
+        "unstable": unstable,
+        "diverged_sequences": diverged_sequences,
+        "per_action": per_action,
+        "failures": failures,
+    }
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seed", type=int, default=20261126)
+    parser.add_argument("--seeds", type=str, default="", help="comma separated; overrides --seed")
+    parser.add_argument("--cases", type=int, default=40, help="cases per target before mutations")
+    parser.add_argument("--skip-md5", action="store_true")
+    args = parser.parse_args(argv)
+
+    if not instrument.CPP.is_file():
+        print(f"FAIL oracle missing: {instrument.CPP}")
+        return 1
+    if not instrument.RS.is_file():
+        print(f"FAIL rust dll missing: {instrument.RS}")
+        return 1
+    actual = instrument.md5(instrument.CPP)
+    if not args.skip_md5 and actual != instrument.EXPECTED_CPP_MD5:
+        print(f"FAIL oracle md5 changed: {actual} != {instrument.EXPECTED_CPP_MD5}")
+        return 1
+
+    instrument.add_runtime_dirs()
+    if not instrument.ensure_language_pack_dirs():
+        print(f"FAIL language pack fixtures missing: {instrument.LANGPACK_ROOT}")
+        return 1
+    Path(LOG_DIR).mkdir(parents=True, exist_ok=True)
+    cpp = instrument.load(instrument.CPP, "cpp")
+    rs = instrument.load(instrument.RS, "rs")
+
+    seeds = [int(part) for part in args.seeds.split(",") if part.strip()] if args.seeds else [args.seed]
+    targets = sorted(set(synchronous_functions()) - STATEFUL)
+    print(f"oracle md5={actual}")
+    print(f"seeds={seeds} fuzz targets={len(targets)}: {' '.join(targets)}")
+
+    results = [run_seed(cpp, rs, seed, args.cases, targets) for seed in seeds]
+
+    print("\n== 有状态 action：随机序列（每段自恢复 tag/全局/stream） ==")
+    for result in results:
+        ok = not result["unstable"] and not result["diverged_sequences"]
+        print(
+            f"{'PASS' if ok else 'FAIL'} seed={result['seed']} "
+            f"{result['sequences']} 段 / {result['steps']} 步："
+            f"unstable={result['unstable']} diverged={result['diverged_sequences']}"
+        )
 
     print("\nper-action cases:")
+    totals: dict[str, int] = {}
+    for result in results:
+        for name, count in result["per_action"].items():
+            totals[name] = totals.get(name, 0) + count
     for name in targets:
-        print(f"  {name}: {per_action.get(name, 0)}")
+        print(f"  {name}: {totals.get(name, 0)}")
+
+    failures = [failure for result in results for failure in result["failures"]]
+    cases = sum(result["cases"] for result in results)
+    steps = sum(result["steps"] for result in results)
+    diverged = sum(result["diverged"] for result in results)
+    empty = sum(result["empty"] for result in results)
     print(
-        f"\ncases={len(corpus)} sequences={len(sequences)}/{sequence_steps}steps diverged={differenced} "
-        f"empty={empty} failures={len(failures)}"
+        f"\nseeds={len(seeds)} cases={cases} sequences={sum(r['sequences'] for r in results)}"
+        f"/{steps}steps diverged={diverged} empty={empty} failures={len(failures)}"
     )
     for failure in failures[:20]:
         print(f"  - {failure}")

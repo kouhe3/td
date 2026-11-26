@@ -73,6 +73,7 @@
 |---|---|---|
 | 首启序列：`td_create_client_id` → `td_send(setTdlibParameters)` → drain 到 `waitPhoneNumber`（129 行 = 127 `updateOption` + 2 `updateAuthorizationState`） | measured（F076：`tools/client_diff.py`，A/A 地板 + 变异自检 + 两侧逐行相同） | — |
 | 遗留 C ABI：`td_json_client_create/send/receive/destroy/execute`（auth lane 143 行 = 现代表去掉 `@client_id` + 1 条畸形请求回包） | measured（F090：`tools/client_diff.py` 的 legacy 段；oracle 内部一致性「遗留 lane == 现代 lane 去掉 `@client_id`」也一并断言） | `destroy` 之后再用句柄是 UB，不测 |
+| 异步请求路径（`td_send` 任意函数）：本地可答的（解析失败、同步 action、同步 option）与进 Td 的（未授权 401）分三支，`@extra` 回显在 `@client_id` 之前 | measured（F096, F097：`tools/client_diff.py` 的 async 段，16 条请求逐条相同；`commit_hash` 两侧各自烘焙，按语义比较） | 进 Td 的函数只覆盖未授权态（`waitPhoneNumber`）；登录后的应答不在范围内 |
 | 动态值 `unix_time` / `utc_time_offset` / `commit_hash` | measured（F076：语义校验——与实际时刻相差 ≤5 s、两侧时区偏移相同、各自可解释） | `commit_hash` 两侧各自烘焙 HEAD，不做相等比较 |
 | `@client_id` 注入（id 从 1 起、每行携带） | measured（F076：两侧 id 都是 1 的断言） | — |
 | 同一进程里的第二个 client | unmeasured | 会多 6 条全局 update 且顺序错位（F077）；判据按「一个进程一个 client」设计 |

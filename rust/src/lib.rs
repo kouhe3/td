@@ -7438,6 +7438,19 @@ fn log_verbosity_json(level: i32) -> String {
     format!("{{\"@type\":\"logVerbosityLevel\",\"verbosity_level\":{}}}", level)
 }
 
+/// `OptionManager::is_synchronous_option`: only these two are answered without a Td round trip
+fn synchronous_option_value(name: &str) -> Option<String> {
+    let value = match name {
+        "version" => "1.8.71",
+        "commit_hash" => env!("TD_GIT_COMMIT_HASH"),
+        _ => return None,
+    };
+    let mut body = String::from("{\"@type\":\"optionValueString\",\"value\":\"");
+    json_escape(value, &mut body);
+    body.push_str("\"}");
+    Some(body)
+}
+
 fn tag_level(tag: &str) -> Option<i32> {
     let state = LOG_STATE.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
     state
@@ -8194,15 +8207,10 @@ fn execute_object(json: &Json) -> String {
         }
         "getOption" => {
             let name = req!(request_string(json, "name"));
-            let value = match name.as_str() {
-                "version" => "1.8.71",
-                "commit_hash" => env!("TD_GIT_COMMIT_HASH"),
-                _ => return error_object(400, "The option can't be get synchronously"),
-            };
-            let mut body = String::from("{\"@type\":\"optionValueString\",\"value\":\"");
-            json_escape(value, &mut body);
-            body.push_str("\"}");
-            body
+            match synchronous_option_value(&name) {
+                Some(value) => value,
+                None => error_object(400, "The option can't be get synchronously"),
+            }
         }
         "getLanguagePackString" => {
             let database_path = req!(request_string(json, "language_pack_database_path"));
@@ -8614,21 +8622,16 @@ fn send_request(client_id: c_int, bytes: &[u8]) {
         Err(message) => {
             // ClientJson::send turns an unparsable request into a testReturnError function, so the
             // failure comes back as a response instead of being dropped (F090)
-            let line = client_error(client_id, 400, &format!("Failed to parse request as JSON object: {}", message));
+            let line = error_object(400, &format!("Failed to parse request as JSON object: {}", message));
             // the oracle still answers this after authorizationStateClosed, unlike a real request
-            queue_line(client_id, line);
+            push_local(client_id, line);
             return;
         }
     };
-    let kind = match json.get("@type") {
-        Some(Json::Str(name)) => name,
-        _ => return,
-    };
-    let Ok(kind) = std::str::from_utf8(kind) else {
-        return;
-    };
+    let extra = json.get("@extra").map(encode_json_text);
+    let kind = async_name(&json);
 
-    if kind == "setTdlibParameters" {
+    if kind == Some("setTdlibParameters") {
         let second_run = match json.get("database_directory") {
             Some(Json::Str(bytes)) => std::str::from_utf8(bytes).map(load_or_init_state).unwrap_or(false),
             _ => false,
@@ -8642,14 +8645,82 @@ fn send_request(client_id: c_int, bytes: &[u8]) {
                 state.parameters_set = true;
                 state.auth = AuthState::WaitPhoneNumber;
                 state.pending = startup_sequence(client_id, second_run).into_iter().collect();
+                // the one-time global updates arrive right after the startup burst, unsolicited —
+                // not on the first request, which only matters when a harness drains to silence
+                state.burst_sent = true;
+                for row in client_options::GLOBAL_BURST_TEMPLATE.iter() {
+                    state.pending.push_back(row.replace("{CLIENT_ID}", &client_id.to_string()));
+                }
             }
         }
         return;
     }
 
-    let response = auth_response(client_id, kind, &json);
+    let Some(kind) = kind else {
+        // unknown class / constructor / "@type" shape: refused before anything reaches Td
+        let mut line = execute_object(&json);
+        line = insert_extra(line, extra.as_deref());
+        push_local(client_id, line);
+        return;
+    };
+
+    if SYNCHRONOUS_ACTIONS.contains(&kind) {
+        // Td::on_request answers is_synchronous_request locally, so no connection state update
+        let mut line = if kind == "getOption" {
+            async_option_value(&json)
+        } else {
+            execute_object(&json)
+        };
+        line = insert_extra(line, extra.as_deref());
+        push_local(client_id, line);
+        return;
+    }
+
+    let response = auth_response(client_id, kind, &json).map(|lines| {
+        lines
+            .into_iter()
+            .map(|line| insert_extra(line, extra.as_deref()))
+            .collect::<Vec<String>>()
+    });
+    let response = response.or_else(|| {
+        // everything else goes to Td, which answers Unauthorized while waiting for a phone number
+        let mut state = CLIENTS.lock().ok()?;
+        let entry = state.get_mut((client_id - 1) as usize)?;
+        if entry.auth == AuthState::WaitPhoneNumber {
+            Some(vec![with_client_id(
+                insert_extra(error_object(401, "Unauthorized"), extra.as_deref()),
+                client_id,
+            )])
+        } else {
+            Some(Vec::new())
+        }
+    });
     let closed = kind == "logOut";
     deliver(client_id, Some(closed), response);
+}
+
+/// Resolve a request's "@type" (name or dispatch id) to a known function name.
+fn async_name(json: &Json) -> Option<&'static str> {
+    match json.get("@type") {
+        Some(Json::Str(bytes)) => {
+            let text = std::str::from_utf8(bytes).ok()?;
+            if let Some(name) = SYNCHRONOUS_ACTIONS.iter().find(|known| **known == text) {
+                return Some(name);
+            }
+            api_functions::FUNCTIONS
+                .iter()
+                .find(|(_, known)| *known == text)
+                .map(|(_, known)| *known)
+        }
+        Some(Json::Int(_, literal)) | Some(Json::Float(_, literal)) | Some(Json::Num(literal)) => {
+            let constructor = to_integer_i32(literal.as_bytes());
+            api_functions::FUNCTIONS
+                .iter()
+                .find(|(id, _)| *id == constructor)
+                .map(|(_, known)| *known)
+        }
+        _ => None,
+    }
 }
 
 /// Queue responses for one client: the one-time global burst first, then the request's own lines.
@@ -8664,12 +8735,6 @@ fn deliver(client_id: c_int, closes: Option<bool>, response: Option<Vec<String>>
     if !state.parameters_set || state.auth == AuthState::Closed {
         return;
     }
-    if !state.burst_sent {
-        state.burst_sent = true;
-        for row in client_options::GLOBAL_BURST_TEMPLATE.iter() {
-            state.pending.push_back(row.replace("{CLIENT_ID}", &client_id.to_string()));
-        }
-    }
     if let Some(lines) = response {
         for line in lines {
             state.pending.push_back(line);
@@ -8680,7 +8745,34 @@ fn deliver(client_id: c_int, closes: Option<bool>, response: Option<Vec<String>>
     }
 }
 
-fn queue_line(client_id: c_int, line: String) {
+fn with_client_id(mut line: String, client_id: c_int) -> String {
+    if line.ends_with('}') {
+        line.pop();
+        line.push_str(&format!(",\"@client_id\":{}", client_id));
+        line.push('}');
+    }
+    line
+}
+
+/// `from_response` writes "@extra" before "@client_id", and both before the closing brace
+fn insert_extra(line: String, extra: Option<&str>) -> String {
+    let Some(extra) = extra else {
+        return line;
+    };
+    match line.rfind(",\"@client_id\":") {
+        Some(index) => {
+            let mut out = line[..index].to_string();
+            out.push_str(",\"@extra\":");
+            out.push_str(extra);
+            out.push_str(&line[index..]);
+            out
+        }
+        None => append_extra(line, extra),
+    }
+}
+
+/// An answer produced by this process (synchronous request, parse failure): no connection update.
+fn push_local(client_id: c_int, line: String) {
     let Ok(mut clients) = CLIENTS.lock() else {
         return;
     };
@@ -8690,13 +8782,16 @@ fn queue_line(client_id: c_int, line: String) {
     if !state.parameters_set {
         return;
     }
-    if !state.burst_sent {
-        state.burst_sent = true;
-        for row in client_options::GLOBAL_BURST_TEMPLATE.iter() {
-            state.pending.push_back(row.replace("{CLIENT_ID}", &client_id.to_string()));
-        }
-    }
-    state.pending.push_back(line);
+    state.pending.push_back(with_client_id(line, client_id));
+}
+
+/// The asynchronous path answers a non-synchronous option with `optionValueEmpty`, not an error
+fn async_option_value(json: &Json) -> String {
+    let name = match request_string(json, "name") {
+        Ok(name) => name,
+        Err(message) => return request_error(&message),
+    };
+    synchronous_option_value(&name).unwrap_or_else(|| "{\"@type\":\"optionValueEmpty\"}".to_string())
 }
 
 fn pop_pending() -> Option<String> {

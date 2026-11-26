@@ -49,7 +49,7 @@ GATES = [
         ],
     ),
     ("instrument", [PYTHON, "tools/tdjson_diff.py"]),
-    ("fuzz", [PYTHON, "tools/tdjson_fuzz.py"]),
+    ("fuzz", [PYTHON, "tools/tdjson_fuzz.py", "--seeds", "20261126,7,99"]),
     ("client_options", [PYTHON, "tools/gen_client_options.py", "--check"]),
     ("client_lane", [PYTHON, "tools/client_diff.py"]),
     ("tl_schema", [PYTHON, "tools/gen_tl_schema.py", "--check"]),
