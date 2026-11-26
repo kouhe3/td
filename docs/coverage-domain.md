@@ -9,13 +9,13 @@
 | 实体类 | ASCII | 非 ASCII / emoji | 边界（<4 字符 / 空文本） | blocker / 回流条件 |
 |---|---|---|---|---|
 | mention | measured（F005, F010） | measured（F007） | measured（F005, F010） | — |
-| hashtag | measured（F009, F011） | measured（F007, F009） | unmeasured | 边界（1/256 字符、须含字母）：回流 T7 |
+| hashtag | measured（F009, F011） | measured（F007, F009） | measured（F014：`#b#` 否决、>256 截断） | — |
 | botCommand | measured（F011） | unmeasured | unmeasured | 非 ASCII：回流 T7 |
 | cashtag | measured（F011） | unmeasured | unmeasured | 非 ASCII / `@username` 后缀之外形态：回流 T7 |
 | bankCardNumber | measured（F011） | — | measured（F011：非 Luhn 拒收） | 13–19 位各长度、各卡组织前缀：回流 T7 |
-| tonAddress | unmeasured | — | unmeasured | 缺合法样本（伪造 base64 校验和不过）；回流：T7 |
-| url（含 tgUrl / mailto） | **unmeasured** | unmeasured | unmeasured | Rust 未实现；回流：T7（`match_urls` 约 670 行） |
-| emailAddress | **unmeasured（已知缺口）** | — | unmeasured | CONTROL 组证明两侧不同（F004/F008）；回流：T7 |
+| tonAddress | measured（F013, F015） | — | unmeasured | 非法校验和 / raw 形态（`0:<hex>`）：回流 T9 |
+| url（含 tgUrl / mailto） | measured（F008） | unmeasured | unmeasured | 非 ASCII 域名、IPv6、超长 path：回流 T9 |
+| emailAddress | measured（F008） | — | unmeasured | 非 ASCII 本地部分：回流 T9 |
 | mediaTimestamp | measured（F011） | — | unmeasured | `mm:ss` 与 `hh:mm:ss` 已测；边界（>59 秒、超长段）：回流 T7 |
 
 注：`#tag@username` 后缀形态已入 corpus（F011）；`$CASHTAG@username` 后缀仍未入，记 unmeasured。

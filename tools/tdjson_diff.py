@@ -47,11 +47,21 @@ MATCH = [
     '{"@type":"getTextEntities","text":"watch 01:23:45 now"}',
     '{"@type":"getTextEntities","text":"at 1:23 ok"}',
     '{"@type":"getTextEntities","text":"#sometag@somebot"}',
+    '{"@type":"getTextEntities","text":"see https://example.com/path?x=1 ok"}',
+    '{"@type":"getTextEntities","text":"tg://resolve?domain=durov"}',
+    '{"@type":"getTextEntities","text":"visit www.example.com now"}',
+    '{"@type":"getTextEntities","text":"mail me at a@b.com"}',
+    '{"@type":"getTextEntities","text":"mailto:a@b.com"}',
+    '{"@type":"getTextEntities","text":"@abcd #tag https://x.com a@b.com $USD"}',
+    '{"@type":"getTextEntities","text":"pay to EQAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHx2j now"}',
+    '{"@type":"getTextEntities","text":"pay to UQAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eH0Bm now"}',
+    '{"@type":"getTextEntities","text":"#b# mailto:"}',
+    '{"@type":"getTextEntities","text":"#' + 'a' * 300 + '"}',
 ]
 
 CONTROL = [
     '{"@type":"getOption","name":"version"}',
-    '{"@type":"getTextEntities","text":"mail me at a@b.com"}',
+    '{"@type":"getOption","name":"my_id"}',
 ]
 
 
