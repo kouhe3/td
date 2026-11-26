@@ -31,6 +31,7 @@
 | 编译器 PATH 坑 | 不加 `C:/msys64/ucrt64/bin` 时 `g++.exe` 编译**静默失败**（rc=1、零输出）——`cc1plus` 找不到同目录 DLL |
 | Rust 侧 | 工程在本仓库 `rust/`（crate `tdjson_rs`，cdylib）；目标 `x86_64-pc-windows-gnu`，linker = `C:/msys64/ucrt64/bin/gcc.exe`（`rust/.cargo/config.toml`）；构建 `cargo build --release --target x86_64-pc-windows-gnu --manifest-path rust/Cargo.toml` |
 | 生成代码落点 | 构建写入**源码树** `td/generate/auto/`（`.gitignore` 的 `**/auto/` 覆盖），无自动清理 |
+| 测试 DC（B1） | test DC2 = `149.154.167.40:443`，公钥同 `PublicRsaKeySharedMain.cpp:26` 的 test 钥匙，api_id/api_hash = `94575` / `a3406de8d171bb422bb6ddf3bbd800e2`；**全部编译期内置**，`use_test_dc:true` 即可（F065）。本机直连该地址**不通**、无本地 SOCKS 监听 |
 | skill 目录 | `C:/Users/K/.omp/agent/skills/face-spaghetti` |
 
 ## 共享资源
@@ -48,7 +49,7 @@
 | 机器记录 | `docs/gate-2026-11-26.json` |
 | 复跑命令 | `python tools/verify.py` |
 | 当时结果 | round 1：279 PASS；2：573（284）；3：645（318）；4：759（375）；5：793（392）；6：837（414，含 22 条 bytes cell）——七项全绿贯穿 |
-| 已知缺口 | B1（有状态客户端，需测试 DC 账号）、B7（语言包成功路径需 pack 数据）。**无已知行为差异**（CONTROL 为空）；`coverage-domain` 里除 `getOption commit_hash`（不可判）外没有 `unmeasured` |
+| 已知缺口 | B1（有状态客户端：网络 + 账号 + tddb 范围三缺，参数已齐见 F065）、B7（语言包成功路径需 pack 数据）。**无已知行为差异**（CONTROL 为空）；`coverage-domain` 里除 `getOption commit_hash`（不可判）外没有 `unmeasured` |
 
 换目标或大改前先重跑 `tools/verify.py`；数字变了就把旧快照行置 `过期`，另起一行记新快照（1 = F044，2 = F052，3 = F056，4 = F058，5 = F061，6 = F064）。注意 Rust dll 的 md5 **随 HEAD 变化**（`build.rs` 烘焙 commit hash），跨轮只比大小与 warning 数。
 
