@@ -59,7 +59,7 @@
 | 畸形 JSON 文本的 `json_decode` 报错文案（12 条消息 + 深度上限 + 尾部内容） | measured（F054） | — |
 | 请求 / 字符串里的非法 UTF-8、孤立代理对（22 条 bytes cell，各 action 的拒绝文案逐条对齐） | measured（F063） | — |
 
-## 客户端 lane（首次运行、第二次运行、未授权状态机）
+## 客户端 lane（首次运行、第二次运行、未授权状态机、真实登录记录）
 
 | 项 | 状态 | blocker / 回流条件 |
 |---|---|---|
@@ -72,7 +72,7 @@
 | 首个非 `setTdlibParameters` 请求的 6 条全局 update 突发（一次性） | measured（F079：auth 段，`getMe` 与空号码都触发） | — |
 | 未授权状态机的响应：空号码、`checkAuthenticationCode`、`checkAuthenticationPassword`、`getMe`、`logOut`→`Closed` | measured（F079：142 行逐行相同 + A/A 地板 + 变异自检） | — |
 | 非空号码的 `setAuthenticationPhoneNumber` | unmeasured | oracle 在 0.8 s 内无响应（联网挂起），没有可判输出 |
-| 真实登录（`waitCode` → `waitPassword` → `ready`） | unmeasured | 需实时验证码 + 2FA（F073），不可回归；回流条件 = 一次性实测记录 + 人工 |
+| 真实登录（`waitCode` → `waitPassword` → `ready`） | unmeasured | oracle 侧形态已记录（F080：六步 222 行），但 Rust 侧没有 MTProto 引擎、不回放登录段，**等价性未测**；回流条件 = 决定实现 MTProto，或接受「只在 oracle 侧留记录」 |
 | 其它 `setTdlibParameters` 参数 lane（`use_test_dc:false`、加密 key、语言 / 设备字段） | unmeasured | 回流条件 = 该 lane 有独立判据时 |
 
 ## 边界之外（永久不在本仪器范围）
