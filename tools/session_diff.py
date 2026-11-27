@@ -14,6 +14,7 @@ Exit codes: 0 = PASS, 1 = mismatch, 2 = missing binary.
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import os
 import re
@@ -90,6 +91,26 @@ def msgs_state_info(req_msg_id: int, info: bytes) -> bytes:
     return i32(0x04DEB57D) + i64(req_msg_id) + tl_bytes(info)
 
 
+def gzip_packed(data: bytes) -> bytes:
+    return i32(0x3072CFA1) + tl_bytes(gzip.compress(data, mtime=0))
+
+
+def future_salt(valid_since: int, valid_until: int, salt: int) -> bytes:
+    # TlFetchObject<future_salt> calls future_salt(p) directly: no 0x0949d9dc
+    # in front of the fields, unlike the boxed objects in td_api.
+    return struct.pack("<ii", valid_since, valid_until) + i64(salt)
+
+
+def future_salts(req_msg_id: int, now: int, salts: list[bytes]) -> bytes:
+    # mtproto_api's generator drops the boxed wrapper here: the generated
+    # parser is TlFetchVector<...>, so the count comes with no 0x1cb5c415.
+    return i32(0xAE500895) + i64(req_msg_id) + i32(now) + i32(len(salts)) + b"".join(salts)
+
+
+def pong(pong_msg_id: int, ping_id: int) -> bytes:
+    return i32(0x347773C5) + i64(pong_msg_id) + i64(ping_id)
+
+
 def envelope(message_id: int, seq: int, body: bytes) -> bytes:
     return i64(message_id) + i32(seq) + i32(len(body)) + body
 
@@ -98,7 +119,7 @@ def container(children: list[bytes]) -> bytes:
     return i32(0x73F1F8DC) + i32(len(children)) + b"".join(children)
 
 
-def build_script(now: int, first_code: int = 16) -> str:
+def build_script(now: int, first_code: int = 16, pong_ping: int = 5, future_past: bool = False) -> str:
     def mid(low: int) -> int:
         return (now << 32) | low
 
@@ -144,6 +165,43 @@ def build_script(now: int, first_code: int = 16) -> str:
     # no service query is registered, so msgs_state_info is an error
     lines.append("newconn 777 1234")
     lines.append(f"in {mid(55)} 1 {msgs_state_info(4001, bytes([1])).hex()}")
+    # gzip_packed at the top level: unwrapped, then re-dispatched with the same
+    # MsgInfo, so an inner rpc_result reports the *compressed* original size
+    lines.append("newconn 777 1234")
+    lines.append(f"in {mid(57)} 1 {gzip_packed(rpc_ok(4001)).hex()}")
+    # gzip_packed inside rpc_result: the result object is the decompressed body
+    lines.append("newconn 777 1234")
+    lines.append(f"in {mid(59)} 1 {(i32(0xF35C6D01) + i64(4002) + gzip_packed(i32(0x12345678))).hex()}")
+    # broken gzip: gzdecode returns an empty slice, so the packet is too small
+    lines.append("newconn 777 1234")
+    lines.append(f"in {mid(61)} 1 {gzip_packed(b'\\x1f\\x8b\\x08\\x00broken').hex()}")
+    # a valid gzip of one byte: still smaller than a constructor
+    lines.append("newconn 777 1234")
+    lines.append(f"in {mid(63)} 1 {(i32(0xF35C6D01) + i64(4002) + gzip_packed(b'\\x00')).hex()}")
+    # future_salts: stamps far in the past are popped, far-future ones stay queued
+    lines.append("newconn 777 1234")
+    lines.append(
+        f"in {mid(65)} 1 {future_salts(4001, now, [future_salt(100, 200, 0xAA), future_salt(200, 300, 0xBB)]).hex()}"
+    )
+    lines.append("salt")
+    lines.append("newconn 777 1234")
+    far_since = 100 if future_past else now + 1000
+    lines.append(f"in {mid(67)} 1 {future_salts(4001, now, [future_salt(far_since, now + 2000, 0xCC)]).hex()}")
+    lines.append("salt")
+    # an empty vector leaves the salt table untouched, but still fires the callback
+    lines.append("newconn 777 1234")
+    lines.append(f"in {mid(69)} 1 {future_salts(4001, now, []).hex()}")
+    lines.append("salt")
+    # pong: the two msg_id-derived doubles are exact; the too-low branch resets
+    # the server-time difference (which shows up as force=1)
+    lines.append("newconn 777 1234")
+    lines.append(f"in {mid(71)} 1 {pong((now << 32) | 0x100, pong_ping).hex()}")
+    lines.append(f"in {mid(73)} 1 {pong(((now + 1000) << 32) | 0x100, 7).hex()}")
+    # after the reset, the next packet re-seeds the difference unconditionally
+    lines.append("newconn 777 1234")
+    lines.append(f"in {mid(75)} 1 {i32(0x12345678).hex()}")
+    lines.append(f"in {mid(77)} 1 {pong(((now + 1000) << 32) | 0x100, pong_ping).hex()}")
+    lines.append(f"in {mid(79)} 1 {i32(0x12345678).hex()}")
     return "\n".join(lines) + "\n"
 
 
@@ -154,8 +212,9 @@ def run(binary: str, script_path: Path, env: dict[str, str]) -> tuple[int, str]:
 
 
 def corpus_digest(script: str) -> str:
-    """Message ids carry the wall clock; hash the shape, not the timestamps."""
-    template = "\n".join(re.sub(r"^in \d+", "in", line) for line in script.splitlines())
+    """`in` bodies carry the wall clock too (msg ids, pong msg ids, salt stamps):
+    hash the op shape, not the bytes."""
+    template = "\n".join(re.sub(r"^in .*$", "in", line) for line in script.splitlines())
     return hashlib.md5(template.encode()).hexdigest()
 
 
@@ -204,14 +263,20 @@ def main() -> int:
         return 1
 
     if args.selftest:
-        # One changed error code must change the events.
-        mutated = build_script(now, first_code=17)
-        script_path.write_bytes(mutated.encode("utf-8"))
-        _, mutated_out = run(args.cpp, script_path, env)
-        if mutated_out == cpp_out:
-            print("SELFTEST FAIL: a code change did not change the events")
-            return 1
-        print("SELFTEST OK: comparator sees an error_code change")
+        # Each corpus change must show up in the events the oracle prints.
+        mutations = [
+            ({"first_code": 17}, "an error_code change"),
+            ({"pong_ping": 9}, "a pong ping_id change"),
+            ({"future_past": True}, "a future_salt stamp change"),
+        ]
+        for overrides, label in mutations:
+            mutated = build_script(now, **overrides)
+            script_path.write_bytes(mutated.encode("utf-8"))
+            _, mutated_out = run(args.cpp, script_path, env)
+            if mutated_out == cpp_out:
+                print(f"SELFTEST FAIL: {label} did not change the events")
+                return 1
+        print(f"SELFTEST OK: comparator sees {len(mutations)} corpus changes")
 
     print(f"PASS lines={len(cpp_out.splitlines())}")
     script_path.unlink(missing_ok=True)

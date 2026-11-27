@@ -6,7 +6,8 @@
       "exit_code": 0,
       "warnings": 0,
       "tail": [
-        "Finished `release` profile [optimized] target(s) in 0.06s"
+        "Compiling tdjson_rs v0.1.0 (C:\\projects\\td\\rust)",
+        "    Finished `release` profile [optimized] target(s) in 14.59s"
       ]
     },
     {
@@ -17,7 +18,7 @@
       "tail": [
         "  message = \"Failed to parse request as JSON object: Unexpected string end\"",
         "}",
-        "[ 1][t 0][1795756744.313129425][Logging.cpp:160][&client]\tseq-probe"
+        "[ 1][t 0][1795768013.418870925][Logging.cpp:160][&client]\tseq-probe"
       ]
     },
     {
@@ -124,14 +125,80 @@
       ]
     },
     {
-      "gate": "fuzz",
-      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/tdjson_fuzz.py --seeds 20261126,7,99",
+      "gate": "proxy_secret",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/proxy_secret_diff.py --selftest",
       "exit_code": 0,
       "warnings": 0,
       "tail": [
-        "[ 2][t 0][1795756747.716031789][Logging.cpp:160][&client]\thello world",
-        "[ 5][t 0][1795756747.716127157][Logging.cpp:160][&client]\tback\\slash",
-        "[ 5][t 0][1795756747.716157436][Logging.cpp:160][&client]\ttg://resolve?domain=durov"
+        "corpus md5=a001043c88beac8cf144567798a7d769 cases=128",
+        "SELFTEST OK: comparator sees a one-byte change",
+        "PASS cases=128"
+      ]
+    },
+    {
+      "gate": "header",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/header_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=17f3006a5e54dd2e73dcd8d7a5bb0817 cases=85",
+        "SELFTEST OK: comparator sees a tz_offset change",
+        "PASS cases=85"
+      ]
+    },
+    {
+      "gate": "session",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/session_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=efc48293c5027df7a3e6fe9945a09ab0 ops=72",
+        "SELFTEST OK: comparator sees 3 corpus changes",
+        "PASS lines=182"
+      ]
+    },
+    {
+      "gate": "web_proxy",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/web_proxy_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=7c808de0a4c842b4208e93c7b817b561 cases=26",
+        "SELFTEST OK: comparator sees the path change",
+        "PASS cases=26"
+      ]
+    },
+    {
+      "gate": "misc",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/misc_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=e29c0af81897fc70fc08daa58088f6fa cases=44",
+        "SELFTEST OK: comparator sees a one-byte change",
+        "PASS cases=44"
+      ]
+    },
+    {
+      "gate": "tls_init",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/tls_init_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "rust: 8 samples, length set [1733, 1765, 1797, 1829]",
+        "SELFTEST OK: comparator sees a fixed-byte change and the HMAC check rejects it",
+        "PASS extensions=16 total_lengths=[1733, 1765, 1797, 1829]"
+      ]
+    },
+    {
+      "gate": "fuzz",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/tdjson_fuzz.py --seeds 20261126,7,99,2027",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "[ 3][t 0][1795768055.934762239][Logging.cpp:160][&client]\t你好",
+        "[ 5][t 0][1795768055.934792518][Logging.cpp:160][&client]\t*bold* __it__ `code`",
+        "[ 5][t 0][1795768055.934795618][Logging.cpp:160][&client]\t#tag @user $USD $btc"
       ]
     },
     {

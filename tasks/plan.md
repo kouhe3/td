@@ -1,6 +1,6 @@
 # Plan — RIIR（JSON/C ABI 边界差分实现）
 
-gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=24 | status=running | date=2026-11-27
+gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=25 | status=running | date=2026-11-27
 
 ## 范围
 
@@ -26,8 +26,8 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1561 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 协议 / RPC 面 | 14 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 48 op/122 行、web_proxy 26 case、misc 44 case | 各自的 `--selftest`、F103–F129 |
-| 门禁 | 26 项（本轮新增 `misc`） | `uv run python tools/verify.py` |
+| 协议 / RPC 面 | 15 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 72 op/182 行、web_proxy 26 case、misc 44 case、tls_init 16 扩展 × 8 样本/侧 | 各自的 `--selftest`、F103–F133 |
+| 门禁 | 27 项（本轮新增 `tls_init`） | `uv run python tools/verify.py` |
 | 定义域 | 87 个 measured cell、7 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -o '\| measured（' docs/coverage-domain.md \| wc -l` / `grep -o '\| unmeasured' docs/coverage-domain.md \| wc -l` |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
@@ -110,6 +110,9 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T62 | 换面到 `td/telegram` 纯函数：Web 代理的 `get_web_proxy_secret` / `get_web_proxy_link_secret` / `get_web_proxy_address` / `get_web_proxy_link_secret()`（带标记）/ `get_web_proxy_bridge_capability`（HMAC） | F126, F127 | done（`web_proxy_diff.py`：26 case、`PASS`；RED 由上下文常量 v1→v2 提供） |
 | T63 | 继续换面：`td/telegram/misc.cpp` 的 `clean_username` / `clean_phone_number` / `replace_offending_characters` / `is_valid_username` / `is_allowed_username`（`clean_name` 与 `clean_input_string` 需要 utf8_truncate / 空格表 / emoji 规则，本轮标 unmeasured） | F128, F129 | done（`misc_diff.py`：44 case、`PASS`；两次变异 RED：小写映射、保留前缀表） |
 
+| T64 | session lane 收 C 档剩余：`gzip_packed`（顶层递归 + rpc_result 内）、`pong`（含 too-low reset 分支）、`future_salts`（裸 vector/裸元素），判据 = 72 op / 182 行事件逐字节相同 | F130, F131 | done（`session_diff.py`：`PASS lines=182`；四次变异 RED：排序方向、递归 original、pong reset、rpc 内 gzip 尺寸） |
+| T65 | 换面到 `TlsInit`：判据从「逐字节」降到「结构 + 固定段」——16 个固定扩展的归一化内容、2 个 GREASE、cipher 列表、SNI、ECH 长度集合、HMAC 自洽、总长 `1716+域长+32k` | F132, F133 | done（`tls_init_diff.py`：每侧 8 样本，`PASS extensions=16`；三次变异 RED：sigalgs 字节、HMAC 末 4 字节、GREASE 字） |
+
 ## 变更记录
 
 | 日期 | 依据 | 受影响 | 决定 |
@@ -166,3 +169,5 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F128 | T63, 仪器 | 继续换面到 `misc.cpp` 的轻量清洗函数；`clean_name` / `clean_input_string` 的复杂规则先留 unmeasured，避免为一条 lane 复制整套 UTF-8 表 |
 | 2026-11-27 | F129 | T63 | 去掉小写映射的变异被抓在 `DIFF username 416243`；证明三条清洗规则各自在判据里 |
 | 2026-11-27 | F128, F129 | T63 | misc lane 扩到用户名判定：`is_valid_username` / `is_allowed_username` 入判据（44 case），第二次变异（保留前缀表）抓到 `DIFF allowed_username` |
+| 2026-11-27 | F130, F131 | T64 | session lane 补 gzip_packed（两层）、pong、future_salts：182 行；顺带记下 mtproto_api 的裸 vector/裸元素（`vector<future_salt>` 无 `0x1cb5c415`、元素无构造号）与「gzip 递归沿用外层 MsgInfo」 |
+| 2026-11-27 | F132, F133 | T65 | 新增 tls_init lane：判据从逐字节降到「结构 + 固定段 + HMAC 自洽」，因为 ClientHello 的 session id / 两把 X25519 key / 1184 字节 ML-KEM / random 都新鲜且扩展顺序被打乱；门禁 26 → 27 |

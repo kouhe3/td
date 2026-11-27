@@ -68,6 +68,7 @@ GATES = [
     ("session", [PYTHON, "tools/session_diff.py", "--selftest"]),
     ("web_proxy", [PYTHON, "tools/web_proxy_diff.py", "--selftest"]),
     ("misc", [PYTHON, "tools/misc_diff.py", "--selftest"]),
+    ("tls_init", [PYTHON, "tools/tls_init_diff.py", "--selftest"]),
     ("fuzz", [PYTHON, "tools/tdjson_fuzz.py", "--seeds", "20261126,7,99,2027"]),
     ("client_options", [PYTHON, "tools/gen_client_options.py", "--check"]),
     ("client_lane", [PYTHON, "tools/client_diff.py"]),

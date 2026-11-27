@@ -1,5 +1,7 @@
 //! SessionConnection policy on the Rust side: rpc_result / container parsing,
-//! the bad_msg_notification action table and the bad_server_salt switch.
+//! the bad_msg_notification action table, the bad_server_salt switch,
+//! gzip_packed unwrapping (both at top level and inside rpc_result), pong and
+//! the future_salts salt table.
 //!
 //! Oracle: tools/fixtures/session_probe.cpp (same script, drives the real class
 //! with a fake transport). Both print one line per op plus callback events:
@@ -35,12 +37,30 @@ const MSG_DETAILED_INFO: u32 = 0x276d_3ec6;
 const MSG_NEW_DETAILED_INFO: u32 = 0x809d_b6df;
 const MSGS_ALL_INFO: u32 = 0x8cc0_d131;
 const MSGS_STATE_INFO: u32 = 0x04de_b57d;
+const GZIP_PACKED: u32 = 0x3072_cfa1;
+const PONG: u32 = 0x3477_73c5;
+const FUTURE_SALTS: u32 = 0xae50_0895;
 
 fn now_seconds() -> f64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs_f64())
         .unwrap_or(0.0)
+}
+
+/// TDLib's gzdecode() is inflateInit2(MAX_WBITS + 32): it accepts both the
+/// gzip and the zlib wrapper, and returns an empty slice on any failure.
+fn gzdecode(data: &[u8]) -> Vec<u8> {
+    use std::io::Read;
+    let mut out = Vec::new();
+    if data.len() >= 2 && data[0] == 0x1f && data[1] == 0x8b {
+        if flate2::read::GzDecoder::new(data).read_to_end(&mut out).is_ok() {
+            return out;
+        }
+    } else if flate2::read::ZlibDecoder::new(data).read_to_end(&mut out).is_ok() {
+        return out;
+    }
+    Vec::new()
 }
 
 fn message_id_text(message_id: u64) -> String {
@@ -88,8 +108,18 @@ impl DuplicateChecker {
     }
 }
 
-struct Session {
+#[derive(Clone, Copy)]
+struct ServerSalt {
     salt: u64,
+    valid_since: f64,
+    // Kept to mirror AuthData::set_server_salt; no op in this corpus observes it.
+    #[allow(dead_code)]
+    valid_until: f64,
+}
+
+struct Session {
+    current_salt: ServerSalt,
+    future_salts: Vec<ServerSalt>,
     difference: f64,
     difference_set: bool,
     packet_checker: DuplicateChecker,
@@ -99,24 +129,57 @@ struct Session {
 }
 
 impl Session {
-    fn new(_session_id: u64, salt: u64) -> Self {
-        Self {
-            salt,
+    fn new(_session_id: u64, salt: u64, now: f64) -> Self {
+        let mut session = Self {
+            current_salt: ServerSalt { salt, valid_since: 0.0, valid_until: 0.0 },
+            future_salts: Vec::new(),
             difference: 0.0,
             difference_set: false,
             packet_checker: DuplicateChecker::new(),
             update_checker: DuplicateChecker::new(),
             connected: false,
             closed: false,
-        }
+        };
+        session.set_server_salt(salt, now);
+        session
     }
 
     fn server_time(&self, now: f64) -> f64 {
         self.difference + now
     }
 
-    fn set_server_salt(&mut self, salt: u64) {
-        self.salt = salt;
+    fn set_server_salt(&mut self, salt: u64, now: f64) {
+        let server_time = self.server_time(now);
+        self.current_salt = ServerSalt { salt, valid_since: server_time, valid_until: server_time + 600.0 };
+        self.future_salts.clear();
+    }
+
+    /// AuthData::update_salt pops while the tail's valid_since is strictly
+    /// below the server time, so an equal stamp stays queued.
+    fn update_salt(&mut self, now: f64) {
+        let server_time = self.server_time(now);
+        while let Some(last) = self.future_salts.last() {
+            if last.valid_since < server_time {
+                self.current_salt = *last;
+                self.future_salts.pop();
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn server_salt(&mut self, now: f64) -> u64 {
+        self.update_salt(now);
+        self.current_salt.salt
+    }
+
+    fn set_future_salts(&mut self, mut salts: Vec<ServerSalt>, now: f64) {
+        if salts.is_empty() {
+            return;
+        }
+        salts.sort_by(|a, b| b.valid_since.total_cmp(&a.valid_since));
+        self.future_salts = salts;
+        self.update_salt(now);
     }
 
     fn update_difference(&mut self, diff: f64) -> bool {
@@ -181,6 +244,13 @@ impl Events {
     }
     fn on_salt_updated(&mut self) {
         self.line("event=server_salt_updated".to_string());
+    }
+    fn on_pong(&mut self, ping_time: f64, pong_time: f64) {
+        self.line(format!(
+            "event=pong ping={:016x} pong={:016x}",
+            ping_time.to_bits(),
+            pong_time.to_bits()
+        ));
     }
     fn on_ack(&mut self, message_id: u64) {
         self.line(format!("event=ack msg={message_id}"));
@@ -256,7 +326,7 @@ struct Driver {
 
 impl Driver {
     fn new() -> Self {
-        Self { session: Session::new(0, 0), events: Events::new() }
+        Self { session: Session::new(0, 0, now_seconds()), events: Events::new() }
     }
 
     fn inject(&mut self, message_id: u64, seq_no: i32, body: &[u8]) {
@@ -287,13 +357,16 @@ impl Driver {
             self.session.connected = true;
             self.events.on_connected();
         }
-        if let Err(status) = self.dispatch(message_id, seq_no, body) {
+        if let Err(status) = self.dispatch(message_id, seq_no, body, body.len()) {
             self.session.closed = true;
             self.events.on_closed(&status);
         }
     }
 
-    fn dispatch(&mut self, message_id: u64, _seq_no: i32, packet: &[u8]) -> Result<(), String> {
+    /// `original` is the `bytes` field of the enclosing mtproto_api::message.
+    /// Containers give every child its own; gzip_packed keeps the outer one,
+    /// because TDLib re-enters on_slice_packet with the same MsgInfo.
+    fn dispatch(&mut self, message_id: u64, seq_no: i32, packet: &[u8], original: usize) -> Result<(), String> {
         if packet.len() < 4 {
             self.events.on_session_failed("Receive too small packet");
             return Err(format!("Receive packet of size {}", packet.len()));
@@ -308,12 +381,33 @@ impl Driver {
                 let child_seq = reader.int().ok_or("Failed to parse mtproto_api::message")? as i32;
                 let size = reader.int().ok_or("Failed to parse mtproto_api::message")? as usize;
                 let child = reader.take(size).ok_or("Failed to parse mtproto_api::message")?;
-                self.dispatch(child_id, child_seq, child)?;
+                self.dispatch(child_id, child_seq, child, child.len())?;
             }
             return Ok(());
         }
         if constructor == RPC_RESULT {
-            return self.on_rpc_result(message_id, rest.len() + 4, rest);
+            return self.on_rpc_result(message_id, original, rest);
+        }
+        if constructor == GZIP_PACKED {
+            let mut reader = Reader::new(rest);
+            let data = reader.bytes().ok_or("Failed to parse mtproto_api::gzip_packed")?;
+            let unpacked = gzdecode(&data);
+            // TDLib re-enters on_slice_packet with the same MsgInfo, so an inner
+            // rpc_result keeps the *compressed* original size.
+            return self.dispatch(message_id, seq_no, &unpacked, original);
+        }
+        if constructor == PONG {
+            let mut reader = Reader::new(rest);
+            let pong_msg_id = reader.long().ok_or("Failed to parse mtproto_api::pong")?;
+            let ping_id = reader.long().ok_or("Failed to parse mtproto_api::pong")?;
+            if message_id < pong_msg_id.wrapping_sub(15u64 << 32) {
+                let diff = (message_id >> 32) as u32 as f64 - now_seconds();
+                self.session.reset_difference(diff);
+                self.events.on_time_difference(true);
+            }
+            self.events
+                .on_pong(ping_id as i64 as f64 / MSG_ID_SCALE, message_id as f64 / MSG_ID_SCALE);
+            return Ok(());
         }
         if constructor == BAD_SERVER_SALT {
             let mut reader = Reader::new(rest);
@@ -321,9 +415,29 @@ impl Driver {
             let _seq = reader.int();
             let _code = reader.int();
             let new_salt = reader.long().ok_or("Failed to parse mtproto_api::bad_server_salt")?;
-            self.session.set_server_salt(new_salt);
+            self.session.set_server_salt(new_salt, now_seconds());
             self.events.on_salt_updated();
             self.events.on_message_failed(bad_msg_id, "Bad server salt");
+            return Ok(());
+        }
+        if constructor == FUTURE_SALTS {
+            let mut reader = Reader::new(rest);
+            let _req_msg_id = reader.long().ok_or("Failed to parse mtproto_api::future_salts")?;
+            let _now = reader.int().ok_or("Failed to parse mtproto_api::future_salts")?;
+            // mtproto_api.tl emits TlFetchVector without the boxed wrapper, so
+            // `salts` is a bare count with no 0x1cb5c415 in front of it.
+            let count = reader.int().ok_or("Failed to parse mtproto_api::future_salts")? as usize;
+            let mut salts = Vec::with_capacity(count);
+            for _ in 0..count {
+                // TlFetchObject<future_salt> parses the fields directly: the
+                // element carries no constructor id.
+                let valid_since = reader.int().ok_or("Failed to parse mtproto_api::future_salt")? as i32 as f64;
+                let valid_until = reader.int().ok_or("Failed to parse mtproto_api::future_salt")? as i32 as f64;
+                let salt = reader.long().ok_or("Failed to parse mtproto_api::future_salt")?;
+                salts.push(ServerSalt { salt, valid_since, valid_until });
+            }
+            self.session.set_future_salts(salts, now_seconds());
+            self.events.on_salt_updated();
             return Ok(());
         }
         if constructor == BAD_MSG_NOTIFICATION {
@@ -429,8 +543,16 @@ impl Driver {
             self.events.on_result_error(req_msg_id, code, &message);
             return Ok(());
         }
+        if constructor == GZIP_PACKED {
+            let data = reader.bytes().ok_or("Failed to parse mtproto_api::gzip_packed")?;
+            let object = gzdecode(&data);
+            self.events.on_result_ok(req_msg_id, original, object.len());
+            return Ok(());
+        }
         // Default branch passes the whole remaining packet through.
-        let payload_size = original.saturating_sub(12);
+        // TDLib drops the 8-byte req_msg_id from the slice it was handed; the
+        // object is what is left of the *unwrapped* body, not of `original`.
+        let payload_size = rest.len().saturating_sub(8);
         self.events.on_result_ok(req_msg_id, original, payload_size);
         Ok(())
     }
@@ -502,7 +624,7 @@ fn main() -> ExitCode {
                 let session_id: u64 = tokens[1].parse().unwrap_or(0);
                 let salt: u64 = tokens[2].parse().unwrap_or(0);
                 driver = Driver::new();
-                driver.session = Session::new(session_id, salt);
+                driver.session = Session::new(session_id, salt, now_seconds());
                 out.push_str(&format!("conn session={session_id} salt={salt}\n"));
             }
             "in" => {
@@ -515,7 +637,7 @@ fn main() -> ExitCode {
                 driver.events.out.clear();
             }
             "salt" => {
-                out.push_str(&format!("salt={}\n", driver.session.salt));
+                out.push_str(&format!("salt={}\n", driver.session.server_salt(now_seconds())));
             }
             other => {
                 eprintln!("unknown op {other} at line {}", index + 1);

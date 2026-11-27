@@ -51,6 +51,12 @@ using td::uint64;
 
 namespace {
 
+unsigned long long bits_of(double value) {
+  uint64 bits = 0;
+  std::memcpy(&bits, &value, sizeof(bits));
+  return static_cast<unsigned long long>(bits);
+}
+
 struct FakeRaw final : public td::mtproto::RawConnection {
   std::vector<std::pair<td::mtproto::PacketInfo, std::string>> inbound;
   std::vector<std::string> sent;
@@ -128,7 +134,11 @@ struct Events final : public td::mtproto::SessionConnection::Callback {
   }
   void on_container_sent(td::mtproto::MessageId, td::vector<td::mtproto::MessageId>) final {
   }
-  td::Status on_pong(double, double, double) final {
+  // The third argument is auth_data_->get_server_time(Time::now_cached()), which
+  // carries the wall clock; the first two are msg_id/2^32 and are exact. Print
+  // the two comparable doubles as their 64-bit patterns (F113 lesson 2).
+  td::Status on_pong(double ping_time, double pong_time, double) final {
+    std::printf("event=pong ping=%016llx pong=%016llx\n", bits_of(ping_time), bits_of(pong_time));
     return td::Status::OK();
   }
   td::Status on_update(td::BufferSlice packet) final {
