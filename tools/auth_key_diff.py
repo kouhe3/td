@@ -52,6 +52,13 @@ def main():
         ("p", str(expect["p"])),
         ("q", str(expect["q"])),
         ("p_q_inner_data", expect["p_q_inner_data"]),
+        ("answer_sha1", expect["answer_sha1"]),
+        ("answer_len", str(expect["answer_len"])),
+        ("hash_ok", expect["hash_ok"]),
+        ("g", str(expect["g"])),
+        ("server_time", str(expect["server_time"])),
+        ("dh_prime_len", str(expect["dh_prime_len"])),
+        ("g_a_len", str(expect["g_a_len"])),
     ]
 
     if args.selftest:

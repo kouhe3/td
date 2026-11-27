@@ -89,6 +89,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T42 | 存储面第一条 lane：`tddb` binlog 读取器（`rust/src/bin/binlog_head.rs`）+ 仪器 `tools/binlog_diff.py`，判据 = 与 `binlog_dump` 的**整份输出**逐行相同（event 行含 `format::escaped` 的 data，尾部含 handler 汇总与 key trie）；顺带实证加密方案（首帧明文 `AesCtrEncryption`，其后 AES-256-CTR，默认 key = `raw("cucumber")`）与 processor 的 Rewrite 替换语义 | F100, F101 | done（438 行 = 147 event + 291 尾部、`diff_lines=0`；selftest 捕获篡改行；已进 `verify.py` 第 3 项门禁） |
 | T43 | binlog 语料扩展：仪器加 `--all`，覆盖 `work/*/td_test.binlog` 全部 14 个文件（含真实登录的 24,576 B 库、含 Rewrite 的小库 10,128 B）；门禁改跑 `--all --selftest` | F102 | done（14/14 整份输出相同） |
 | T44 | 协议面第一块：官方向量 samples-auth_key 步骤 1–4（resPQ 解析、pq 分解、`p_q_inner_data_dc` 序列化），Rust 侧 `rust/src/bin/auth_key_probe.rs` + `tools/auth_key_diff.py`；判据是**外部规范向量**，不是 C++ oracle | F103, F104 | done（4 个字段全等；RED→GREEN 已记） |
+| T45 | 协议面第二块：`server_DH_params_ok` 解密与 `server_DH_inner_data` 解析（AES-256-IGE + SHA1 校验），字段 `answer_len/hash_ok/g/server_time/dh_prime/g_a` 对齐官方向量 | F105 | done（11 个字段全等） |
 
 ## 变更记录
 
@@ -117,3 +118,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F100 | T42, 仪器, Rust 依赖 | 新增存储面 lane：判据形态从「JSON 请求/响应」换成「文件 → 四栏文本」；binlog 默认加密，Rust 侧引入 `aes`/`ctr`/`hmac`/`pbkdf2`/`sha2` 五个纯 Rust 依赖（无系统依赖） |
 | 2026-11-27 | F102 | T43, 仪器 | binlog 判据从单文件扩到全部 14 个 fixture（含真实登录库）；门禁里的 binlog 项改为 `--all --selftest` |
 | 2026-11-27 | F103, F104 | T44, 仪器 | 换面到协议层：第一条 lane 用 Telegram 官方 auth_key 样本当判据（不依赖 C++ oracle）。流程缺陷：预注册与实现同批落账，已用 RED→GREEN 补齐并记在 F103/F104 |
+| 2026-11-27 | F105 | T45 | 协议面第二块：AES-256-IGE + `answer_with_hash` 的哈希口径（只覆盖解析长度，不含对齐填充）落进 F105 |

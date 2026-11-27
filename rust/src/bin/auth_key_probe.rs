@@ -20,6 +20,10 @@ use std::env;
 use std::fs;
 use std::process::ExitCode;
 
+use aes::cipher::{BlockDecrypt, KeyInit};
+use aes::Aes256;
+use sha1::{Digest, Sha1};
+
 /// The sample prints the TL bytes `95 5F F5 A9`; TL numbers are little-endian.
 const P_Q_INNER_DATA_DC: u32 = 0xa9f5_5f95;
 
@@ -80,6 +84,48 @@ fn tl_string(bytes: &[u8]) -> Vec<u8> {
     out.extend_from_slice(bytes);
     while out.len() % 4 != 0 {
         out.push(0);
+    }
+    out
+}
+
+/// Read a TL string: one-byte length (0xFE and three bytes for long ones),
+/// the data, and zero padding up to a 4-byte boundary.
+fn tl_read_string<'a>(buf: &'a [u8], off: &mut usize) -> &'a [u8] {
+    let first = buf[*off];
+    let (len, hdr) = if first < 254 {
+        (first as usize, 1)
+    } else {
+        (
+            buf[*off + 1] as usize | (buf[*off + 2] as usize) << 8 | (buf[*off + 3] as usize) << 16,
+            4,
+        )
+    };
+    let start = *off + hdr;
+    let end = start + len;
+    *off = end + (4 - (hdr + len) % 4) % 4;
+    &buf[start..end]
+}
+
+/// AES-256-IGE decryption: P_i = D(C_i ^ P_{i-1}) ^ C_{i-1}, seeded with
+/// C_{-1} = iv[0..16] and P_{-1} = iv[16..32].
+fn aes_ige_decrypt(key: &[u8], iv: &[u8], input: &[u8]) -> Vec<u8> {
+    let cipher = Aes256::new_from_slice(key).expect("AES-256 key");
+    let mut out = Vec::with_capacity(input.len());
+    let mut prev_c = iv[0..16].to_vec();
+    let mut prev_p = iv[16..32].to_vec();
+    for chunk in input.chunks(16) {
+        let mut block = aes::cipher::generic_array::GenericArray::clone_from_slice(chunk);
+        for i in 0..16 {
+            block[i] ^= prev_p[i];
+        }
+        cipher.decrypt_block(&mut block);
+        let mut plain = [0u8; 16];
+        for i in 0..16 {
+            plain[i] = block[i] ^ prev_c[i];
+        }
+        out.extend_from_slice(&plain);
+        prev_c = chunk.to_vec();
+        prev_p = plain.to_vec();
     }
     out
 }
@@ -230,5 +276,34 @@ fn main() -> ExitCode {
     println!("p={p}");
     println!("q={q}");
     println!("p_q_inner_data={}", hex_encode(&data));
+
+    // Steps 5-6: decrypt the server's DH answer and parse server_DH_inner_data.
+    let decrypted = aes_ige_decrypt(
+        &hex_decode(get("tmp_aes_key")),
+        &hex_decode(get("tmp_aes_iv")),
+        &hex_decode(get("encrypted_answer")),
+    );
+    let answer = &decrypted[20..];
+
+    let mut off = 4; // server_DH_inner_data constructor
+    off += 16 + 16; // nonce, server_nonce
+    let g = i32::from_le_bytes(answer[off..off + 4].try_into().unwrap());
+    off += 4;
+    let dh_prime = tl_read_string(answer, &mut off);
+    let g_a = tl_read_string(answer, &mut off);
+    let server_time = i32::from_le_bytes(answer[off..off + 4].try_into().unwrap());
+    off += 4;
+    // answer_with_hash = SHA1(answer) || answer || zero padding to a 16-byte
+    // boundary, so the hash covers only the parsed object, not the padding.
+    let answer_len = off;
+    let digest = Sha1::digest(&answer[..answer_len]);
+
+    println!("answer_sha1={}", hex_encode(&decrypted[..20]));
+    println!("answer_len={answer_len}");
+    println!("hash_ok={}", digest.as_slice() == &decrypted[..20]);
+    println!("g={g}");
+    println!("server_time={server_time}");
+    println!("dh_prime_len={}", dh_prime.len());
+    println!("g_a_len={}", g_a.len());
     ExitCode::SUCCESS
 }
