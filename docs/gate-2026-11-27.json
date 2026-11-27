@@ -7,7 +7,7 @@
       "warnings": 0,
       "tail": [
         "Compiling tdjson_rs v0.1.0 (C:\\projects\\td\\rust)",
-        "    Finished `release` profile [optimized] target(s) in 7.54s"
+        "    Finished `release` profile [optimized] target(s) in 7.92s"
       ]
     },
     {
@@ -18,7 +18,7 @@
       "tail": [
         "  message = \"Failed to parse request as JSON object: Unexpected string end\"",
         "}",
-        "[ 1][t 0][1795769111.943940162][Logging.cpp:160][&client]\tseq-probe"
+        "[ 1][t 0][1795770234.171688079][Logging.cpp:160][&client]\tseq-probe"
       ]
     },
     {
@@ -185,9 +185,20 @@
       "exit_code": 0,
       "warnings": 0,
       "tail": [
-        "rust: 8 samples, length set [1733, 1797, 1829]",
+        "rust: 8 samples, length set [1733, 1765, 1797, 1829]",
         "SELFTEST OK: comparator sees a fixed-byte change and the HMAC check rejects it",
         "PASS extensions=16 total_lengths=[1733, 1765, 1797, 1829]"
+      ]
+    },
+    {
+      "gate": "dh_handshake",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/dh_handshake_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=35759f059c786fe222b8d71b0329e197 cases=32",
+        "SELFTEST OK: comparator sees a g change and a primality change",
+        "PASS cases=32 nonsafe_prime_bits=2048"
       ]
     },
     {
@@ -196,9 +207,9 @@
       "exit_code": 0,
       "warnings": 0,
       "tail": [
-        "[ 3][t 0][1795769210.624505996][Logging.cpp:160][&client]\t你好",
-        "[ 5][t 0][1795769210.624537944][Logging.cpp:160][&client]\t*bold* __it__ `code`",
-        "[ 5][t 0][1795769210.624543428][Logging.cpp:160][&client]\t#tag @user $USD $btc"
+        "[ 3][t 0][1795770307.055812358][Logging.cpp:160][&client]\t你好",
+        "[ 5][t 0][1795770307.055844545][Logging.cpp:160][&client]\t*bold* __it__ `code`",
+        "[ 5][t 0][1795770307.055850982][Logging.cpp:160][&client]\t#tag @user $USD $btc"
       ]
     },
     {
