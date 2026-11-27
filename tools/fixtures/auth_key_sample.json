@@ -37,5 +37,22 @@
       "aes_iv": "d23cc66a7077f0bfb2b9361c3c89d2de7875e2350a358568539b9db84919eb6d",
       "ciphertext": "b39a68de22684a76da6b05f53737699dcba113386b1a619413cc96262f72208191a5ec9cbc2ada99536c5d1d4ad0e271e1ba315909069b2540aa7ae8cac5864a"
     }
+  },
+  "transport": {
+    "source": "TDLib Transport::write (X=0) as oracle; the probe reads the packet back",
+    "akid": 12345,
+    "salt": 1,
+    "session_id": 2,
+    "msg_id": 4,
+    "seq_no": 0,
+    "payload": "00000000000000000000000000000000",
+    "expect": {
+      "packet_len": 88,
+      "salt": 1,
+      "session_id": 2,
+      "msg_id": 4,
+      "seq_no": 0,
+      "msg_key_ok": "true"
+    }
   }
 }

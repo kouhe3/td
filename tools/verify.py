@@ -53,6 +53,7 @@ GATES = [
     ("binlog", [PYTHON, "tools/binlog_diff.py", "--all", "--selftest"]),
     ("auth_key", [PYTHON, "tools/auth_key_diff.py", "--selftest"]),
     ("msg_layer", [PYTHON, "tools/msg_layer_diff.py", "--selftest"]),
+    ("transport", [PYTHON, "tools/transport_diff.py", "--selftest"]),
     ("fuzz", [PYTHON, "tools/tdjson_fuzz.py", "--seeds", "20261126,7,99"]),
     ("client_options", [PYTHON, "tools/gen_client_options.py", "--check"]),
     ("client_lane", [PYTHON, "tools/client_diff.py"]),

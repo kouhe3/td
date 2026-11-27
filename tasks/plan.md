@@ -92,6 +92,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T45 | 协议面第二块：`server_DH_params_ok` 解密与 `server_DH_inner_data` 解析（AES-256-IGE + SHA1 校验），字段 `answer_len/hash_ok/g/server_time/dh_prime/g_a` 对齐官方向量 | F105 | done（11 个字段全等） |
 | T46 | 协议面第三块：`g_b` / `auth_key` 的 2048-bit 模幂与 `new_nonce_hash1` KDF，对齐样本步骤 7–9；至此 DH 握手（步骤 1–9）端到端对齐官方向量 | F106 | done（14 个字段全等） |
 | T47 | 协议面第四块：MTProto 2.0 消息层（msg_key、KDF2、AES-256-IGE 封装）；没有官方向量，判据改为自建 C++ oracle（`tools/fixtures/msgprobe.cpp`，链接 TDLib 的 `KDF2` 与 `aes_ige_encrypt`）；Rust 侧 `rust/src/bin/msg_layer_probe.rs` + `tools/msg_layer_diff.py` | F107 | done（4 个字段全等） |
+| T48 | 协议面第五块：完整包封装（salt / session_id / msg_id / seq_no / length / padding）；oracle = TDLib `Transport::write`，Rust 侧 `rust/src/bin/transport_probe.rs` 按 X=0 解回 | F108 | done（88 B 包、6 字段全等） |
 
 ## 变更记录
 
@@ -123,3 +124,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F105 | T45 | 协议面第二块：AES-256-IGE + `answer_with_hash` 的哈希口径（只覆盖解析长度，不含对齐填充）落进 F105 |
 | 2026-11-27 | F106 | T46, Rust 依赖 | 协议面第三块：引入 `num-bigint`（纯 Rust）做 2048-bit 模幂；DH 握手 1–9 全对齐官方向量 |
 | 2026-11-27 | F107 | T47, 仪器 | 协议面第四块：消息层没有官方向量，改自建 C++ oracle（`msgprobe.cpp`，链接 `tdmtproto`/`tdutils` 静态库）；KDF2 的拆位规则落进 F107 |
+| 2026-11-27 | F108 | T48, 仪器 | 协议面第五块：完整包封装；写 X=0 / 读 X=8 的方向差异与「prefix 由 storer 自己写」落进 F108 |
