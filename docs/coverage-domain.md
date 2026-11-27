@@ -129,6 +129,7 @@
 | `tdutils::Slice` / `MutableSlice` 的 `back()` / `operator[]`（合法域）与 `data`/`begin`/`end`/`ubegin`/`uend` 的位移一致性 | measured（F155/F156：106 行 + 5 个 `--check` 例，8 个载荷 × 两类视图 × 两种移位；空 slice 的 `back()` abort 单独判，越界 `operator[]` 是 UB 记 unmeasured） | 逐字节 + 判定（abort 与否） |
 | `tdutils` 的 `Hash.h`（`AbslHash` / `TdHash` / `Hasher`，`TD_HAVE_ABSL 0` 配置） | measured（F157/F158：70 行，i32/i64/u32/u64/bool/char/uchar/pair 与 Hasher 链；符号扩展、`char` 有符号、pair 无序性是判据核心；absl 配置与 Slice/string 特化 unmeasured） | 逐字节 |
 | `tdutils` 的 `SliceHash`（`uint32` 累加器，`result * 123456789 + c`） | measured（F159/F160：28 行，14 个载荷 × `Slice` 与 `MutableSlice → Slice` 两条路；2^32 回绕、`char` 符号扩展、空 slice = 0、顺序敏感都在判据里；另用独立 Python 公式反算 oracle） | 逐字节 |
+| `tdutils::PathView`（构造 + 五个名字/扩展名访问器 + `parent_dir`/`parent_dir_noslash` + `is_dir`/`is_absolute` + `relative` + `dir_and_file`） | measured（F161/F162：54 行，34 条路径 + 9 组 relative + 11 组 dir_and_file；`TD_DIR_SLASH` 取 Windows 构建的 `\`，`relative` 的字符串前缀语义与 `dir_and_file` 的两段语义都在判据里） | 逐字节 |
 
 ## 边界之外（永久不在本仪器范围）
 
