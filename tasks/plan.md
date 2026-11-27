@@ -28,7 +28,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 判据 cell 总数 | 1561 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
 | 协议 / RPC 面 | 23 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 72 op/182 行、web_proxy 26 case、misc 80 case、tls_init 16 扩展 × 8 样本/侧、dh_handshake 32 case、rsa 23 case、public_rsa 9 case、public_rsa_cdn 21 行、buffer_slice 34 行、dc_id 273 行、slice 119 行 + 17 check、slice_cmp 595 行 | 各自的 `--selftest`、F103–F152 |
 | 门禁 | 35 项（本轮新增 `slice_cmp`） | `uv run python tools/verify.py` |
-| 定义域 | 87 个 measured cell、7 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -o '\| measured（' docs/coverage-domain.md \| wc -l` / `grep -o '\| unmeasured' docs/coverage-domain.md \| wc -l` |
+| 定义域 | 82 个 measured 行、6 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c '\| measured（' docs/coverage-domain.md` \| `grep -c '\| unmeasured \|' docs/coverage-domain.md` |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
 
@@ -191,3 +191,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F147, F148 | T73, 门禁 | 新增 dc_id lane：DcId 值面边界（`create` / `from_value` / `is_valid` + 派生谓词与打印），门禁 32 → 33；`get_raw_id` / `internal` / `external` 的 CHECK 分支不覆盖（进程级 abort，两侧运行时不同），记 unmeasured |
 | 2026-11-27 | F149, F150 | T74, 门禁 | 新增 slice lane：`Slice` 的 `remove_prefix` / `remove_suffix` / `substr` / `truncate` 边界，脚本（合法域）+ `--check`（每例一进程，只比「是否 abort」）；门禁 33 → 34 |
 | 2026-11-27 | F151, F152 | T75, 门禁 | 新增 slice_cmp lane：`Slice` 的 `find` / `rfind`（npos 打印成无符号值）与 `==` / `!=` / `<`（unsigned 序 + 前缀规则），595 行全值面；门禁 34 → 35 |
+| 2026-11-27 | F134–F152 | coverage-domain | 回填 round 26–34 漏记的 8 条 lane（dh_handshake / rsa / public_rsa / public_rsa_cdn / buffer_slice / dc_id / slice / slice_cmp），并把 misc 的 case 数、`clean_name` 的状态、`rpc_result` 的 gzip/pong/future_salts 备注改成已判；定义域 73 → 82 measured、7 → 6 unmeasured，计数口径改成 `grep -c`（原来 `grep -o` 的口径会重复计数） |

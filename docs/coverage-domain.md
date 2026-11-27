@@ -112,11 +112,19 @@
 | 维护类服务消息编解码（`bad_msg_notification` / `bad_server_salt` / `new_session_created` / `pong` / `msg_resend_req` / `msg_detailed_info` / `msg_new_detailed_info`） | measured（F114：41 case / 344 字段字节，含抽象分派双向 roundtrip 与三种解析错误文案） | 逐字节 |
 | MTProxy secret（`ProxySecret`：`from_link` 三级回退、`from_binary` 长度与 truncate、`get_encoded_secret`、`get_proxy_secret`、padding / TLS 判定、domain） | measured（F116：128 case，41 手写 + 87 随机；三类错误文案与拒绝原因） | 逐字节 |
 | `MtprotoHeader` 选项矩阵（代理类型 × emulator × 语言包/语言码 × tz_offset × 非 ASCII/长字符串；default 与 anonymous 两份头） | measured（F118：85 case，含 flags 三位、代理块与 Web 固定 443、`X` 自定义语言码、TL 长字符串 253/254/300；F119 记录 argv 编码的仪器坑） | 逐字节 |
-| `rpc_result` / `msg_container` 解析、`req_msg_id` 匹配 | measured（F124：容器与单包、`rpc_error`、`req_msg_id == 0` 的拒绝、默认对象透传的 `original/size` 都逐字节相同；`msgs_ack` / `new_session_created` / detailed-info 族 / `msgs_all_info` / `msgs_state_info` 也已对齐） | 逐字节（未覆盖 gzip 分支与 `pong` / `future_salts`） |
+| `rpc_result` / `msg_container` 解析、`req_msg_id` 匹配 | measured（F124：容器与单包、`rpc_error`、`req_msg_id == 0` 的拒绝、默认对象透传的 `original/size` 都逐字节相同；`msgs_ack` / `new_session_created` / detailed-info 族 / `msgs_all_info` / `msgs_state_info` 也已对齐；gzip_packed 两层、`pong`、`future_salts` 已在 F130 补齐） | 逐字节 |
 | `bad_msg_notification` 的 `error_code`→动作表与 `bad_server_salt` 的换盐策略 | measured（F124：11 个 code 加 48 换盐，文案与关闭时机全等；F125 变异证明逐条在判据里） | 逐字节 |
 | Web 代理纯函数（`get_web_proxy_secret` / `get_web_proxy_link_secret` / address / 标记 link secret / HMAC bridge capability） | measured（F126：26 case，含 0x70 标记的三种底层 secret、path 有无的分支、非 ASCII server；F127 变异证明上下文常量在判据里） | 逐字节（未覆盖 host 归一化的 IDN 分支） |
-| `misc.cpp` 轻量清洗与用户名判定（`clean_username` / `clean_phone_number` / `replace_offending_characters` / `is_valid_username` / `is_allowed_username`） | measured（F128：44 case，含 trim 六个字符、非 ASCII、连续段与截断序列、32/33 字节边界、保留前缀表；F129 两次变异证明小写映射与前缀表都在判据里） | 逐字节 |
-| `clean_name` / `clean_input_string` | unmeasured | 需要 `utf8_truncate`、空格字符表与 emoji 规则；回流条件 = 先把这三张表/函数各自对齐 |
+| `misc.cpp` 轻量清洗与用户名判定（`clean_username` / `clean_phone_number` / `replace_offending_characters` / `is_valid_username` / `is_allowed_username`） | measured（F128：44 case，含 trim 六个字符、非 ASCII、连续段与截断序列、32/33 字节边界、保留前缀表；F129 两次变异证明小写映射与前缀表都在判据里；F134 把 lane 扩到 80 case） | 逐字节 |
+| `clean_name` / `strip_empty_characters` / `clean_input_string` | measured（F134/F135：74 条 argv + 6 条 stdin，含 34996/34997/35000 字节边界、19 个空格字符与 `U+F0000..U+F00FF` 块、Höhrmann UTF-8 检查；F135 三次变异证明 NBSP 折叠、长度上限与空格表首字节集都在判据里） | 逐字节 |
+| `DhHandshake::check_config` 的四段判定（2048-bit 位数、`p mod 4g` 二次剩余表、`p` 素性、`(p-1)/2` 素性；`DhCallback` 为 `nullptr` 时跳过缓存分支） | measured（F136：32 case，含 RFC 3526 group 14 与一个 `p` 素数但 `(p-1)/2` 合数的 2048-bit 例；F137 三次变异分别打中模表、半素数检查、位数检查） | 判定（分支枚举 + 随机模数；素性结论与 OpenSSL 对齐） |
+| `RSA` 的 PEM 解析（SPKI 与 PKCS#1、base64 + DER）、三种失败文案、`get_fingerprint`、裸 `x^e mod n` 的 encrypt / decrypt_signature | measured（F138–F140：23 case，PEM 由仪器现场构造；坏 base64 / 空文件 / 非 SPKI / EC key / 2040-bit / `x >= n` 都覆盖） | 逐字节 |
+| `PublicRsaKeySharedMain` 的 main/test key 表（PKCS#1 PEM 常量、`{...}` 失败文案、请求指纹的外层顺序） | measured（F140/F141：9 case；`create(false)` = main、`create(true)` = test；F141 三次变异） | 逐字节 |
+| `PublicRsaKeySharedCdn` 的 add / get / drop / has 生命周期 | measured（F142/F143：21 行脚本输出；`add_rsa` 的按指纹去重在现有接口下不可观察，写在 F142 里） | 逐字节（去重分支 unmeasured） |
+| `tdutils::BufferSlice` 的所有权语义（`clone` 共享 / `copy` 深拷贝 / `as_mutable_slice` 无 COW / `confirm_read` / `truncate` / `after`） | measured（F144/F145：34 行脚本，三次变异分别打中别名、窗口推进、`begin_` 偏移） | 别名（写一处读两处） |
+| `td/telegram/net/DcId` 的值面（静态 `is_valid` / `create` / `from_value`、`is_empty` / `is_main` / `is_exact`、`==` / `<`、`operator<<` 的五个分支） | measured（F147/F148：273 行，含 13 个 int32 边界 + 40 个固定随机值；`get_raw_id` / `internal` / `external` 的 CHECK 分支 unmeasured） | 逐字节 |
+| `tdutils::Slice` 的视图操作（`remove_prefix` / `remove_suffix` / `substr` 的静默截断 / `truncate` 只缩不涨） | measured（F149/F150：119 行 + 17 个 `--check` 例，其中 12 个越界 abort、5 个 `n == size` 对照；F150 三次变异） | 逐字节 + 判定（abort 与否） |
+| `tdutils::Slice` 的查找与比较（`find` / `rfind` 的 `npos`、`==` / `!=`、`<` 的 unsigned 字节序与前缀规则） | measured（F151/F152：595 行，17 载荷 × 9 字节 × 2 + 17×17 比较；F152 三次变异分别打中末字节、signedness、前缀长度） | 逐字节 |
 
 ## 边界之外（永久不在本仪器范围）
 
