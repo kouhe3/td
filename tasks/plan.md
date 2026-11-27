@@ -26,7 +26,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1561 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 门禁 | 11 项（新增 fuzz） | `uv run python tools/verify.py` |
+| 门禁 | 20 项（本轮新增 `auth_data`） | `uv run python tools/verify.py` |
 | 定义域 | 51 行 measured、4 行 unmeasured（后者均不可判或缺引擎） | `docs/coverage-domain.md` 每行状态 |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
@@ -98,6 +98,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T51 | RPC 层第一块：请求头 `invokeWithLayer` + `initConnection`（手写 TL 编码，含 flags 与 params jsonObject）；oracle = TDLib `MtprotoHeader::get_default_header`，Rust 侧 `rust/src/bin/rpc_probe.rs` | F111 | done（96 B 逐字节相同） |
 | T52 | RPC 层第二块：`rpc_error` 的双向互通（Rust 编码 ↔ TDLib 生成类的 `store`/`fetch`），并确认「生成代码只写字段、构造号由 boxed 外层写」 | F112 | done（24 B 字段、双向 roundtrip） |
 | T53 | RPC 响应侧：`rpc_result#f35c6d01` / `msg_container#73f1f8dc` 解析与 `req_msg_id` 匹配 | B11 | blocked（无 oracle：`mtproto_api.tl` 里两个结构被注释、无生成类；TDLib 解析在 `SessionConnection` 且是 private，需要活连接） |
+| T54 | 协议面第八块：`AuthData` 的 salt / 服务端时间差 / 入站出站 msg_id 有效性 / `check_packet` 状态机，用**显式注入的 `now`** 当模拟时钟；oracle = `tools/fixtures/auth_data_probe.cpp`，判据 = 同一脚本下两侧 stdout 逐字节相同（手写 3,026 行脚本 + 8 个随机脚本） | F113 | done（`PASS scripts=9 steps=3026`） |
 
 ## 变更记录
 
@@ -135,3 +136,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F111 | T51, 仪器 | RPC 层第一块：请求头手写 TL 编码对齐；oracle 链接 `tdcore`/`tdapi` 等七个静态库才链通，构建命令写进 `tools/fixtures/rpc_probe.cpp` 文件头 |
 | 2026-11-27 | F112 | T52, 仪器 | RPC 层第二块：`rpc_error` 双向互通；「生成的 store/fetch 不含构造号」这条落进 F112，避免以后拿带 ID 的串去 parse |
 | 2026-11-27 | F112, B11 | T53, coverage-domain | 收口：协议面与 RPC 面的 9 条 measured 行写进覆盖表；RPC 响应侧因无 oracle 标 blocked，回流条件写进 B11 |
+| 2026-11-27 | F113 | T54, 仪器 | 协议面第八块改用**注入时钟**：所有 `now` 来自脚本，状态机因此可逐字节判；双精度一律按位型打印，避免 printf/format 差异被误读成分歧。`check_packet` 的 `Ignore too old or too new` 分支在 update 后恒真，记未覆盖（同 F110） |
