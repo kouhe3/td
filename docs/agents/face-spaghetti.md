@@ -20,8 +20,8 @@
 | 进度 / surface 表 | `tasks/plan.md` 的「进度」节：两个口径分开写（可判表面 / TDLib 本体），主分母饱和后切 lane cell（round 16） | — |
 | 领域语言 | 未建（`/domain-modeling` 按需） | — |
 | 一次性探测目录 | `work/`（gitignored） | — |
-| 仪器目录 | `tools/`：`tdjson_diff.py`（`td_execute` 差分 + `SEQUENCE` 段）、`tdjson_fuzz.py`（随机语料 + 随机序列）、`client_diff.py`（首启 / 第二次运行 / 未授权 / 遗留 C ABI / 异步五段）、`gen_language_pack.py`（语言包 fixture）与七个 `gen_*.py --check` | — |
-| 只读 oracle | `C:/tmp/td-build/libtdjson.dll`（md5 `0398814038978aaeef7f8d6ac62bb8ff`，97,185,382 B）；运行副本由 `tools/tdjson_diff.py` 直接加载，不改写 | — |
+| 仪器目录 | `tools/`：`tdjson_diff.py`（`td_execute` 差分 + `SEQUENCE` 段）、`binlog_diff.py`（binlog 输出与 `binlog_dump` 逐行比，`--all` 覆盖 14 个 fixture）、`tdjson_fuzz.py`（随机语料 + 随机序列）、`client_diff.py`（首启 / 第二次运行 / 未授权 / 遗留 C ABI / 异步五段）、`gen_language_pack.py`（语言包 fixture）与七个 `gen_*.py --check` | — |
+| 只读 oracle | `C:/tmp/td-build/libtdjson.dll`（md5 `0398814038978aaeef7f8d6ac62bb8ff`，97,185,382 B）；运行副本由 `tools/tdjson_diff.py` 直接加载，不改写。binlog lane 的 oracle 是 `C:/tmp/td-build/tddb/binlog_dump.exe`（`ninja -C C:/tmp/td-build binlog_dump`） | — |
 | backlog 发布 | GitHub issues，仓库钉死 `kouhe3/td`（`docs/agents/issue-tracker.md`）；`tasks/backlog.md` 保留未成 issue 的条目 | — |
 | 配套文件 | `docs/agents/issue-tracker.md` / `triage-labels.md` / `domain.md` 已装（mattpocock-skills 1.3.2，project scope） | — |
 | 门禁 | `uv run python tools/verify.py`（十一项：build、instrument、fuzz、client_options、client_lane、tl_schema、mime_tables、emoji_table、country_table、ton_address、api_functions；最后在 HEAD 跑约 53 s）；追加检查 `bash C:/Users/K/.omp/agent/skills/face-spaghetti/scripts/append-only-check.sh --worktree`（在 Git Bash 里跑） | — |

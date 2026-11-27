@@ -1,6 +1,6 @@
 # 判据定义域（coverage domain）
 
-覆盖 `tdjson` C ABI 的 `td_execute` 路径（29 个同步 action + 全部 1114 个函数的参数解析）与客户端 lane（首次运行、第二次运行、未授权状态机、真实登录记录）。`measured` 需 test + fact；`unmeasured` 只占回流条件，不占 fact。
+覆盖 `tdjson` C ABI 的 `td_execute` 路径（29 个同步 action + 全部 1114 个函数的参数解析）、客户端 lane（首次运行、第二次运行、未授权状态机、真实登录记录）与 binlog 存储面（读侧）。`measured` 需 test + fact；`unmeasured` 只占回流条件，不占 fact。
 
 ## 实体类 × 文本形态
 
@@ -86,12 +86,18 @@
 | `setTdlibParameters` 的设备 / 语言 / 版本 / 加密 key（5 个变体） | measured（F083：首启仍 129 行且逐行相同，两次独立运行一致） | — |
 | `use_test_dc:false` 的首启 | measured（F080：127 行 = 125 option + 2 状态，随后的登录段另有 60 行） | 登录段本身见「真实登录」行 |
 
+## 存储面（binlog 读侧）
+
+| 项 | 状态 | blocker / 回流条件 |
+|---|---|---|
+| binlog 文件解析（帧头、`format::escaped`、handler 汇总、key trie） | measured（F100–F102：整份输出与 `binlog_dump` 逐行相同；14 个 fixture，10,128–24,576 B，含真实登录生成的库） | — |
+| binlog 写侧（从 KV 生成字节相同的库） | unmeasured | salt / IV 由 `Random::secure_bytes` 生成、不可注入，判不了「同输入同字节」；回流条件 = 找到可固定随机源的重写路径 |
+
 ## 边界之外（永久不在本仪器范围）
 
 | 模块 | 行数 | 原因 |
 |---|---|---|
-| `tddb` | 4,792 | 在 C ABI 之下，互操作需 C++ ABI |
+| `tddb` | 4,792 | 在 C ABI 之下，互操作需 C++ ABI；binlog 读侧已由上方「存储面」单独覆盖 |
 | `td/mtproto` | 7,443 | 同上 |
 | `tdactor` | 5,695 | 同上 |
 | `tdutils` | 48,142 | 同上 |
-| 客户端 lane 之下的 `tddb` 文件格式（binlog） | — | 判据是 `td_receive` 的输出，不是磁盘内容（F074），所以不实现 |
