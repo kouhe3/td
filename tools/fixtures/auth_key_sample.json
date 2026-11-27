@@ -71,5 +71,10 @@
     "system_version": "Windows 10",
     "application_version": "1.0",
     "system_language_code": "en"
+  },
+  "rpc_error": {
+    "code": 400,
+    "message": "PHONE_NUMBER_INVALID",
+    "source": "TDLib mtproto_api::rpc_error via tools/fixtures/rpc_probe2.cpp"
   }
 }

@@ -57,6 +57,7 @@ GATES = [
     ("framing", [PYTHON, "tools/framing_diff.py", "--selftest"]),
     ("msgid", [PYTHON, "tools/msgid_diff.py", "--selftest"]),
     ("rpc", [PYTHON, "tools/rpc_diff.py", "--selftest"]),
+    ("rpc_error", [PYTHON, "tools/rpc_error_diff.py", "--selftest"]),
     ("fuzz", [PYTHON, "tools/tdjson_fuzz.py", "--seeds", "20261126,7,99"]),
     ("client_options", [PYTHON, "tools/gen_client_options.py", "--check"]),
     ("client_lane", [PYTHON, "tools/client_diff.py"]),
