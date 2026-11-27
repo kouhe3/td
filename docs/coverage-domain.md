@@ -112,8 +112,8 @@
 | 维护类服务消息编解码（`bad_msg_notification` / `bad_server_salt` / `new_session_created` / `pong` / `msg_resend_req` / `msg_detailed_info` / `msg_new_detailed_info`） | measured（F114：41 case / 344 字段字节，含抽象分派双向 roundtrip 与三种解析错误文案） | 逐字节 |
 | MTProxy secret（`ProxySecret`：`from_link` 三级回退、`from_binary` 长度与 truncate、`get_encoded_secret`、`get_proxy_secret`、padding / TLS 判定、domain） | measured（F116：128 case，41 手写 + 87 随机；三类错误文案与拒绝原因） | 逐字节 |
 | `MtprotoHeader` 选项矩阵（代理类型 × emulator × 语言包/语言码 × tz_offset × 非 ASCII/长字符串；default 与 anonymous 两份头） | measured（F118：85 case，含 flags 三位、代理块与 Web 固定 443、`X` 自定义语言码、TL 长字符串 253/254/300；F119 记录 argv 编码的仪器坑） | 逐字节 |
-| `rpc_result` / `msg_container` 解析、`req_msg_id` 匹配 | unmeasured（B11） | 无 oracle：结构被注释、TDLib 解析为 private |
-| `bad_msg_notification` 的 `error_code`→动作表与 `bad_server_salt` 的换盐策略 | unmeasured（B11 / T56） | 入口在 `SessionConnection` 且 private，需要 actor 与活 `RawConnection`；回流条件 = 造出 SessionConnection 级 oracle 或公开解析入口 |
+| `rpc_result` / `msg_container` 解析、`req_msg_id` 匹配 | unmeasured（B11） | 解析确实在 private 方法里，但 **oracle 已可造**（F122）：假传输注入明文即可驱动；回流条件已从「无 oracle」降级为「待立项 T61」 |
+| `bad_msg_notification` 的 `error_code`→动作表与 `bad_server_salt` 的换盐策略 | unmeasured（B11 / T56） | 同上：策略同样可在假传输下触发（F122 已观察 16/17/99/48 四条路径）；回流条件 = 立项 T61 并写判据 |
 
 ## 边界之外（永久不在本仪器范围）
 

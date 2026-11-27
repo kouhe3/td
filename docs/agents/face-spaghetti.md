@@ -25,6 +25,7 @@
 | backlog 发布 | GitHub issues，仓库钉死 `kouhe3/td`（`docs/agents/issue-tracker.md`）；`tasks/backlog.md` 保留未成 issue 的条目 | — |
 | 配套文件 | `docs/agents/issue-tracker.md` / `triage-labels.md` / `domain.md` 已装（mattpocock-skills 1.3.2，project scope） | — |
 | 判据形态（时间 / 随机） | 时间依赖的状态机把 `now` 当参数注入（`auth_data_probe` 的脚本），不模拟环境也不打桩时钟；算法内部含随机只判不变式（`msgid_probe`）；双精度一律比 64 位位型（`auth_data_probe`），避免格式化差异被读成分歧 | — |
+| C 档 oracle 骨架 | `tools/fixtures/session_probe.cpp`：假 `RawConnection` 注入明文 + 假回调记录事件，可驱动真实 `SessionConnection`（F122/F123）；**尚未**进门槛，立项后才加 Rust 对侧与判据 | — |
 | 门禁 | `uv run python tools/verify.py`（二十三项：build、instrument、binlog、auth_key、msg_layer、transport、framing、msgid、rpc、rpc_error、auth_data、svc_msg、proxy_secret、header、fuzz、client_options、client_lane、tl_schema、mime_tables、emoji_table、country_table、ton_address、api_functions；最后在 HEAD 跑约 45–55 s）；追加检查 `bash C:/Users/K/.omp/agent/skills/face-spaghetti/scripts/append-only-check.sh --worktree`（在 Git Bash 里跑） | — |
 | 生成器的前置 | `gen_api_functions.py` / `gen_tl_schema.py` 读构建产物 `td/generate/auto/td/telegram/td_api.h` 的 `ID`（源码行 crc32 在 422/3464 个定义上是错的，F091）。`td/generate/auto/` 是 gitignored 的构建产物，所以 `--check` **必须先 build**——`verify.py` 里 build 排在这些门禁之前，`git archive` 导出后跑一遍也会先构建；这两个生成器的 docstring 已写明 | — |
 
@@ -66,7 +67,8 @@
 | round 18（2026-11-27） | 新增 `proxy_secret`（`ProxySecret` 全公开行为，128 case，41 手写 + 87 随机），门禁 21 → 22；台账 F116–F117 |
 | round 19（2026-11-27） | 新增 `header`（`MtprotoHeader` 选项矩阵，85 case × 两份头），门禁 22 → 23；台账 F118–F120；顺带修掉 oracle 的 ANSI argv 假分歧（F119） |
 | round 20（2026-11-27） | JSON 面随机语料扩种子 2027–2030（3,400 条 + 80 段/1,800 步零分歧，F121），门禁 fuzz 项改为 4 个种子 |
-| 已知缺口 | 九条，全部带 blocker：真实登录（`ready` 之后没有 MTProto 引擎，异步 lane 只覆盖未授权态）、`getOption commit_hash`（两侧各烘焙 HEAD）、第二次运行顺序（oracle 并发）、非空号码 `setAuthenticationPhoneNumber`（联网挂起）、`addLogMessage` level ≤ 0（oracle abort）、含非法 UTF-8 的语言包值（`td::JsonBuilder` 是 CHECK）、C ABI 之下、`check_packet` 的 `Ignore too old or too new` 分支在 update 后恒真（F113）、`bad_msg_notification` 的 `error_code`→动作表被 private actor 挡住（T56 / B11）。B1 的四段与 B7 都已关闭。**纯函数面无已知行为差异**（CONTROL 为空，改由管道自检接手） |
+| round 21（2026-11-27） | C 档可判性探测：`SessionConnection` 可用假传输驱动，六场景事件符合预期且两次运行一致（F122/F123）；C 档从 blocked 降为「待立项」 |
+| 已知缺口 | 九条，全部带 blocker：真实登录（`ready` 之后没有 MTProto 引擎，异步 lane 只覆盖未授权态）、`getOption commit_hash`（两侧各烘焙 HEAD）、第二次运行顺序（oracle 并发）、非空号码 `setAuthenticationPhoneNumber`（联网挂起）、`addLogMessage` level ≤ 0（oracle abort）、含非法 UTF-8 的语言包值（`td::JsonBuilder` 是 CHECK）、C ABI 之下、`check_packet` 的 `Ignore too old or too new` 分支在 update 后恒真（F113）、`rpc_result`/容器解析与 `bad_msg_notification` 策略（B11 / T61：oracle 骨架已跑通，F122，差立项与判据）。B1 的四段与 B7 都已关闭。**纯函数面无已知行为差异**（CONTROL 为空，改由管道自检接手） |
 
 换目标或大改前先重跑 `tools/verify.py`；数字变了就把旧快照行置 `过期`，另起一行记新快照（1 = F044，2 = F052，3 = F056，4 = F058，5 = F061，6 = F064，7 = F076/F077，8 = F078，9 = F079，10 = F080，11 = F081，12 = F082，13 = F083，14 = F087/F088，15 = F090–F095，16 = F096–F098，17 = F113–F115，18 = F116/F117，19 = F118–F120）。注意 Rust dll 的 md5 **随 HEAD 变化**（`build.rs` 烘焙 commit hash），跨轮只比大小与 warning 数。
 

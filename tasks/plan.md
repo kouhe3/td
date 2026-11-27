@@ -105,6 +105,8 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T57 | 协议面第十块：`ProxySecret` 全公开行为（`from_link` 三级回退、`from_binary` 长度规则与 truncate、`get_encoded_secret`、`get_proxy_secret`、`use_random_padding`、`emulate_tls`、`get_domain`）与三类错误文案；oracle = `tools/fixtures/proxy_secret_probe.cpp`，判据 = 41 个手写 + 87 个随机 case 逐字节相同 | F116, F117 | done（`PASS cases=128`、`corpus md5=a001043c88beac8cf144567798a7d769`；RED 由 17B 接受条件放宽提供） |
 | T58 | 协议面第十一块：把 `MtprotoHeader` 从单点扩成选项矩阵（代理类型 × emulator × 语言包/语言码 × tz_offset × 非 ASCII/长字符串），同时比 default 与 anonymous；oracle = `tools/fixtures/header_probe.cpp`，判据 = 85 case 两份头逐字节相同 | F118, F119, F120 | done（`PASS cases=85`；RED 由 emulator 位 `1<<10`→`1<<11` 提供；顺带修掉 oracle 的 ANSI argv 坑，F119） |
 | T59 | JSON 面随机语料扩种子：2027–2030 各 850 条 + 序列，记录语料指纹；门禁的 fuzz 项从 3 个种子加到 4 个（2027） | F121 | done（3,400 条 + 80 段/1,800 步零分歧；门禁 fuzz 项 4 种子） |
+| T60 | C 档可判性探测：用假 `RawConnection` + 假回调驱动 `SessionConnection`，注入 rpc_result / bad_server_salt / bad_msg_notification(16/17/99) / 容器，看事件是否可复现 | F122, F123 | done（**可驱动**；6 个场景事件符合预期，两次运行逐字节相同；布局两坑记入 F123） |
+| T61 | C 档实现：以 `session_probe` 为骨架造「可注入字节」的 oracle，再写 Rust 侧的 session 策略子集（rpc_result/容器解析、error_code→动作、换盐）并接入判据 | F122, F123 | pending（需用户决定是否立项；范围建议先只做这四类维护消息，不含真实网络） |
 
 ## 变更记录
 
@@ -152,3 +154,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F119 | T58, 探针 | 非 ASCII 参数的假分歧来自 Windows ANSI argv（GBK）；oracle 探针改读宽命令行再转 UTF-8，判据才落到被测物上 |
 | 2026-11-27 | F120 | T58 | emulator 位变异被抓在 `DIFF … 0 1 none`；证明 flags 的每一位都在判据里 |
 | 2026-11-27 | F121 | T59, 门禁 | 随机语料扩 4 个新种子：人工 sweep 3,400 条零分歧，门禁只多纳入 1 个种子（2027），把门禁增量控制在几秒内 |
+| 2026-11-27 | F122, F123 | T60, T61, coverage-domain | C 档的可判性门已过：`SessionConnection` 可用假传输驱动，C 档不再是「无 oracle」；`rpc_result`/容器的两个布局坑写进台账，避免下一个人按「标准 TL」注入而误判 |
