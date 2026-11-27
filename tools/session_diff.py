@@ -61,6 +61,14 @@ def bad_server_salt(bad_msg_id: int, seq: int, code: int, salt: int) -> bytes:
     return i32(0xEDAB447B) + i64(bad_msg_id) + i32(seq) + i32(code) + i64(salt)
 
 
+def msgs_ack(message_ids: list[int]) -> bytes:
+    return i32(0x62D6B459) + i32(0x1CB5C415) + i32(len(message_ids)) + b"".join(i64(mid) for mid in message_ids)
+
+
+def new_session_created(first_message_id: int, unique_id: int, salt: int) -> bytes:
+    return i32(0x9EC20908) + i64(first_message_id) + i64(unique_id) + i64(salt)
+
+
 def envelope(message_id: int, seq: int, body: bytes) -> bytes:
     return i64(message_id) + i32(seq) + i32(len(body)) + body
 
@@ -97,6 +105,15 @@ def build_script(now: int, first_code: int = 16) -> str:
     lines.append("newconn 777 1234")
     lines.append(f"in {mid(41)} 1 {i32(0x12345678).hex()}")
     lines.append(f"in {mid(41)} 1 {i32(0x12345678).hex()}")
+    # msgs_ack: one ack callback per id
+    lines.append("newconn 777 1234")
+    lines.append(f"in {mid(43)} 1 {msgs_ack([4001, 4002]).hex()}")
+    # new_session_created: unique_id and first_message_id reach the callback
+    lines.append("newconn 777 1234")
+    lines.append(f"in {mid(45)} 1 {new_session_created(4001, 0x1122334455667788, 0x99AABBCCDDEEFF00).hex()}")
+    # rpc_result with req_msg_id == 0 is rejected and closes the session
+    lines.append("newconn 777 1234")
+    lines.append(f"in {mid(47)} 1 {rpc_ok(0).hex()}")
     return "\n".join(lines) + "\n"
 
 

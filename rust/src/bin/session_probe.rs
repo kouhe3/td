@@ -28,6 +28,9 @@ const RPC_RESULT: u32 = 0xf35c_6d01;
 const RPC_ERROR: u32 = 0x2144_ca19;
 const BAD_MSG_NOTIFICATION: u32 = 0xa7ef_f811;
 const BAD_SERVER_SALT: u32 = 0xedab_447b;
+const MSGS_ACK: u32 = 0x62d6_b459;
+const NEW_SESSION_CREATED: u32 = 0x9ec2_0908;
+const VECTOR: u32 = 0x1cb5_c415;
 
 fn now_seconds() -> f64 {
     SystemTime::now()
@@ -175,6 +178,12 @@ impl Events {
     fn on_salt_updated(&mut self) {
         self.line("event=server_salt_updated".to_string());
     }
+    fn on_ack(&mut self, message_id: u64) {
+        self.line(format!("event=ack msg={message_id}"));
+    }
+    fn on_new_session(&mut self, unique_id: u64, first_message_id: u64) {
+        self.line(format!("event=new_session unique={unique_id} first={first_message_id}"));
+    }
     fn on_result_ok(&mut self, req: u64, original: usize, size: usize) {
         self.line(format!("event=result_ok req={req} original={original} size={size}"));
     }
@@ -306,6 +315,27 @@ impl Driver {
             let _seq = reader.int();
             let code = reader.int().ok_or("Failed to parse mtproto_api::bad_msg_notification")? as i32;
             return self.on_bad_msg(message_id, bad_msg_id, code);
+        }
+        if constructor == MSGS_ACK {
+            let mut reader = Reader::new(rest);
+            let vector = reader.int().ok_or("Failed to parse mtproto_api::msgs_ack")?;
+            if vector != VECTOR {
+                return Err("Failed to parse mtproto_api::msgs_ack".to_string());
+            }
+            let count = reader.int().ok_or("Failed to parse mtproto_api::msgs_ack")? as i32;
+            for _ in 0..count {
+                let message_id = reader.long().ok_or("Failed to parse mtproto_api::msgs_ack")?;
+                self.events.on_ack(message_id);
+            }
+            return Ok(());
+        }
+        if constructor == NEW_SESSION_CREATED {
+            let mut reader = Reader::new(rest);
+            let first_message_id = reader.long().ok_or("Failed to parse mtproto_api::new_session_created")?;
+            let unique_id = reader.long().ok_or("Failed to parse mtproto_api::new_session_created")?;
+            let _salt = reader.long().ok_or("Failed to parse mtproto_api::new_session_created")?;
+            self.events.on_new_session(unique_id, first_message_id);
+            return Ok(());
         }
         // Unknown constructor: treat as an update.
         match self.session.update_checker.check(message_id) {

@@ -26,7 +26,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1561 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 协议 / RPC 面 | 12 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 35 op/88 行 | 各自的 `--selftest`、F103–F125 |
+| 协议 / RPC 面 | 12 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 41 op/104 行 | 各自的 `--selftest`、F103–F125 |
 | 门禁 | 24 项（本轮新增 `session`） | `uv run python tools/verify.py` |
 | 定义域 | 85 个 measured cell、6 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -o '\| measured（' docs/coverage-domain.md \| wc -l` / `grep -o '\| unmeasured' docs/coverage-domain.md \| wc -l` |
 
@@ -106,7 +106,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T58 | 协议面第十一块：把 `MtprotoHeader` 从单点扩成选项矩阵（代理类型 × emulator × 语言包/语言码 × tz_offset × 非 ASCII/长字符串），同时比 default 与 anonymous；oracle = `tools/fixtures/header_probe.cpp`，判据 = 85 case 两份头逐字节相同 | F118, F119, F120 | done（`PASS cases=85`；RED 由 emulator 位 `1<<10`→`1<<11` 提供；顺带修掉 oracle 的 ANSI argv 坑，F119） |
 | T59 | JSON 面随机语料扩种子：2027–2030 各 850 条 + 序列，记录语料指纹；门禁的 fuzz 项从 3 个种子加到 4 个（2027） | F121 | done（3,400 条 + 80 段/1,800 步零分歧；门禁 fuzz 项 4 种子） |
 | T60 | C 档可判性探测：用假 `RawConnection` + 假回调驱动 `SessionConnection`，注入 rpc_result / bad_server_salt / bad_msg_notification(16/17/99) / 容器，看事件是否可复现 | F122, F123 | done（**可驱动**；6 个场景事件符合预期，两次运行逐字节相同；布局两坑记入 F123） |
-| T61 | C 档实现：以 `session_probe` 为骨架造「可注入字节」的 oracle，再写 Rust 侧的 session 策略子集（rpc_result/容器解析、error_code→动作、换盐）并接入判据 | F122, F123 | done（`session_diff.py`：35 op/88 行、`PASS`；RED 由 code 20 文案变异提供，F125；未覆盖 req=0 / gzip / 其它 mtproto_api 类型，记在 F124） |
+| T61 | C 档实现：以 `session_probe` 为骨架造「可注入字节」的 oracle，再写 Rust 侧的 session 策略子集（rpc_result/容器解析、error_code→动作、换盐），并扩到 `msgs_ack` / `new_session_created` / `req_msg_id==0` | F122–F125 | done（`session_diff.py`：41 op/104 行、`PASS`；两次变异 RED：code 20 文案、new_session 参数对调；gzip 与其它 mtproto_api 类型仍未覆盖，记在 F124） |
 
 ## 变更记录
 
@@ -157,3 +157,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F122, F123 | T60, T61, coverage-domain | C 档的可判性门已过：`SessionConnection` 可用假传输驱动，C 档不再是「无 oracle」；`rpc_result`/容器的两个布局坑写进台账，避免下一个人按「标准 TL」注入而误判 |
 | 2026-11-27 | F124 | T61, 仪器 | C 档实现收口：oracle 改成脚本化（`newconn`/`in`/`salt`），Rust 侧复刻解析与 11 个 error_code 分支；脚本里的 message id 带墙钟，指纹按去掉时间戳的模板算 |
 | 2026-11-27 | F125 | T61 | 变异只改 code 20 的文案，首个分歧落在 `DIFF line 52`；证明策略表逐条在判据里 |
+| 2026-11-27 | F124, F125 | T61 | C 档扩到 ack / new_session / req=0：41 op / 104 行；新增一次参数对调的变异，抓到 `DIFF line 99` |
