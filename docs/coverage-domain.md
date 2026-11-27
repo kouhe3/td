@@ -127,6 +127,7 @@
 | `tdutils::Slice` 的查找与比较（`find` / `rfind` 的 `npos`、`==` / `!=`、`<` 的 unsigned 字节序与前缀规则） | measured（F151/F152：595 行，17 载荷 × 9 字节 × 2 + 17×17 比较；F152 三次变异分别打中末字节、signedness、前缀长度） | 逐字节 |
 | `tdutils` 的前后缀判定（`begins_with` / `ends_with`，`misc.h` 的自由函数） | measured（F153/F154：578 行，17 个载荷的两两有序对 × 2；超长 affix 短路与空 affix 的 one-past-end 零长 slice 都覆盖；F154 三次变异） | 逐字节 |
 | `tdutils::Slice` / `MutableSlice` 的 `back()` / `operator[]`（合法域）与 `data`/`begin`/`end`/`ubegin`/`uend` 的位移一致性 | measured（F155/F156：106 行 + 5 个 `--check` 例，8 个载荷 × 两类视图 × 两种移位；空 slice 的 `back()` abort 单独判，越界 `operator[]` 是 UB 记 unmeasured） | 逐字节 + 判定（abort 与否） |
+| `tdutils` 的 `Hash.h`（`AbslHash` / `TdHash` / `Hasher`，`TD_HAVE_ABSL 0` 配置） | measured（F157/F158：70 行，i32/i64/u32/u64/bool/char/uchar/pair 与 Hasher 链；符号扩展、`char` 有符号、pair 无序性是判据核心；absl 配置与 Slice/string 特化 unmeasured） | 逐字节 |
 
 ## 边界之外（永久不在本仪器范围）
 

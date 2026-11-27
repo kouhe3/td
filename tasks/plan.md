@@ -1,6 +1,6 @@
 # Plan — RIIR（JSON/C ABI 边界差分实现）
 
-gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=36 | status=running | date=2026-11-27
+gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=37 | status=running | date=2026-11-27
 
 ## 范围
 
@@ -26,9 +26,9 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1561 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 协议 / RPC 面 | 25 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 72 op/182 行、web_proxy 26 case、misc 80 case、tls_init 16 扩展 × 8 样本/侧、dh_handshake 32 case、rsa 23 case、public_rsa 9 case、public_rsa_cdn 21 行、buffer_slice 34 行、dc_id 273 行、slice 119 行 + 17 check、slice_cmp 595 行、slice_prefix 578 行、slice_ptr 106 行 + 5 check | 各自的 `--selftest`、F103–F156 |
-| 门禁 | 37 项（本轮新增 `slice_ptr`） | `uv run python tools/verify.py` |
-| 定义域 | 84 个 measured 行、6 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c '\| measured（' docs/coverage-domain.md` \| `grep -c '\| unmeasured \|' docs/coverage-domain.md` |
+| 协议 / RPC 面 | 26 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 72 op/182 行、web_proxy 26 case、misc 80 case、tls_init 16 扩展 × 8 样本/侧、dh_handshake 32 case、rsa 23 case、public_rsa 9 case、public_rsa_cdn 21 行、buffer_slice 34 行、dc_id 273 行、slice 119 行 + 17 check、slice_cmp 595 行、slice_prefix 578 行、slice_ptr 106 行 + 5 check、hash 70 行 | 各自的 `--selftest`、F103–F158 |
+| 门禁 | 38 项（本轮新增 `hash`） | `uv run python tools/verify.py` |
+| 定义域 | 85 个 measured 行、6 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c '\| measured（' docs/coverage-domain.md` \| `grep -c '\| unmeasured \|' docs/coverage-domain.md` |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
 
@@ -124,6 +124,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T75 | 换到同一文件的查找与比较：`find` / `rfind`（含 `npos`、首/末命中、空 slice）与 `==` / `!=` / `<`（公共前缀、**unsigned char** 序、前缀短者小）；纯值面，无 abort 分支 | F151, F152 | done（`slice_cmp_diff.py`：595 行、`PASS`，0.3 s；三次变异 RED：find 漏末字节、i8 序、equals 丢长度） |
 | T76 | 收掉 `misc.h` 的前后缀判定：`begins_with` / `ends_with` 的 17×17 全对（超长 affix 返回 false、空 affix 恒 true 且走 one-past-end 零长 slice、含 `0x00`/`0x80`/`0xff` 载荷） | F153, F154 | done（`slice_prefix_diff.py`：578 行、`PASS`，0.3 s；三次变异 RED：begins 读尾、ends 读头、空后缀返 false） |
 | T77 | 收 `Slice`/`MutableSlice` 的访问与指针：`back()`（尾部取值 + 空 slice 的 CHECK abort）、`operator[]`（合法域 `[0, size)`）、`data/begin/end/ubegin/uend` 四件套与 `remove_prefix` 后的整体平移；越界 `operator[]` 是 UB，记 unmeasured | F155, F156 | done（`slice_ptr_diff.py`：106 行 + 5 check、`PASS`，0.3 s；三次变异 RED：back 取头、index 忽略 begin、remove_prefix 双推） |
+| T78 | 换面到 `td/utils/Hash.h`：`AbslHash<T>`（本仓库 `TD_HAVE_ABSL 0` → `TdHash`）对 i32/i64/u32/u64/bool/char/uchar/pair 的取值，与 `Hasher` 的 init + 链式 `combine`；重点是有符号扩展与 pair 的异或无序性 | F157, F158 | done（`hash_diff.py`：70 行、`PASS`，0.3 s；三次变异 RED：i32 零扩展、pair 顺序敏感、char 无符号） |
 
 ## 变更记录
 
@@ -196,3 +197,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F134–F152 | coverage-domain | 回填 round 26–34 漏记的 8 条 lane（dh_handshake / rsa / public_rsa / public_rsa_cdn / buffer_slice / dc_id / slice / slice_cmp），并把 misc 的 case 数、`clean_name` 的状态、`rpc_result` 的 gzip/pong/future_salts 备注改成已判；定义域 73 → 82 measured、7 → 6 unmeasured，计数口径改成 `grep -c`（原来 `grep -o` 的口径会重复计数） |
 | 2026-11-27 | F153, F154 | T76, 门禁 | 新增 slice_prefix lane：`misc.h` 的 `begins_with` / `ends_with`（超长 affix 短路、空 affix 走 one-past-end 零长 slice、头部/尾部窗口），578 行 17×17 全对；门禁 35 → 36 |
 | 2026-11-27 | F155, F156 | T77, 门禁 | 新增 slice_ptr lane：`back()` / `operator[]`（合法域）与 `data`/`begin`/`end`/`ubegin`/`uend` 的字节偏移一致性，Slice 与 MutableSlice 双轨 + 两种移位；空 slice 的 `back()` 走 `--check` abort 判据，越界 `operator[]` 记 unmeasured（UB）；门禁 36 → 37 |
+| 2026-11-27 | F157, F158 | T78, 门禁 | 新增 hash lane：`Hash.h` 在 `TD_HAVE_ABSL 0` 下的取值——`size_t(v)` 的符号扩展、`char` 有符号、pair 的异或无序性、`Hasher` 初值与链式 combine；absl 配置记 unmeasured（进程级随机种子）；门禁 37 → 38 |
