@@ -1,6 +1,6 @@
 # Plan — RIIR（JSON/C ABI 边界差分实现）
 
-gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=25 | status=running | date=2026-11-27
+gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=32 | status=running | date=2026-11-27
 
 ## 范围
 
@@ -10,7 +10,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 - 不在范围内：`tddb` / `td/mtproto` / `tdactor` / `tdutils`（合计 6.4 万行）——它们在该边界之下，互操作要匹配 C++ ABI，不可行（记 `unmeasured`，见 `docs/coverage-domain.md`）。
 - 不碰上游 C++ 源码；Rust 侧工程在本仓库 `rust/`（T6 已从 `C:/tmp/td-rs-probe` 移入），本仓库同时放台账、仪器、计划与实现。
 
-## 进度（2026-11-27，round 24）
+## 进度（2026-11-27，round 32）
 
 两个口径分开看，不要混成一句百分比。
 
@@ -26,8 +26,8 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1561 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 协议 / RPC 面 | 15 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 72 op/182 行、web_proxy 26 case、misc 44 case、tls_init 16 扩展 × 8 样本/侧 | 各自的 `--selftest`、F103–F133 |
-| 门禁 | 27 项（本轮新增 `tls_init`） | `uv run python tools/verify.py` |
+| 协议 / RPC 面 | 21 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 72 op/182 行、web_proxy 26 case、misc 80 case、tls_init 16 扩展 × 8 样本/侧、dh_handshake 32 case、rsa 23 case、public_rsa 9 case、public_rsa_cdn 21 行、buffer_slice 34 行、dc_id 273 行 | 各自的 `--selftest`、F103–F148 |
+| 门禁 | 33 项（本轮新增 `dc_id`） | `uv run python tools/verify.py` |
 | 定义域 | 87 个 measured cell、7 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -o '\| measured（' docs/coverage-domain.md \| wc -l` / `grep -o '\| unmeasured' docs/coverage-domain.md \| wc -l` |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
@@ -119,6 +119,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T70 | 换到「动态表 + 生命周期」面：`PublicRsaKeySharedCdn` 的 `add_rsa` / `get_rsa_key` / `drop_keys` / `has_keys`，脚本驱动 22 行；Rust 侧只需指纹集合（返回的是请求指纹） | F142, F143 | done（`public_rsa_cdn_diff.py`：21 行、`PASS`；三次变异 RED：drop 不清空、只看首个 key、has 取反） |
 | T71 | 换到内存所有权面：`tdutils::BufferSlice` 的 clone / copy / as_mutable_slice / confirm_read / truncate / after，脚本驱动 37 行；判据形态 = **别名可见性**（clone 共享、copy 隔离、无 COW） | F144, F145 | done（`buffer_slice_diff.py`：34 行、`PASS`；三次变异 RED：clone 变深拷贝、confirm_read 不推进、mutate 忽略 begin） |
 | T72 | 尝试 `ChainBufferWriter` / `ChainBufferReader`：append / extract_reader / prepare_read / advance / clone / cut_head / sync_with_writer | F146 | blocked（`prepare_read` 只给当前节点且节点边界依赖分配策略；`advance` / `move_as_buffer_slice` 在 clone 上 CHECK 失败；探针撤回） |
+| T73 | 换回小面：`td/telegram/net/DcId` 的静态 `is_valid` / `create` / `from_value` 边界与派生谓词（`is_empty` / `is_main` / `is_exact` / `get_value` / `==` / `<` / `operator<<`），脚本驱动 276 行；判据形态 = 逐字节（纯值面，无随机源） | F147, F148 | done（`dc_id_diff.py`：273 行、`PASS`；三次变异 RED：上界 `<`、create 回退、is_main 丢失） |
 
 ## 变更记录
 
@@ -185,3 +186,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F142, F143 | T70 | 新增 public_rsa_cdn lane：动态表的 add / get / drop / has（`DcId::external(2)`），去重分支不可观察记在 F142；门禁 30 → 31 |
 | 2026-11-27 | F144, F145 | T71 | 新增 buffer_slice lane：clone 别名 / copy 深拷贝 / `as_mutable_slice` 无 COW / confirm_read / truncate / after（34 行）；顺带记下脚本字节参数的十进制坑，门禁 31 → 32 |
 | 2026-11-27 | F146 | T72 | 尝试 ChainBuffer 跨节点读，三条路都堵（`prepare_read` 只给当前节点、`advance`/`move_as_buffer_slice` 在 clone 上 CHECK 失败），探针撤回、标 blocked；这本身是「先判可判性再写判据」的一次实践 |
+| 2026-11-27 | F147, F148 | T73, 门禁 | 新增 dc_id lane：DcId 值面边界（`create` / `from_value` / `is_valid` + 派生谓词与打印），门禁 32 → 33；`get_raw_id` / `internal` / `external` 的 CHECK 分支不覆盖（进程级 abort，两侧运行时不同），记 unmeasured |
