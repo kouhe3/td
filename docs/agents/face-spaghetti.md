@@ -65,6 +65,7 @@
 | round 17（2026-11-27） | 新增 `auth_data`（salt / 时间差 / 窗口 / `check_packet`，3,026 步）与 `svc_msg`（7 个维护类服务消息，41 case）两条 lane，门禁 19 → 21，全绿 44.7 s；台账 F113–F115 |
 | round 18（2026-11-27） | 新增 `proxy_secret`（`ProxySecret` 全公开行为，128 case，41 手写 + 87 随机），门禁 21 → 22；台账 F116–F117 |
 | round 19（2026-11-27） | 新增 `header`（`MtprotoHeader` 选项矩阵，85 case × 两份头），门禁 22 → 23；台账 F118–F120；顺带修掉 oracle 的 ANSI argv 假分歧（F119） |
+| round 20（2026-11-27） | JSON 面随机语料扩种子 2027–2030（3,400 条 + 80 段/1,800 步零分歧，F121），门禁 fuzz 项改为 4 个种子 |
 | 已知缺口 | 九条，全部带 blocker：真实登录（`ready` 之后没有 MTProto 引擎，异步 lane 只覆盖未授权态）、`getOption commit_hash`（两侧各烘焙 HEAD）、第二次运行顺序（oracle 并发）、非空号码 `setAuthenticationPhoneNumber`（联网挂起）、`addLogMessage` level ≤ 0（oracle abort）、含非法 UTF-8 的语言包值（`td::JsonBuilder` 是 CHECK）、C ABI 之下、`check_packet` 的 `Ignore too old or too new` 分支在 update 后恒真（F113）、`bad_msg_notification` 的 `error_code`→动作表被 private actor 挡住（T56 / B11）。B1 的四段与 B7 都已关闭。**纯函数面无已知行为差异**（CONTROL 为空，改由管道自检接手） |
 
 换目标或大改前先重跑 `tools/verify.py`；数字变了就把旧快照行置 `过期`，另起一行记新快照（1 = F044，2 = F052，3 = F056，4 = F058，5 = F061，6 = F064，7 = F076/F077，8 = F078，9 = F079，10 = F080，11 = F081，12 = F082，13 = F083，14 = F087/F088，15 = F090–F095，16 = F096–F098，17 = F113–F115，18 = F116/F117，19 = F118–F120）。注意 Rust dll 的 md5 **随 HEAD 变化**（`build.rs` 烘焙 commit hash），跨轮只比大小与 warning 数。

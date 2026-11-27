@@ -64,7 +64,7 @@ GATES = [
     ("svc_msg", [PYTHON, "tools/svc_msg_diff.py", "--selftest"]),
     ("proxy_secret", [PYTHON, "tools/proxy_secret_diff.py", "--selftest"]),
     ("header", [PYTHON, "tools/header_diff.py", "--selftest"]),
-    ("fuzz", [PYTHON, "tools/tdjson_fuzz.py", "--seeds", "20261126,7,99"]),
+    ("fuzz", [PYTHON, "tools/tdjson_fuzz.py", "--seeds", "20261126,7,99,2027"]),
     ("client_options", [PYTHON, "tools/gen_client_options.py", "--check"]),
     ("client_lane", [PYTHON, "tools/client_diff.py"]),
     ("tl_schema", [PYTHON, "tools/gen_tl_schema.py", "--check"]),
