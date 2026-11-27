@@ -85,6 +85,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T38 | 加深随机语料：构造号形态的 `@type`（用构建产物的 id 表）、嵌套深度 3、按 action 白名单注入非法 UTF-8、8 个日志 action 的 20 段自恢复随机序列。过程中发现两个生成器的构造号是错的（源码行 crc32 vs 规范化 crc32，422/3464 不同），改为读 `td/generate/auto/.../td_api.h` | F091–F095 | done（11 个种子 16,150 条 + 220 段/4,958 步零分歧；抓到 6 类真实分歧：id 表、两处 UTF-8 文案、`addLogMessage` abort、两处日志级别夹紧） |
 | T39 | 异步请求路径：`td_send` 任意函数按三支分流——解析错误/同步 action/同步 option 本地作答，其余进 Td（未授权态回 401）；`@extra` 回显插在 `@client_id` 之前；`getOption` 走异步时非同步选项回 `optionValueEmpty`。顺带把 6 条全局 update 改成启动后自发（F097 更正 F079） | F096, F097 | done（`client_diff.py` 的 async 段 16 条请求逐条相同；首启/auth/legacy 三段仍绿） |
 | T40 | 随机语料进门槛：`--seeds` 支持多种子，变异加入结构改动（改/删/加字段、容器压 null）；门禁跑 3 个种子 | F098 | done（2,550 条 + 60 段/1,351 步零分歧） |
+| T41 | 目标定位（用户决定 2026-11-27）：首要目标是检验 face-spaghetti skill 本身，RIIR 是练习载体；此后不按「交付可上生产的 TDLib-RS」推进，覆盖数只作样本有效性 | F099 | done（定位写入 `docs/agents/face-spaghetti.md` 的「目标框架」） |
 
 ## 变更记录
 
@@ -109,3 +110,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-26 | F092–F094 | T38, Rust 实现 | 三处判据修正：`@type` 解码失败的文案不带前缀、字段级 UTF-8 失败带前缀、负日志级别的两种夹紧。`addLogMessage` level ≤ 0 是 oracle abort，排除出语料并记不可测（F093） |
 | 2026-11-26 | F096, F097 | T39, 仪器 | 异步路径不再「静默丢弃」：按 Td 的真实分流实现三支，并把 6 条全局 update 从「首个请求触发」改成「启动后自发」。async 段只比每条请求自己的应答，突发归 auth 段——这样判据不受排空时机影响 |
 | 2026-11-26 | F098 | T40, 门槛 | 随机语料从单种子扩到 3 个种子进门槛，变异加入结构改动；门槛总时长 34 s → 50 s 左右，仍是一分钟内 |
+| 2026-11-27 | 用户决定（目标 B）；F099 | 全部 | 目标定为检验 face-spaghetti skill、RIIR 为练习；验收从覆盖率改为「skill 在本对象上是否有效 + 缺口落盘」，判据时间线的误记以 F099 勘误 |

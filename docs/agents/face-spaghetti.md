@@ -2,6 +2,14 @@
 
 本仓库的 face-spaghetti 配置。`SKILL.md` §9 读它；手改优先于重跑 setup。
 
+## 目标框架
+
+首要目标是**检验 face-spaghetti skill 本身**，RIIR 是练习载体（用户决定，2026-11-27）；「产出可上生产的 TDLib-RS」不是目标。
+
+- 验收不是覆盖率：`MATCH 1561` 只说明样本有效，不说明交付。
+- 本仓库落在 skill 的**排除区**：有文档、有测试、有可执行 oracle，skill 的适用范围是「未文档化、未测试」。这一轮被检验的是「有 oracle 的对象怎么做」，属它的边缘。
+- 判据来源 = 只有实现（`docs/adr/0001-json-abi-as-the-rewrite-boundary.md` 的边界），且上游每天更新 → 只有快照态、没有完成态（快照见 `docs/gate-*.json`）。
+
 ## 落点
 
 | 项 | 路径 / 命令 | 覆盖开关 |
