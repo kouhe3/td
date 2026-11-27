@@ -31,6 +31,10 @@ const BAD_SERVER_SALT: u32 = 0xedab_447b;
 const MSGS_ACK: u32 = 0x62d6_b459;
 const NEW_SESSION_CREATED: u32 = 0x9ec2_0908;
 const VECTOR: u32 = 0x1cb5_c415;
+const MSG_DETAILED_INFO: u32 = 0x276d_3ec6;
+const MSG_NEW_DETAILED_INFO: u32 = 0x809d_b6df;
+const MSGS_ALL_INFO: u32 = 0x8cc0_d131;
+const MSGS_STATE_INFO: u32 = 0x04de_b57d;
 
 fn now_seconds() -> f64 {
     SystemTime::now()
@@ -184,6 +188,11 @@ impl Events {
     fn on_new_session(&mut self, unique_id: u64, first_message_id: u64) {
         self.line(format!("event=new_session unique={unique_id} first={first_message_id}"));
     }
+    fn on_message_info(&mut self, message_id: u64, state: i32, answer: u64, size: i32, source: i32) {
+        self.line(format!(
+            "event=message_info msg={message_id} state={state} answer={answer} size={size} source={source}"
+        ));
+    }
     fn on_result_ok(&mut self, req: u64, original: usize, size: usize) {
         self.line(format!("event=result_ok req={req} original={original} size={size}"));
     }
@@ -229,6 +238,14 @@ impl<'a> Reader<'a> {
         let pad = aligned - 1 - len;
         self.take(pad)?;
         Some(String::from_utf8_lossy(bytes).into_owned())
+    }
+    fn bytes(&mut self) -> Option<Vec<u8>> {
+        let len = self.take(1)?[0] as usize;
+        let bytes = self.take(len)?.to_vec();
+        let aligned = (1 + len).div_ceil(4) * 4;
+        let pad = aligned - 1 - len;
+        self.take(pad)?;
+        Some(bytes)
     }
 }
 
@@ -336,6 +353,48 @@ impl Driver {
             let _salt = reader.long().ok_or("Failed to parse mtproto_api::new_session_created")?;
             self.events.on_new_session(unique_id, first_message_id);
             return Ok(());
+        }
+        if constructor == MSG_DETAILED_INFO {
+            let mut reader = Reader::new(rest);
+            let msg_id = reader.long().ok_or("Failed to parse mtproto_api::msg_detailed_info")?;
+            let answer_msg_id = reader.long().ok_or("Failed to parse mtproto_api::msg_detailed_info")?;
+            let bytes = reader.int().ok_or("Failed to parse mtproto_api::msg_detailed_info")? as i32;
+            let status = reader.int().ok_or("Failed to parse mtproto_api::msg_detailed_info")? as i32;
+            self.events.on_message_info(msg_id, status, answer_msg_id, bytes, 2);
+            return Ok(());
+        }
+        if constructor == MSG_NEW_DETAILED_INFO {
+            let mut reader = Reader::new(rest);
+            let answer_msg_id = reader.long().ok_or("Failed to parse mtproto_api::msg_new_detailed_info")?;
+            let bytes = reader.int().ok_or("Failed to parse mtproto_api::msg_new_detailed_info")? as i32;
+            let status = reader.int().ok_or("Failed to parse mtproto_api::msg_new_detailed_info")? as i32;
+            let _ = status;
+            self.events.on_message_info(0, 0, answer_msg_id, bytes, 0);
+            return Ok(());
+        }
+        if constructor == MSGS_ALL_INFO {
+            let mut reader = Reader::new(rest);
+            let vector = reader.int().ok_or("Failed to parse mtproto_api::msgs_all_info")?;
+            if vector != VECTOR {
+                return Err("Failed to parse mtproto_api::msgs_all_info".to_string());
+            }
+            let count = reader.int().ok_or("Failed to parse mtproto_api::msgs_all_info")? as usize;
+            let mut ids = Vec::with_capacity(count);
+            for _ in 0..count {
+                ids.push(reader.long().ok_or("Failed to parse mtproto_api::msgs_all_info")?);
+            }
+            let info = reader.bytes().ok_or("Failed to parse mtproto_api::msgs_all_info")?;
+            if ids.len() != info.len() {
+                return Err("message count mismatch".to_string());
+            }
+            for (index, id) in ids.iter().enumerate() {
+                self.events.on_message_info(*id, info[index] as i32, 0, 0, 1);
+            }
+            return Ok(());
+        }
+        if constructor == MSGS_STATE_INFO {
+            // No service query is ever registered in this model.
+            return Err("Unknown msgs_state_info".to_string());
         }
         // Unknown constructor: treat as an update.
         match self.session.update_checker.check(message_id) {

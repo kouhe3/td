@@ -69,6 +69,27 @@ def new_session_created(first_message_id: int, unique_id: int, salt: int) -> byt
     return i32(0x9EC20908) + i64(first_message_id) + i64(unique_id) + i64(salt)
 
 
+def tl_bytes(data: bytes) -> bytes:
+    pad = (4 - (1 + len(data)) % 4) % 4
+    return bytes([len(data)]) + data + b"\0" * pad
+
+
+def msg_detailed_info(msg_id: int, answer_msg_id: int, size: int, status: int) -> bytes:
+    return i32(0x276D3EC6) + i64(msg_id) + i64(answer_msg_id) + i32(size) + i32(status)
+
+
+def msg_new_detailed_info(answer_msg_id: int, size: int, status: int) -> bytes:
+    return i32(0x809DB6DF) + i64(answer_msg_id) + i32(size) + i32(status)
+
+
+def msgs_all_info(message_ids: list[int], info: bytes) -> bytes:
+    return i32(0x8CC0D131) + i32(0x1CB5C415) + i32(len(message_ids)) + b"".join(i64(mid) for mid in message_ids) + tl_bytes(info)
+
+
+def msgs_state_info(req_msg_id: int, info: bytes) -> bytes:
+    return i32(0x04DEB57D) + i64(req_msg_id) + tl_bytes(info)
+
+
 def envelope(message_id: int, seq: int, body: bytes) -> bytes:
     return i64(message_id) + i32(seq) + i32(len(body)) + body
 
@@ -114,6 +135,15 @@ def build_script(now: int, first_code: int = 16) -> str:
     # rpc_result with req_msg_id == 0 is rejected and closes the session
     lines.append("newconn 777 1234")
     lines.append(f"in {mid(47)} 1 {rpc_ok(0).hex()}")
+    # detailed-info family and per-message states
+    lines.append("newconn 777 1234")
+    lines.append(f"in {mid(49)} 1 {msg_detailed_info(4001, 4002, 30, 40).hex()}")
+    lines.append(f"in {mid(51)} 1 {msg_new_detailed_info(4003, 31, 41).hex()}")
+    lines.append("newconn 777 1234")
+    lines.append(f"in {mid(53)} 1 {msgs_all_info([4001, 4002], bytes([1, 5])).hex()}")
+    # no service query is registered, so msgs_state_info is an error
+    lines.append("newconn 777 1234")
+    lines.append(f"in {mid(55)} 1 {msgs_state_info(4001, bytes([1])).hex()}")
     return "\n".join(lines) + "\n"
 
 

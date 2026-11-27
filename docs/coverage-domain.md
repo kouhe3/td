@@ -112,7 +112,7 @@
 | 维护类服务消息编解码（`bad_msg_notification` / `bad_server_salt` / `new_session_created` / `pong` / `msg_resend_req` / `msg_detailed_info` / `msg_new_detailed_info`） | measured（F114：41 case / 344 字段字节，含抽象分派双向 roundtrip 与三种解析错误文案） | 逐字节 |
 | MTProxy secret（`ProxySecret`：`from_link` 三级回退、`from_binary` 长度与 truncate、`get_encoded_secret`、`get_proxy_secret`、padding / TLS 判定、domain） | measured（F116：128 case，41 手写 + 87 随机；三类错误文案与拒绝原因） | 逐字节 |
 | `MtprotoHeader` 选项矩阵（代理类型 × emulator × 语言包/语言码 × tz_offset × 非 ASCII/长字符串；default 与 anonymous 两份头） | measured（F118：85 case，含 flags 三位、代理块与 Web 固定 443、`X` 自定义语言码、TL 长字符串 253/254/300；F119 记录 argv 编码的仪器坑） | 逐字节 |
-| `rpc_result` / `msg_container` 解析、`req_msg_id` 匹配 | measured（F124：容器与单包、`rpc_error`、`req_msg_id == 0` 的拒绝、默认对象透传的 `original/size` 都逐字节相同） | 逐字节（未覆盖 gzip 分支与 `msgs_ack`/`new_session_created`/`pong` 之外的其它 mtproto_api 类型） |
+| `rpc_result` / `msg_container` 解析、`req_msg_id` 匹配 | measured（F124：容器与单包、`rpc_error`、`req_msg_id == 0` 的拒绝、默认对象透传的 `original/size` 都逐字节相同；`msgs_ack` / `new_session_created` / detailed-info 族 / `msgs_all_info` / `msgs_state_info` 也已对齐） | 逐字节（未覆盖 gzip 分支与 `pong` / `future_salts`） |
 | `bad_msg_notification` 的 `error_code`→动作表与 `bad_server_salt` 的换盐策略 | measured（F124：11 个 code 加 48 换盐，文案与关闭时机全等；F125 变异证明逐条在判据里） | 逐字节 |
 
 ## 边界之外（永久不在本仪器范围）
