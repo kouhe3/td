@@ -1,6 +1,6 @@
 # Plan — RIIR（JSON/C ABI 边界差分实现）
 
-gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=3 | status=running | date=2026-11-26
+gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=17 | status=running | date=2026-11-27
 
 ## 范围
 
@@ -10,7 +10,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 - 不在范围内：`tddb` / `td/mtproto` / `tdactor` / `tdutils`（合计 6.4 万行）——它们在该边界之下，互操作要匹配 C++ ABI，不可行（记 `unmeasured`，见 `docs/coverage-domain.md`）。
 - 不碰上游 C++ 源码；Rust 侧工程在本仓库 `rust/`（T6 已从 `C:/tmp/td-rs-probe` 移入），本仓库同时放台账、仪器、计划与实现。
 
-## 进度（2026-11-26，round 16）
+## 进度（2026-11-27，round 17）
 
 两个口径分开看，不要混成一句百分比。
 
@@ -26,8 +26,9 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1561 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
+| 协议 / RPC 面 | 9 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B | 各自的 `--selftest`、F103–F115 |
 | 门禁 | 21 项（本轮新增 `auth_data` / `svc_msg`） | `uv run python tools/verify.py` |
-| 定义域 | 51 行 measured、4 行 unmeasured（后者均不可判或缺引擎） | `docs/coverage-domain.md` 每行状态 |
+| 定义域 | 69 行 measured、8 行 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c 'measured（' docs/coverage-domain.md` / `grep -c '\| unmeasured' docs/coverage-domain.md` |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
 
@@ -98,8 +99,9 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T51 | RPC 层第一块：请求头 `invokeWithLayer` + `initConnection`（手写 TL 编码，含 flags 与 params jsonObject）；oracle = TDLib `MtprotoHeader::get_default_header`，Rust 侧 `rust/src/bin/rpc_probe.rs` | F111 | done（96 B 逐字节相同） |
 | T52 | RPC 层第二块：`rpc_error` 的双向互通（Rust 编码 ↔ TDLib 生成类的 `store`/`fetch`），并确认「生成代码只写字段、构造号由 boxed 外层写」 | F112 | done（24 B 字段、双向 roundtrip） |
 | T53 | RPC 响应侧：`rpc_result#f35c6d01` / `msg_container#73f1f8dc` 解析与 `req_msg_id` 匹配 | B11 | blocked（无 oracle：`mtproto_api.tl` 里两个结构被注释、无生成类；TDLib 解析在 `SessionConnection` 且是 private，需要活连接） |
-| T54 | 协议面第八块：`AuthData` 的 salt / 服务端时间差 / 入站出站 msg_id 有效性 / `check_packet` 状态机，用**显式注入的 `now`** 当模拟时钟；oracle = `tools/fixtures/auth_data_probe.cpp`，判据 = 同一脚本下两侧 stdout 逐字节相同（手写 3,026 行脚本 + 8 个随机脚本） | F113 | done（`PASS scripts=9 steps=3026`） |
-| T55 | 协议面第九块：7 个维护类服务消息的生成编码与两个抽象分派点（`BadMsgNotification` / `MsgDetailedInfo`），含三种解析错误文案；oracle = `tools/fixtures/svc_msg_probe.cpp`，判据 = 41 个 case 双向 roundtrip 逐字节相同 | F114 | done（`PASS cases=41 fields_bytes=344`） |
+| T54 | 协议面第八块：`AuthData` 的 salt / 服务端时间差 / 入站出站 msg_id 有效性 / `check_packet` 状态机，用**显式注入的 `now`** 当模拟时钟；oracle = `tools/fixtures/auth_data_probe.cpp`，判据 = 同一脚本下两侧 stdout 逐字节相同（手写 3,026 行脚本 + 8 个随机脚本） | F113, F115 | done（`PASS scripts=9 steps=3026`；RED 由 `<`→`<=` 变异提供） |
+| T55 | 协议面第九块：7 个维护类服务消息的生成编码与两个抽象分派点（`BadMsgNotification` / `MsgDetailedInfo`），含三种解析错误文案；oracle = `tools/fixtures/svc_msg_probe.cpp`，判据 = 41 个 case 双向 roundtrip 逐字节相同 | F114, F115 | done（`PASS cases=41 fields_bytes=344`） |
+| T56 | 维护类消息的**策略**：`SessionConnection::on_packet(bad_msg_notification)` 的 `error_code`→动作表（16/20 重发、17 断连、18/19/32–35/64 失败、其它 unknown）与 `on_packet(bad_server_salt)` 的换盐 + 单条消息失败 | B11 | blocked（方法在 `SessionConnection` 且 private，需要 actor 与活 `RawConnection`；回流条件 = 造出 SessionConnection 级 oracle 或公开解析入口） |
 
 ## 变更记录
 
@@ -139,3 +141,5 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F112, B11 | T53, coverage-domain | 收口：协议面与 RPC 面的 9 条 measured 行写进覆盖表；RPC 响应侧因无 oracle 标 blocked，回流条件写进 B11 |
 | 2026-11-27 | F113 | T54, 仪器 | 协议面第八块改用**注入时钟**：所有 `now` 来自脚本，状态机因此可逐字节判；双精度一律按位型打印，避免 printf/format 差异被误读成分歧。`check_packet` 的 `Ignore too old or too new` 分支在 update 后恒真，记未覆盖（同 F110） |
 | 2026-11-27 | F114 | T55, 仪器 | 协议面第九块覆盖「服务消息」：`rpc_result` / `msg_container` 仍被注释（T53 blocked），但 7 个生成类可用，抽象分派与三种解析错误文案一并入判据 |
+| 2026-11-27 | F115 | T54, T55 | 两条 lane 的判据灵敏度由变异实测：`<`→`<=` 与构造号末位各改一次都被首个分歧行抓住，恢复后转绿 |
+| 2026-11-27 | F113, B11 | T56, coverage-domain | `bad_msg_notification` 的 error_code→动作表仍是 blocked：机制在 `SessionConnection.cpp:344-386`（read-only）可读，但入口 private + actor，无法用探针驱动；只落回流条件，不占 fact |

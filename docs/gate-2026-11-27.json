@@ -1,0 +1,215 @@
+{
+  "gates": [
+    {
+      "gate": "build",
+      "command": "cargo build --release --target x86_64-pc-windows-gnu --manifest-path rust/Cargo.toml",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "Finished `release` profile [optimized] target(s) in 0.06s"
+      ]
+    },
+    {
+      "gate": "instrument",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/tdjson_diff.py",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  message = \"Failed to parse request as JSON object: Unexpected string end\"",
+        "}",
+        "[ 1][t 0][1795756744.313129425][Logging.cpp:160][&client]\tseq-probe"
+      ]
+    },
+    {
+      "gate": "binlog",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/binlog_diff.py --all --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "tdlib-oracle: lines cpp=438 rust=438",
+        "PASS tdlib-oracle diff_lines=0",
+        "PASS 14 binlogs diff_lines=0"
+      ]
+    },
+    {
+      "gate": "auth_key",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/auth_key_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "SELFTEST OK: comparator sees field changes",
+        "PASS fields=14"
+      ]
+    },
+    {
+      "gate": "msg_layer",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/msg_layer_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "SELFTEST OK: comparator sees field changes",
+        "PASS fields=4"
+      ]
+    },
+    {
+      "gate": "transport",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/transport_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "SELFTEST OK: comparator sees field changes",
+        "PASS fields=6"
+      ]
+    },
+    {
+      "gate": "framing",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/framing_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "DIFF selftest-mutant.packet @0: want=10000000000102030405060708090a0b got=00000000000102030405060708090a0b",
+        "SELFTEST OK: mutated packet rejected",
+        "PASS cases=3"
+      ]
+    },
+    {
+      "gate": "msgid",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/msgid_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "SELFTEST OK: mutated sequence rejected",
+        "PASS seq=6 msg_id_invariants=ok"
+      ]
+    },
+    {
+      "gate": "rpc",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/rpc_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "SELFTEST OK: comparator sees field changes",
+        "PASS header_bytes=96"
+      ]
+    },
+    {
+      "gate": "rpc_error",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/rpc_error_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "SELFTEST OK: comparator sees field changes",
+        "PASS fields_bytes=28"
+      ]
+    },
+    {
+      "gate": "auth_data",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/auth_data_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=c0f60584b47084b070f634718a011f5a scripts=9",
+        "SELFTEST OK: comparator sees a one-digit change",
+        "PASS scripts=9 steps=3026"
+      ]
+    },
+    {
+      "gate": "svc_msg",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/svc_msg_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "SELFTEST OK: one-field change changes the bytes",
+        "PASS cases=41 fields_bytes=344"
+      ]
+    },
+    {
+      "gate": "fuzz",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/tdjson_fuzz.py --seeds 20261126,7,99",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "[ 2][t 0][1795756747.716031789][Logging.cpp:160][&client]\thello world",
+        "[ 5][t 0][1795756747.716127157][Logging.cpp:160][&client]\tback\\slash",
+        "[ 5][t 0][1795756747.716157436][Logging.cpp:160][&client]\ttg://resolve?domain=durov"
+      ]
+    },
+    {
+      "gate": "client_options",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_client_options.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS rust\\src\\client_options.rs matches the oracle"
+      ]
+    },
+    {
+      "gate": "client_lane",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/client_diff.py",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS rust commit_hash 是 40 位 hex",
+        "",
+        "failures=0"
+      ]
+    },
+    {
+      "gate": "tl_schema",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_tl_schema.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS rust\\src\\tl_schema.rs matches td_api.tl"
+      ]
+    },
+    {
+      "gate": "mime_tables",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_mime_tables.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS mime tables are byte-identical to the generator output"
+      ]
+    },
+    {
+      "gate": "emoji_table",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_emoji_table.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS emoji table is byte-identical to the generator output"
+      ]
+    },
+    {
+      "gate": "country_table",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_country_table.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS country table is byte-identical to the generator output"
+      ]
+    },
+    {
+      "gate": "ton_address",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_ton_address.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS instrument carries both generated addresses",
+        "EQAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHx2j",
+        "UQAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eH0Bm"
+      ]
+    },
+    {
+      "gate": "api_functions",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_api_functions.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS rust\\src\\api_functions.rs"
+      ]
+    }
+  ],
+  "failures": 0
+}
