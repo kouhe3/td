@@ -110,6 +110,7 @@
 | `check_packet`：session 校验、奇偶、1000 槽 duplicate checker（插入、2N 压缩、duplicate、very old） | measured（F113：含 2,001 条 id 的压缩段与三种错误文案） | 逐字节 |
 | `check_packet` 的 `Ignore too old or too new` 分支 | unmeasured | 时间差被 update 改成 msg_id 高 32 位后该判据恒真，脚本构造不到；回流条件 = 找到能让 update 返回 true 且窗口不成立的输入（或改成可注入的比较器） |
 | 维护类服务消息编解码（`bad_msg_notification` / `bad_server_salt` / `new_session_created` / `pong` / `msg_resend_req` / `msg_detailed_info` / `msg_new_detailed_info`） | measured（F114：41 case / 344 字段字节，含抽象分派双向 roundtrip 与三种解析错误文案） | 逐字节 |
+| MTProxy secret（`ProxySecret`：`from_link` 三级回退、`from_binary` 长度与 truncate、`get_encoded_secret`、`get_proxy_secret`、padding / TLS 判定、domain） | measured（F116：128 case，41 手写 + 87 随机；三类错误文案与拒绝原因） | 逐字节 |
 | `rpc_result` / `msg_container` 解析、`req_msg_id` 匹配 | unmeasured（B11） | 无 oracle：结构被注释、TDLib 解析为 private |
 | `bad_msg_notification` 的 `error_code`→动作表与 `bad_server_salt` 的换盐策略 | unmeasured（B11 / T56） | 入口在 `SessionConnection` 且 private，需要 actor 与活 `RawConnection`；回流条件 = 造出 SessionConnection 级 oracle 或公开解析入口 |
 
