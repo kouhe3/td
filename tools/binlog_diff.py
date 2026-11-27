@@ -73,50 +73,68 @@ def main():
     ap.add_argument("--cpp", default=DEFAULT_CPP)
     ap.add_argument("--rs", default=str(DEFAULT_RS))
     ap.add_argument("--binlog", default=str(DEFAULT_BINLOG))
+    ap.add_argument("--all", action="store_true", help="compare every work/*/td_test.binlog")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
 
-    for path in (args.cpp, args.rs, args.binlog):
+    for path in (args.cpp, args.rs):
         if not Path(path).exists():
             print(f"MISSING {path}")
             return 2
+    files = sorted(REPO.glob("work/*/td_test.binlog")) if args.all else [Path(args.binlog)]
+    if not files or not all(Path(f).exists() for f in files):
+        print(f"MISSING {args.binlog}")
+        return 2
 
-    cpp_rc, cpp, cpp_err = cpp_rows(args.cpp, args.binlog)
-    rs_rc, rs, rs_err = rs_rows(args.rs, args.binlog)
+    failed = 0
+    for binlog in files:
+        if not compare_one(args, str(binlog)):
+            failed += 1
+
+    if failed:
+        print(f"FAIL {failed}/{len(files)} binlogs differ")
+        return 1
+    if len(files) > 1:
+        print(f"PASS {len(files)} binlogs diff_lines=0")
+    return 0
+
+
+def compare_one(args, binlog) -> bool:
+    label = Path(binlog).parent.name
+    cpp_rc, cpp, cpp_err = cpp_rows(args.cpp, binlog)
+    rs_rc, rs, rs_err = rs_rows(args.rs, binlog)
 
     if cpp_rc != 0:
-        print(f"FAIL cpp rc={cpp_rc} {cpp_err.strip()[:200]}")
-        return 1
+        print(f"FAIL {label}: cpp rc={cpp_rc} {cpp_err.strip()[:200]}")
+        return False
     if rs_rc != 0:
-        print(f"FAIL rust rc={rs_rc} {rs_err.strip()[:200]}")
-        return 1
+        print(f"FAIL {label}: rust rc={rs_rc} {rs_err.strip()[:200]}")
+        return False
 
     diffs = compare(cpp, rs)
-    print(f"events cpp={len(cpp)} rust={len(rs)}")
+    print(f"{label}: lines cpp={len(cpp)} rust={len(rs)}")
 
     if args.selftest:
         if not rs:
-            print("SELFTEST FAIL: no rust rows")
-            return 1
+            print(f"SELFTEST FAIL {label}: no rust rows")
+            return False
         tampered = list(rs)
         tampered[0] = tampered[0].replace("[type:", "[type:9", 1)
         fake = compare(cpp, tampered)
         if not fake or fake[0][0] != 0:
-            print("SELFTEST FAIL: comparator did not catch a mutated type")
-            return 1
-        print("SELFTEST OK: mutated row 0 caught")
+            print(f"SELFTEST FAIL {label}: comparator did not catch a mutated type")
+            return False
+        print(f"SELFTEST OK {label}: mutated row 0 caught")
+        args.selftest = False  # once is enough
 
     if diffs:
-        print(f"DIFF {len(diffs)}")
+        print(f"DIFF {label} {len(diffs)}")
         for i, a, b in diffs[:5]:
             print(f"  row {i}: {squeeze(a, b)}")
-        return 1
+        return False
 
-    event_rows = sum(1 for row in cpp if row.startswith("LogEvent["))
-    if event_rows != 147:
-        print(f"WARN expected 147 event rows, got {event_rows}")
-    print("PASS diff_lines=0")
-    return 0
+    print(f"PASS {label} diff_lines=0")
+    return True
 
 
 if __name__ == "__main__":
