@@ -58,5 +58,10 @@
   "framing": {
     "source": "TDLib tcp::IntermediateTransport via tools/fixtures/framing_probe.cpp",
     "frame_payload": "000102030405060708090a0b0c0d0e0f"
+  },
+  "msgid": {
+    "now": 1700000000,
+    "count": 6,
+    "source": "TDLib AuthData via tools/fixtures/msgid_probe.cpp"
   }
 }

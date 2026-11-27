@@ -94,6 +94,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T47 | 协议面第四块：MTProto 2.0 消息层（msg_key、KDF2、AES-256-IGE 封装）；没有官方向量，判据改为自建 C++ oracle（`tools/fixtures/msgprobe.cpp`，链接 TDLib 的 `KDF2` 与 `aes_ige_encrypt`）；Rust 侧 `rust/src/bin/msg_layer_probe.rs` + `tools/msg_layer_diff.py` | F107 | done（4 个字段全等） |
 | T48 | 协议面第五块：完整包封装（salt / session_id / msg_id / seq_no / length / padding）；oracle = TDLib `Transport::write`，Rust 侧 `rust/src/bin/transport_probe.rs` 按 X=0 解回 | F108 | done（88 B 包、6 字段全等） |
 | T49 | 协议面第六块：intermediate 传输 framing（magic、4 字节小端长度、quick-ack 位、padded 变体）；oracle = TDLib `tcp::IntermediateTransport`，Rust 侧 `rust/src/bin/framing_probe.rs` | F109 | done（3 个 case） |
+| T50 | 协议面第七块：`seq_no` 状态机（逐值对齐）与 `msg_id` 生成（含随机，只判不变式：高 32 位 = `now << 32`、`% 4 == 0`、严格递增）；oracle = TDLib `AuthData`，Rust 侧 `rust/src/bin/msgid_probe.rs` | F110 | done（seq 6/6、两侧不变式均成立） |
 
 ## 变更记录
 
@@ -127,3 +128,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F107 | T47, 仪器 | 协议面第四块：消息层没有官方向量，改自建 C++ oracle（`msgprobe.cpp`，链接 `tdmtproto`/`tdutils` 静态库）；KDF2 的拆位规则落进 F107 |
 | 2026-11-27 | F108 | T48, 仪器 | 协议面第五块：完整包封装；写 X=0 / 读 X=8 的方向差异与「prefix 由 storer 自己写」落进 F108 |
 | 2026-11-27 | F109 | T49, 仪器 | 协议面第六块：intermediate framing；TDLib 无 abridged 分支，范围据此收窄并写进 F109 |
+| 2026-11-27 | F110 | T50, 仪器 | 协议面第七块：seq_no 逐值对齐；msg_id 因 `Random::secure_int32` 只能判不变式——这是第三种判据形态（字节 / 字段 / 不变式） |
