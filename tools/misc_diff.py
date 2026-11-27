@@ -74,11 +74,60 @@ def cases() -> list[list[str]]:
         ["allowed_username", b"settings_1".hex()],
         ["allowed_username", b"Admin".hex()],
         ["allowed_username", b"telegraph".hex()],
+        # strip_empty_characters / clean_name
+        ["strip_empty", b"  a   b  ".hex(), "100"],
+        ["clean_name", b"  a   b  ".hex(), "100"],
+        ["clean_name", b"a\n\nb".hex(), "100"],
+        ["clean_name", ("a" + "\u00a0" + "b").encode().hex(), "100"],
+        ["clean_name", ("a" + "\u2003" + "b").encode().hex(), "100"],
+        ["clean_name", ("a" + "\u3000" + "b").encode().hex(), "100"],
+        ["clean_name", ("a" + "\ufffc" + "b").encode().hex(), "100"],
+        ["clean_name", ("a" + "\u202e" + "b").encode().hex(), "100"],
+        ["clean_name", ("a" + "\U000f0000" + "b").encode().hex(), "100"],
+        ["clean_name", ("中" * 10).encode().hex(), "1"],
+        ["clean_name", ("中" * 10).encode().hex(), "3"],
+        ["clean_name", ("中" * 10).encode().hex(), "9"],
+        ["clean_name", ("中" * 10).encode().hex(), "30"],
+        ["clean_name", b"abc".hex(), "0"],
+        ["clean_name", b"abc".hex(), "3"],
+        ["clean_name", "\u200b".encode().hex(), "100"],
+        ["clean_name", "\ufeff".encode().hex(), "100"],
+        ["strip_empty", "\u202e".encode().hex(), "100"],
+        ["strip_empty", ("a" + "\u202e" + "\u202e" + "b").encode().hex(), "100"],
+        # clean_input_string
+        ["clean_input", ""],
+        ["clean_input", b"a\x00b\x01c".hex()],
+        ["clean_input", b"a\nb\rc".hex()],
+        ["clean_input", b"\x1f\x20\x7f".hex()],
+        ["clean_input", ("a" + "\u200b" + "\u200d" + "\u200e" + "\u200f" + "b").encode().hex()],
+        ["clean_input", ("a" + "\u2028" + "\u202e" + "b").encode().hex()],
+        ["clean_input", ("a" + "\u0333" + "\u033f" + "\u030a" + "b").encode().hex()],
+        ["clean_input", ("a" + "\u0301" + "b").encode().hex()],
+        ["clean_input", bytes([0xFF]).hex()],
+        ["clean_input", bytes([0xE2, 0x80]).hex()],
+        ["clean_input", (LRM + RLM).hex()],
     ]
 
 
-def run(binary: str, argv: list[str], env: dict[str, str]) -> tuple[int, str]:
-    proc = subprocess.run([binary, *argv], capture_output=True, env=env)
+def long_cases() -> list[tuple[list[str], str]]:
+    """clean_input_string's 35000-byte limit does not fit in argv."""
+    return [
+        (["clean_input", "-"], (b"a" * 34996).hex()),
+        (["clean_input", "-"], (b"a" * 34997).hex()),
+        (["clean_input", "-"], (b"a" * 35000).hex()),
+        (["clean_input", "-"], (b"\r\n" * 18000).hex()),
+        (["clean_input", "-"], (("中" * 12000) + "ab").encode().hex()),
+        (["clean_name", "-", "10"], ("中" * 20).encode().hex()),
+    ]
+
+
+def run(binary: str, argv: list[str], env: dict[str, str], stdin_data: str | None = None) -> tuple[int, str]:
+    proc = subprocess.run(
+        [binary, *argv],
+        capture_output=True,
+        env=env,
+        input=(stdin_data.encode() if stdin_data is not None else None),
+    )
     return proc.returncode, proc.stdout.decode("utf-8", "replace").replace("\r\n", "\n")
 
 
@@ -95,8 +144,11 @@ def main() -> int:
             return 2
 
     table = cases()
-    digest = hashlib.md5("\x1f".join(":".join(case) for case in table).encode()).hexdigest()
-    print(f"corpus md5={digest} cases={len(table)}")
+    stdin_table = long_cases()
+    shape = [":".join(case) for case in table]
+    shape.extend(":".join(argv) + f"|stdin={len(data)}" for argv, data in stdin_table)
+    digest = hashlib.md5("\x1f".join(shape).encode()).hexdigest()
+    print(f"corpus md5={digest} cases={len(table) + len(stdin_table)}")
 
     env = dict(os.environ)
     env["PATH"] = MSYS_BIN + ";" + env.get("PATH", "")
@@ -106,6 +158,12 @@ def main() -> int:
         rs_rc, rs_out = run(args.rs, argv, env)
         if cpp_rc != rs_rc or cpp_out != rs_out:
             print(f"DIFF {' '.join(argv)}: oracle={cpp_out.strip()!r} rust={rs_out.strip()!r}")
+            return 1
+    for argv, data in stdin_table:
+        cpp_rc, cpp_out = run(args.cpp, argv, env, data)
+        rs_rc, rs_out = run(args.rs, argv, env, data)
+        if cpp_rc != rs_rc or cpp_out != rs_out:
+            print(f"DIFF {' '.join(argv)} stdin={len(data)} bytes: oracle={cpp_out.strip()!r} rust={rs_out.strip()!r}")
             return 1
 
     single = table[0]

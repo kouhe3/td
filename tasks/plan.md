@@ -112,6 +112,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 
 | T64 | session lane 收 C 档剩余：`gzip_packed`（顶层递归 + rpc_result 内）、`pong`（含 too-low reset 分支）、`future_salts`（裸 vector/裸元素），判据 = 72 op / 182 行事件逐字节相同 | F130, F131 | done（`session_diff.py`：`PASS lines=182`；四次变异 RED：排序方向、递归 original、pong reset、rpc 内 gzip 尺寸） |
 | T65 | 换面到 `TlsInit`：判据从「逐字节」降到「结构 + 固定段」——16 个固定扩展的归一化内容、2 个 GREASE、cipher 列表、SNI、ECH 长度集合、HMAC 自洽、总长 `1716+域长+32k` | F132, F133 | done（`tls_init_diff.py`：每侧 8 样本，`PASS extensions=16`；三次变异 RED：sigalgs 字节、HMAC 末 4 字节、GREASE 字） |
+| T66 | 补 T63 的 unmeasured：`clean_name` / `strip_empty_characters` / `clean_input_string`，判据 = 74 条 argv case + 6 条 stdin 长输入（34996/34997/35000 字节边界）逐字节相同 | F134, F135 | done（`misc_diff.py`：80 case、`PASS`；三次变异 RED：NBSP 折叠、LENGTH_LIMIT-3、空格表首字节集） |
 
 ## 变更记录
 
@@ -171,3 +172,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F128, F129 | T63 | misc lane 扩到用户名判定：`is_valid_username` / `is_allowed_username` 入判据（44 case），第二次变异（保留前缀表）抓到 `DIFF allowed_username` |
 | 2026-11-27 | F130, F131 | T64 | session lane 补 gzip_packed（两层）、pong、future_salts：182 行；顺带记下 mtproto_api 的裸 vector/裸元素（`vector<future_salt>` 无 `0x1cb5c415`、元素无构造号）与「gzip 递归沿用外层 MsgInfo」 |
 | 2026-11-27 | F132, F133 | T65 | 新增 tls_init lane：判据从逐字节降到「结构 + 固定段 + HMAC 自洽」，因为 ClientHello 的 session id / 两把 X25519 key / 1184 字节 ML-KEM / random 都新鲜且扩展顺序被打乱；门禁 26 → 27 |
+| 2026-11-27 | F134, F135 | T66 | 关掉 T63 的 unmeasured：`clean_name` / `strip_empty_characters` / `clean_input_string` 入判据（74 + 6 条），顺带记下 `utf8_truncate` 用字节长度比字符数的怪行为；长输入走 stdin 绕开 argv 上限 |

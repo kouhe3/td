@@ -7,7 +7,7 @@
       "warnings": 0,
       "tail": [
         "Compiling tdjson_rs v0.1.0 (C:\\projects\\td\\rust)",
-        "    Finished `release` profile [optimized] target(s) in 14.59s"
+        "    Finished `release` profile [optimized] target(s) in 7.54s"
       ]
     },
     {
@@ -18,7 +18,7 @@
       "tail": [
         "  message = \"Failed to parse request as JSON object: Unexpected string end\"",
         "}",
-        "[ 1][t 0][1795768013.418870925][Logging.cpp:160][&client]\tseq-probe"
+        "[ 1][t 0][1795769111.943940162][Logging.cpp:160][&client]\tseq-probe"
       ]
     },
     {
@@ -174,9 +174,9 @@
       "exit_code": 0,
       "warnings": 0,
       "tail": [
-        "corpus md5=e29c0af81897fc70fc08daa58088f6fa cases=44",
+        "corpus md5=db0919ed02fcede22a8aae9108dc03a8 cases=80",
         "SELFTEST OK: comparator sees a one-byte change",
-        "PASS cases=44"
+        "PASS cases=74"
       ]
     },
     {
@@ -185,7 +185,7 @@
       "exit_code": 0,
       "warnings": 0,
       "tail": [
-        "rust: 8 samples, length set [1733, 1765, 1797, 1829]",
+        "rust: 8 samples, length set [1733, 1797, 1829]",
         "SELFTEST OK: comparator sees a fixed-byte change and the HMAC check rejects it",
         "PASS extensions=16 total_lengths=[1733, 1765, 1797, 1829]"
       ]
@@ -196,9 +196,9 @@
       "exit_code": 0,
       "warnings": 0,
       "tail": [
-        "[ 3][t 0][1795768055.934762239][Logging.cpp:160][&client]\t你好",
-        "[ 5][t 0][1795768055.934792518][Logging.cpp:160][&client]\t*bold* __it__ `code`",
-        "[ 5][t 0][1795768055.934795618][Logging.cpp:160][&client]\t#tag @user $USD $btc"
+        "[ 3][t 0][1795769210.624505996][Logging.cpp:160][&client]\t你好",
+        "[ 5][t 0][1795769210.624537944][Logging.cpp:160][&client]\t*bold* __it__ `code`",
+        "[ 5][t 0][1795769210.624543428][Logging.cpp:160][&client]\t#tag @user $USD $btc"
       ]
     },
     {
