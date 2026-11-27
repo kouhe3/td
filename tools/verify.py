@@ -2,7 +2,7 @@
 
 命令:
     python tools/verify.py            # 人读的 PASS/FAIL 汇总
-    python tools/verify.py --json     # 同一结果的机器记录（写进冻结记录用）
+    python tools/verify.py --json     # 同一结果 + 基座自证（commit / worktree / oracle md5）
 
 判据:
     退出码 0 = 全部门禁全绿：`cargo build`（0 warning）、`tools/tdjson_diff.py`
@@ -116,11 +116,39 @@ def run(name: str, command: list[str]) -> dict:
     }
 
 
+def snapshot_meta() -> dict:
+    """快照自证：这批 gate 跑在哪个 commit、哪个 oracle 二进制上。"""
+    sys.path.insert(0, str(ROOT / "tools"))
+    import tdjson_diff  # oracle 路径与 md5 pin 只此一份
+
+    def git(*args: str) -> str | None:
+        try:
+            done = subprocess.run(
+                ["git", *args], cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace"
+            )
+        except OSError:
+            return None
+        return done.stdout.strip() if done.returncode == 0 else None
+
+    oracle = Path(tdjson_diff.CPP)
+    return {
+        "commit": git("rev-parse", "HEAD"),
+        # 工作树脏时 commit 不代表被测源码，快照不能自证
+        "worktree_dirty": bool(git("status", "--porcelain")),
+        "cpp_oracle": str(oracle),
+        "cpp_oracle_md5": tdjson_diff.md5(oracle) if oracle.is_file() else None,
+        "cpp_oracle_expected_md5": tdjson_diff.EXPECTED_CPP_MD5,
+    }
+
+
 def main(argv: list[str]) -> int:
     records = [run(name, command) for name, command in GATES]
     failures = [record for record in records if record["exit_code"] != 0]
     if "--json" in argv:
-        print(json.dumps({"gates": records, "failures": len(failures)}, indent=2, ensure_ascii=False))
+        snapshot = snapshot_meta()
+        snapshot["gates"] = records
+        snapshot["failures"] = len(failures)
+        print(json.dumps(snapshot, indent=2, ensure_ascii=False))
     else:
         for record in records:
             mark = "PASS" if record["exit_code"] == 0 else "FAIL"

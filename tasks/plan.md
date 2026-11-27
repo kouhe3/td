@@ -1,6 +1,6 @@
 # Plan — RIIR（JSON/C ABI 边界差分实现）
 
-gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=44 | status=running | date=2026-11-27
+gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=45 | status=running | date=2026-11-27
 
 ## 范围
 
@@ -212,3 +212,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F167, F168 | T83, 门禁 | 新增 base64 lane：标准/url 编码（url 无 padding）、解码的填充与未用位规则、四个 `is_*` 谓词、`filter`、base32 双向，203 行 + 23 条手算 cell；F167 是**先落待证再写探针**的一轮，门禁 42 → 43 |
 | 2026-11-27 | F169, F170 | T84, 门禁 | 新增 utf8 lane：`check_utf8` 的 DFA、长度/首字节谓词、`next`/`append`、`utf8_truncate`/`substr` 的字节-字符混用、UTF-16 的代理对与 `F8..FF` 不一致，309 行 + 34 条手算 cell；同样先落待证再写探针；门禁 43 → 44 |
 | 2026-11-27 | F171, F172 | T85, 门禁 | 新增 hints lane：`Hints` 的前缀匹配、交集、`(rating 升序, key 升序)`、limit 形状与生命周期，67 行 + 18 条手算 cell；语料限 ASCII（unicode/translit 表 unmeasured），`fix_words` 的前缀丢弃被证明不可观察；门禁 44 → 45 |
+| 2026-11-27 | F173 | T86, 门禁 | 判定基座记账：上游 18 提交与点名源文件的交集只有不可观察的 `Td.cpp`，基座仍 `1b9efe84d`，本轮不同步；`verify.py --json` 增 `commit` / `worktree_dirty` / `cpp_oracle_md5`，`coverage-domain.md` 立同步闸门；门禁仍 45 |

@@ -2,6 +2,25 @@
 
 覆盖 `tdjson` C ABI 的 `td_execute` 路径（29 个同步 action + 全部 1114 个函数的参数解析）、客户端 lane（首次运行、第二次运行、未授权状态机、真实登录记录）与 binlog 存储面（读侧）。`measured` 需 test + fact；`unmeasured` 只占回流条件，不占 fact。
 
+## 判定基座
+
+判据来自实现的一份快照，不跟随上游日历：每条 gate 都对应下面这组 C++ 源码与 oracle 二进制，快照的 `commit` / `worktree_dirty` / `cpp_oracle_md5` 由 `uv run python tools/verify.py --json` 现场写入。
+
+| 项 | 值 |
+|---|---|
+| C++ 基座 | `1b9efe84d6e9a2e2f6eadeeea32b0726d2b8c25d`（2026-11-23） |
+| 上游最新（记账时） | `e7ac61dd69409c31b3c8c7367b33b07eecce701f`（2026-11-26），领先 18 提交，本轮不同步（F173） |
+| oracle | `C:/tmp/td-build/libtdjson.dll`，md5 pin 在 `tools/tdjson_diff.py:54`；协议面与纯函数面另用 `C:/tmp/td-probe/*.exe` |
+| 重实现 | 分支 `rust` 的 HEAD；`worktree_dirty=false` 时 commit 才代表被测源码 |
+
+同步（`git merge upstream/master` + `ninja tdjson` + 重编探针 + 更新 md5 pin + 重跑 45 项 + 重新落快照）只在下列任一成立时触发：
+
+1. 上游改动与本文件点名的源文件相交；
+2. 上游改动 `td_api.tl` 的定义行，或 mime / emoji / country 数据表；
+3. 新开 lane 的源文件已被上游改过。
+
+其余情况只在 `docs/facts.md` 追加一条漂移记录（F173 是第一条）。
+
 ## 实体类 × 文本形态
 
 实体类取自 `td/telegram/MessageEntity.cpp:1783-1810` 的 `find_entities` 调用序。
