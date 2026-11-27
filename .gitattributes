@@ -14,7 +14,7 @@ Cargo.lock -text
 *.php text whitespace=blank-at-eol,space-before-tab,blank-at-eof,tab-in-indent
 *.ps1 text whitespace=blank-at-eol,space-before-tab,blank-at-eof,tab-in-indent eol=crlf
 *.cmake text whitespace=blank-at-eol,space-before-tab,blank-at-eof,tab-in-indent
-*.md text whitespace=blank-at-eol,space-before-tab,blank-at-eof,tab-in-indent
+*.md text eol=lf whitespace=blank-at-eol,space-before-tab,blank-at-eof,tab-in-indent
 *.in text whitespace=blank-at-eol,space-before-tab,blank-at-eof,tab-in-indent
 *.html text whitespace=blank-at-eol,space-before-tab,blank-at-eof,tab-in-indent
 
