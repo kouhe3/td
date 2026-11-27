@@ -93,6 +93,20 @@
 | binlog 文件解析（帧头、`format::escaped`、handler 汇总、key trie） | measured（F100–F102：整份输出与 `binlog_dump` 逐行相同；14 个 fixture，10,128–24,576 B，含真实登录生成的库） | — |
 | binlog 写侧（从 KV 生成字节相同的库） | unmeasured | salt / IV 由 `Random::secure_bytes` 生成、不可注入，判不了「同输入同字节」；回流条件 = 找到可固定随机源的重写路径 |
 
+## 协议面与 RPC 面
+
+| 项 | 状态 | 判据形态 |
+|---|---|---|
+| auth_key 交换步骤 1–9（resPQ、pq 分解、p_q_inner_data、server_DH、g_b/auth_key/KDF） | measured（F103–F106：官方向量 14 字段） | 逐字节 |
+| 消息加密（msg_key、KDF2、AES-256-IGE） | measured（F107：4 字段） | 逐字节 |
+| 完整包（salt/session_id/msg_id/seq_no/length/padding） | measured（F108：6 字段，TDLib 写 → Rust 读） | 字段（padding 随机） |
+| intermediate framing | measured（F109：3 case；padded 只比 magic） | 逐字节 / 字段 |
+| seq_no 状态机 | measured（F110：6 值逐值相同） | 逐字节 |
+| msg_id 生成 | measured（F110：三条不变式） | 不变式（`Random::secure_int32`） |
+| RPC 请求头（invokeWithLayer + initConnection） | measured（F111：96 B） | 逐字节 |
+| `rpc_error` 编解码 | measured（F112：24 B 字段，双向 roundtrip） | 逐字节 |
+| `rpc_result` / `msg_container` 解析、`req_msg_id` 匹配 | unmeasured（B11） | 无 oracle：结构被注释、TDLib 解析为 private |
+
 ## 边界之外（永久不在本仪器范围）
 
 | 模块 | 行数 | 原因 |

@@ -97,6 +97,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T50 | 协议面第七块：`seq_no` 状态机（逐值对齐）与 `msg_id` 生成（含随机，只判不变式：高 32 位 = `now << 32`、`% 4 == 0`、严格递增）；oracle = TDLib `AuthData`，Rust 侧 `rust/src/bin/msgid_probe.rs` | F110 | done（seq 6/6、两侧不变式均成立） |
 | T51 | RPC 层第一块：请求头 `invokeWithLayer` + `initConnection`（手写 TL 编码，含 flags 与 params jsonObject）；oracle = TDLib `MtprotoHeader::get_default_header`，Rust 侧 `rust/src/bin/rpc_probe.rs` | F111 | done（96 B 逐字节相同） |
 | T52 | RPC 层第二块：`rpc_error` 的双向互通（Rust 编码 ↔ TDLib 生成类的 `store`/`fetch`），并确认「生成代码只写字段、构造号由 boxed 外层写」 | F112 | done（24 B 字段、双向 roundtrip） |
+| T53 | RPC 响应侧：`rpc_result#f35c6d01` / `msg_container#73f1f8dc` 解析与 `req_msg_id` 匹配 | B11 | blocked（无 oracle：`mtproto_api.tl` 里两个结构被注释、无生成类；TDLib 解析在 `SessionConnection` 且是 private，需要活连接） |
 
 ## 变更记录
 
@@ -133,3 +134,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F110 | T50, 仪器 | 协议面第七块：seq_no 逐值对齐；msg_id 因 `Random::secure_int32` 只能判不变式——这是第三种判据形态（字节 / 字段 / 不变式） |
 | 2026-11-27 | F111 | T51, 仪器 | RPC 层第一块：请求头手写 TL 编码对齐；oracle 链接 `tdcore`/`tdapi` 等七个静态库才链通，构建命令写进 `tools/fixtures/rpc_probe.cpp` 文件头 |
 | 2026-11-27 | F112 | T52, 仪器 | RPC 层第二块：`rpc_error` 双向互通；「生成的 store/fetch 不含构造号」这条落进 F112，避免以后拿带 ID 的串去 parse |
+| 2026-11-27 | F112, B11 | T53, coverage-domain | 收口：协议面与 RPC 面的 9 条 measured 行写进覆盖表；RPC 响应侧因无 oracle 标 blocked，回流条件写进 B11 |

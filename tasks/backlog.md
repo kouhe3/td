@@ -14,3 +14,4 @@
 | ~~B9~~ | ~~畸形 JSON 文本的 `json_decode` 报错文案未移植~~ **已解决**（T21）：12 条解析器消息 + 深度上限 100 + 尾部内容 + 宽松数字前缀全部移植，34 条 cell 逐字节相同（F054）；CONTROL 随之收敛为 B10 一条 + 自检四断言（F055） | — | — |
 | ~~B10~~ | ~~超 DBL_MAX 的浮点字面量在 `getJsonValue` 里分叉~~ **已解决**（T23，F060）：机制是 libstdc++ `num_get` 溢出时给 ±DBL_MAX，Rust 侧在 `to_double_prefix` 夹紧 ±inf；17 条 cell 对齐，CONTROL 随之清空（当前无已知差异） | — | — |
 | ~~B8~~ | ~~`getPhoneNumberInfoSync`~~ **已解决**（T14）：解内嵌 zlib+TL blob 生成 `rust/src/country_table.rs`，9 条 cell 与 6260 例差分全一致 | — | — |
+| B11 | RPC 响应侧：`rpc_result#f35c6d01` 的 `req_msg_id` 匹配、`msg_container#73f1f8dc` 拆包、未知 msg_id 与重复应答 | 两个结构在 `mtproto_api.tl` 里是注释掉的，没有生成类；TDLib 在 `SessionConnection.cpp:239-300,521` 手写解析且为 private，要活的连接对象（网络 + 时钟 + 认证）才能驱动 | 造出 SessionConnection 级 oracle（模拟连接 + 固定时钟），或 TDLib 暴露公开解析入口 |
