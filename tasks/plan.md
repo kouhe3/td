@@ -1,6 +1,6 @@
 # Plan — RIIR（JSON/C ABI 边界差分实现）
 
-gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=22 | status=running | date=2026-11-27
+gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=23 | status=running | date=2026-11-27
 
 ## 范围
 
@@ -10,7 +10,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 - 不在范围内：`tddb` / `td/mtproto` / `tdactor` / `tdutils`（合计 6.4 万行）——它们在该边界之下，互操作要匹配 C++ ABI，不可行（记 `unmeasured`，见 `docs/coverage-domain.md`）。
 - 不碰上游 C++ 源码；Rust 侧工程在本仓库 `rust/`（T6 已从 `C:/tmp/td-rs-probe` 移入），本仓库同时放台账、仪器、计划与实现。
 
-## 进度（2026-11-27，round 22）
+## 进度（2026-11-27，round 23）
 
 两个口径分开看，不要混成一句百分比。
 
@@ -26,8 +26,8 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1561 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 协议 / RPC 面 | 12 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 48 op/122 行 | 各自的 `--selftest`、F103–F125 |
-| 门禁 | 24 项（本轮新增 `session`） | `uv run python tools/verify.py` |
+| 协议 / RPC 面 | 13 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 48 op/122 行、web_proxy 26 case | 各自的 `--selftest`、F103–F127 |
+| 门禁 | 25 项（本轮新增 `web_proxy`） | `uv run python tools/verify.py` |
 | 定义域 | 85 个 measured cell、6 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -o '\| measured（' docs/coverage-domain.md \| wc -l` / `grep -o '\| unmeasured' docs/coverage-domain.md \| wc -l` |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
@@ -107,6 +107,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T59 | JSON 面随机语料扩种子：2027–2030 各 850 条 + 序列，记录语料指纹；门禁的 fuzz 项从 3 个种子加到 4 个（2027） | F121 | done（3,400 条 + 80 段/1,800 步零分歧；门禁 fuzz 项 4 种子） |
 | T60 | C 档可判性探测：用假 `RawConnection` + 假回调驱动 `SessionConnection`，注入 rpc_result / bad_server_salt / bad_msg_notification(16/17/99) / 容器，看事件是否可复现 | F122, F123 | done（**可驱动**；6 个场景事件符合预期，两次运行逐字节相同；布局两坑记入 F123） |
 | T61 | C 档实现：以 `session_probe` 为骨架造「可注入字节」的 oracle，再写 Rust 侧的 session 策略子集（rpc_result/容器解析、error_code→动作、换盐），并扩到 `msgs_ack` / `new_session_created` / `req_msg_id==0` / `msg_detailed_info` 族 / `msgs_all_info` / `msgs_state_info` | F122–F125 | done（`session_diff.py`：48 op/122 行、`PASS`；三次变异 RED：code 20 文案、new_session 参数、detailed-info 字段；gzip 与 pong/future_salts 仍未覆盖，记在 F124） |
+| T62 | 换面到 `td/telegram` 纯函数：Web 代理的 `get_web_proxy_secret` / `get_web_proxy_link_secret` / `get_web_proxy_address` / `get_web_proxy_link_secret()`（带标记）/ `get_web_proxy_bridge_capability`（HMAC） | F126, F127 | done（`web_proxy_diff.py`：26 case、`PASS`；RED 由上下文常量 v1→v2 提供） |
 
 ## 变更记录
 
@@ -159,3 +160,5 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F125 | T61 | 变异只改 code 20 的文案，首个分歧落在 `DIFF line 52`；证明策略表逐条在判据里 |
 | 2026-11-27 | F124, F125 | T61 | C 档扩到 ack / new_session / req=0：41 op / 104 行；新增一次参数对调的变异，抓到 `DIFF line 99` |
 | 2026-11-27 | F124, F125 | T61 | C 档再扩 detailed-info 族与 msgs_all_info / msgs_state_info：48 op / 122 行；第三次变异（detailed-info 字段对调）抓到 `DIFF line 109` |
+| 2026-11-27 | F126 | T62, 仪器 | 换面到 `td/telegram`：Web 代理三个纯函数（含 0x70 标记形态与 HMAC bridge）入判据；Host 归一化（IDN）不做，只测与 host 无关的部分 |
+| 2026-11-27 | F127 | T62 | 变异把 bridge 上下文从 v1 改成 v2，bridge 输出全变；证明这条判据绑的是常量与 HMAC 本身 |

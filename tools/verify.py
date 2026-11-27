@@ -8,7 +8,7 @@
     退出码 0 = 全部门禁全绿：`cargo build`（0 warning）、`tools/tdjson_diff.py`
     （failures=0）、`tools/binlog_diff.py`（binlog 四栏与 `binlog_dump` 逐行相同）、
     协议/RPC lane（`auth_key`、`msg_layer`、`transport`、`framing`、`msgid`、`rpc`、
-    `rpc_error`、`auth_data`、`svc_msg`、`proxy_secret`、`header`、`session` 的 `--selftest`）、`tools/tdjson_fuzz.py`
+    `rpc_error`、`auth_data`、`svc_msg`、`proxy_secret`、`header`、`session`、`web_proxy` 的 `--selftest`）、`tools/tdjson_fuzz.py`
     （随机语料零分歧）、`tools/client_diff.py`（客户端 lane 对齐）、八个生成器
     `--check` 与仓库内容逐字节相同。
 
@@ -65,6 +65,7 @@ GATES = [
     ("proxy_secret", [PYTHON, "tools/proxy_secret_diff.py", "--selftest"]),
     ("header", [PYTHON, "tools/header_diff.py", "--selftest"]),
     ("session", [PYTHON, "tools/session_diff.py", "--selftest"]),
+    ("web_proxy", [PYTHON, "tools/web_proxy_diff.py", "--selftest"]),
     ("fuzz", [PYTHON, "tools/tdjson_fuzz.py", "--seeds", "20261126,7,99,2027"]),
     ("client_options", [PYTHON, "tools/gen_client_options.py", "--check"]),
     ("client_lane", [PYTHON, "tools/client_diff.py"]),

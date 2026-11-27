@@ -114,6 +114,7 @@
 | `MtprotoHeader` 选项矩阵（代理类型 × emulator × 语言包/语言码 × tz_offset × 非 ASCII/长字符串；default 与 anonymous 两份头） | measured（F118：85 case，含 flags 三位、代理块与 Web 固定 443、`X` 自定义语言码、TL 长字符串 253/254/300；F119 记录 argv 编码的仪器坑） | 逐字节 |
 | `rpc_result` / `msg_container` 解析、`req_msg_id` 匹配 | measured（F124：容器与单包、`rpc_error`、`req_msg_id == 0` 的拒绝、默认对象透传的 `original/size` 都逐字节相同；`msgs_ack` / `new_session_created` / detailed-info 族 / `msgs_all_info` / `msgs_state_info` 也已对齐） | 逐字节（未覆盖 gzip 分支与 `pong` / `future_salts`） |
 | `bad_msg_notification` 的 `error_code`→动作表与 `bad_server_salt` 的换盐策略 | measured（F124：11 个 code 加 48 换盐，文案与关闭时机全等；F125 变异证明逐条在判据里） | 逐字节 |
+| Web 代理纯函数（`get_web_proxy_secret` / `get_web_proxy_link_secret` / address / 标记 link secret / HMAC bridge capability） | measured（F126：26 case，含 0x70 标记的三种底层 secret、path 有无的分支、非 ASCII server；F127 变异证明上下文常量在判据里） | 逐字节（未覆盖 host 归一化的 IDN 分支） |
 
 ## 边界之外（永久不在本仪器范围）
 
