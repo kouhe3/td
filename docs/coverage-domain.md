@@ -132,6 +132,7 @@
 | `tdutils::PathView`（构造 + 五个名字/扩展名访问器 + `parent_dir`/`parent_dir_noslash` + `is_dir`/`is_absolute` + `relative` + `dir_and_file`） | measured（F161/F162：54 行，34 条路径 + 9 组 relative + 11 组 dir_and_file；`TD_DIR_SLASH` 取 Windows 构建的 `\`，`relative` 的字符串前缀语义与 `dir_and_file` 的两段语义都在判据里） | 逐字节 |
 | `tdutils` 的字符串助手（`to_lower`/`to_upper`、`trim`、`lpad`/`lpad0`/`rpad`、`oneline`、`replace_with_spaces`、`implode`、`split`/`full_split`、字节谓词） | measured（F163/F164：88 行，输入输出全 hex；`is_space` 不含 `\f`、`oneline` 的 CRLF 合并与行首空格丢弃、`full_split` 的 `max_parts` 都是判据核心；`to_integer` 家族不在本行） | 逐字节 |
 | `tdutils` 的整数解析（`to_integer` 四宽度、`to_integer_safe`、`hex_to_integer(_safe)`、`hex_decode`/`hex_encode`） | measured（F165/F166：296 行；有符号回绕/取反/夹到 MIN、safe 的逐字节往返、hex 的三条错误文案与 `MAX/16` 溢出检查都在判据里） | 逐字节 |
+| `tdutils` 的 base64/base32（标准与 url 编码、解码的五条错误文案、四个 `is_*` 谓词、`base64_filter`、`base32_encode`/`base32_decode`） | measured（F167/F168：203 行；url 不补 `=`、未用位必须为 0、长度检查先于字符检查、base32 的 `Nonzero padding` 都在判据里） | 逐字节 |
 
 ## 边界之外（永久不在本仪器范围）
 

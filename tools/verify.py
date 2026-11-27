@@ -84,6 +84,7 @@ GATES = [
     ("path_view", [PYTHON, "tools/path_view_diff.py", "--selftest"]),
     ("string", [PYTHON, "tools/string_diff.py", "--selftest"]),
     ("number", [PYTHON, "tools/number_diff.py", "--selftest"]),
+    ("base64", [PYTHON, "tools/base64_diff.py", "--selftest"]),
     ("fuzz", [PYTHON, "tools/tdjson_fuzz.py", "--seeds", "20261126,7,99,2027"]),
     ("client_options", [PYTHON, "tools/gen_client_options.py", "--check"]),
     ("client_lane", [PYTHON, "tools/client_diff.py"]),

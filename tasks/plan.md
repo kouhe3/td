@@ -1,6 +1,6 @@
 # Plan — RIIR（JSON/C ABI 边界差分实现）
 
-gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=39 | status=running | date=2026-11-27
+gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=42 | status=running | date=2026-11-27
 
 ## 范围
 
@@ -26,9 +26,9 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1561 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 协议 / RPC 面 | 30 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 72 op/182 行、web_proxy 26 case、misc 80 case、tls_init 16 扩展 × 8 样本/侧、dh_handshake 32 case、rsa 23 case、public_rsa 9 case、public_rsa_cdn 21 行、buffer_slice 34 行、dc_id 273 行、slice 119 行 + 17 check、slice_cmp 595 行、slice_prefix 578 行、slice_ptr 106 行 + 5 check、hash 70 行、slice_hash 28 行、path_view 54 行、string 88 行、number 296 行 | 各自的 `--selftest`、F103–F166 |
-| 门禁 | 42 项（本轮新增 `number`） | `uv run python tools/verify.py` |
-| 定义域 | 89 个 measured 行、6 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c '\| measured（' docs/coverage-domain.md` \| `grep -c '\| unmeasured \|' docs/coverage-domain.md` |
+| 协议 / RPC 面 | 31 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 72 op/182 行、web_proxy 26 case、misc 80 case、tls_init 16 扩展 × 8 样本/侧、dh_handshake 32 case、rsa 23 case、public_rsa 9 case、public_rsa_cdn 21 行、buffer_slice 34 行、dc_id 273 行、slice 119 行 + 17 check、slice_cmp 595 行、slice_prefix 578 行、slice_ptr 106 行 + 5 check、hash 70 行、slice_hash 28 行、path_view 54 行、string 88 行、number 296 行、base64 203 行 | 各自的 `--selftest`、F103–F168 |
+| 门禁 | 43 项（本轮新增 `base64`） | `uv run python tools/verify.py` |
+| 定义域 | 90 个 measured 行、6 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c '\| measured（' docs/coverage-domain.md` \| `grep -c '\| unmeasured \|' docs/coverage-domain.md` |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
 
@@ -129,6 +129,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T80 | 换到路径面：`PathView` 的构造（last_slash/last_dot 的 `>` 边界）、`extension` / `without_extension` / `file_stem` / `file_name`、`parent_dir` 与 `parent_dir_noslash`（含 `TD_DIR_SLASH` 分支）、`is_dir` / `is_absolute`、`relative` 的字符串前缀语义、`dir_and_file` 的「最后两段」语义 | F161, F162 | done（`path_view_diff.py`：54 行、`PASS`，0.3 s；三次变异 RED：dot 扫描含首字节、POSIX 分隔符、relative 分量检查） |
 | T81 | 换到 `misc.h` 的字符串助手：`to_lower` / `to_upper`（ASCII only）、`trim`（`is_space` 含 `\0`/`\v`、**不含 `\f`**）、`lpad`/`lpad0`/`rpad`（不截断）、`oneline`（CRLF 合一、丢行首尾空格）、`replace_with_spaces`、`implode`、`split`/`full_split`（`max_parts`）、字节谓词（`c|0x20` 的 `_`/`0x80` 例外） | F163, F164 | done（`string_diff.py`：88 行、`PASS`，0.3 s，32 条手算 cell；三次变异 RED：`\f` 当空格、`to_lower` 恒等、`oneline` 留行首空格） |
 | T82 | 换到 `misc.h` 的整数解析：`to_integer`（有符号的在无符号里累加 → 回绕/取反/夹到 MIN）、`to_integer_safe`（重打印逐字节比 → 拒绝 `007`/` 5`/`12abc`/空/越界）、`hex_to_integer` 与 `hex_to_integer_safe`（三条文案 + `MAX/16` 溢出检查）、`hex_decode`/`hex_encode` | F165, F166 | done（`number_diff.py`：296 行、`PASS`，0.3 s，26 条手算 cell；三次变异 RED：溢出改夹取、空输入放行、去掉 hex 溢出检查） |
+| T83 | 换到 `base64.h`：标准/url 两种编码（url 不补 `=`）、解码的五条错误文案与「未用位为 0」规则、`is_base64(_url)` / `is_base64*_characters` / `is_base64any_character` / `base64_filter`、`base32_encode`（无 padding、大小写可选）与 `base32_decode`（`Nonzero padding`） | F167, F168 | done（`base64_diff.py`：203 行、`PASS`，0.3 s，23 条手算 cell；三次变异 RED：url 补填充、未用位不检查、base32 尾部位不检查） |
 
 ## 变更记录
 
@@ -206,3 +207,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F161, F162 | T80, 门禁 | 新增 path_view lane：`PathView` 的全部访问器与两个静态助手（34 条路径 + 9 组 relative + 11 组 dir_and_file，输出全是 hex）；`parent_dir_noslash` 的 `TD_DIR_SLASH` 依赖 Windows 构建，`relative` 是字符串前缀；门禁 39 → 40 |
 | 2026-11-27 | F163, F164 | T81, 门禁 | 新增 string lane：`misc.h` 的字符串助手（大小写、trim 的空白集、pad、oneline、replace、implode、split/full_split、字节谓词），88 行全值面 + 32 条手算 cell；`to_integer` 家族留给下一轮（要单独判溢出与部分解析）；门禁 40 → 41 |
 | 2026-11-27 | F165, F166 | T82, 门禁 | 新增 number lane：`to_integer` 四宽度的回绕/取反/夹取、`*_safe` 的重打印往返、`hex_to_integer(_safe)` 的三条文案、`hex_decode`/`hex_encode`，296 行 + 26 条手算 cell；门禁 41 → 42 |
+| 2026-11-27 | F167, F168 | T83, 门禁 | 新增 base64 lane：标准/url 编码（url 无 padding）、解码的填充与未用位规则、四个 `is_*` 谓词、`filter`、base32 双向，203 行 + 23 条手算 cell；F167 是**先落待证再写探针**的一轮，门禁 42 → 43 |
