@@ -88,6 +88,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T41 | 目标定位（用户决定 2026-11-27）：首要目标是检验 face-spaghetti skill 本身，RIIR 是练习载体；此后不按「交付可上生产的 TDLib-RS」推进，覆盖数只作样本有效性 | F099 | done（定位写入 `docs/agents/face-spaghetti.md` 的「目标框架」） |
 | T42 | 存储面第一条 lane：`tddb` binlog 读取器（`rust/src/bin/binlog_head.rs`）+ 仪器 `tools/binlog_diff.py`，判据 = 与 `binlog_dump` 的**整份输出**逐行相同（event 行含 `format::escaped` 的 data，尾部含 handler 汇总与 key trie）；顺带实证加密方案（首帧明文 `AesCtrEncryption`，其后 AES-256-CTR，默认 key = `raw("cucumber")`）与 processor 的 Rewrite 替换语义 | F100, F101 | done（438 行 = 147 event + 291 尾部、`diff_lines=0`；selftest 捕获篡改行；已进 `verify.py` 第 3 项门禁） |
 | T43 | binlog 语料扩展：仪器加 `--all`，覆盖 `work/*/td_test.binlog` 全部 14 个文件（含真实登录的 24,576 B 库、含 Rewrite 的小库 10,128 B）；门禁改跑 `--all --selftest` | F102 | done（14/14 整份输出相同） |
+| T44 | 协议面第一块：官方向量 samples-auth_key 步骤 1–4（resPQ 解析、pq 分解、`p_q_inner_data_dc` 序列化），Rust 侧 `rust/src/bin/auth_key_probe.rs` + `tools/auth_key_diff.py`；判据是**外部规范向量**，不是 C++ oracle | F103, F104 | done（4 个字段全等；RED→GREEN 已记） |
 
 ## 变更记录
 
@@ -115,3 +116,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | 用户决定（目标 B）；F099 | 全部 | 目标定为检验 face-spaghetti skill、RIIR 为练习；验收从覆盖率改为「skill 在本对象上是否有效 + 缺口落盘」，判据时间线的误记以 F099 勘误 |
 | 2026-11-27 | F100 | T42, 仪器, Rust 依赖 | 新增存储面 lane：判据形态从「JSON 请求/响应」换成「文件 → 四栏文本」；binlog 默认加密，Rust 侧引入 `aes`/`ctr`/`hmac`/`pbkdf2`/`sha2` 五个纯 Rust 依赖（无系统依赖） |
 | 2026-11-27 | F102 | T43, 仪器 | binlog 判据从单文件扩到全部 14 个 fixture（含真实登录库）；门禁里的 binlog 项改为 `--all --selftest` |
+| 2026-11-27 | F103, F104 | T44, 仪器 | 换面到协议层：第一条 lane 用 Telegram 官方 auth_key 样本当判据（不依赖 C++ oracle）。流程缺陷：预注册与实现同批落账，已用 RED→GREEN 补齐并记在 F103/F104 |
