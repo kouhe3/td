@@ -126,6 +126,7 @@
 | `tdutils::Slice` 的视图操作（`remove_prefix` / `remove_suffix` / `substr` 的静默截断 / `truncate` 只缩不涨） | measured（F149/F150：119 行 + 17 个 `--check` 例，其中 12 个越界 abort、5 个 `n == size` 对照；F150 三次变异） | 逐字节 + 判定（abort 与否） |
 | `tdutils::Slice` 的查找与比较（`find` / `rfind` 的 `npos`、`==` / `!=`、`<` 的 unsigned 字节序与前缀规则） | measured（F151/F152：595 行，17 载荷 × 9 字节 × 2 + 17×17 比较；F152 三次变异分别打中末字节、signedness、前缀长度） | 逐字节 |
 | `tdutils` 的前后缀判定（`begins_with` / `ends_with`，`misc.h` 的自由函数） | measured（F153/F154：578 行，17 个载荷的两两有序对 × 2；超长 affix 短路与空 affix 的 one-past-end 零长 slice 都覆盖；F154 三次变异） | 逐字节 |
+| `tdutils::Slice` / `MutableSlice` 的 `back()` / `operator[]`（合法域）与 `data`/`begin`/`end`/`ubegin`/`uend` 的位移一致性 | measured（F155/F156：106 行 + 5 个 `--check` 例，8 个载荷 × 两类视图 × 两种移位；空 slice 的 `back()` abort 单独判，越界 `operator[]` 是 UB 记 unmeasured） | 逐字节 + 判定（abort 与否） |
 
 ## 边界之外（永久不在本仪器范围）
 
