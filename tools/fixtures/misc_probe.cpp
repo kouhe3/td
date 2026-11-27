@@ -3,6 +3,8 @@
 //   misc_probe username <hex>    clean_username
 //   misc_probe phone <hex>       clean_phone_number
 //   misc_probe offending <hex>   replace_offending_characters
+//   misc_probe valid_username <hex>    is_valid_username   -> out=0|1
+//   misc_probe allowed_username <hex>  is_allowed_username -> out=0|1
 //
 // Input and output are hex-encoded bytes, so argv encoding cannot interfere.
 // clean_name and clean_input_string are deliberately out of scope: they need
@@ -74,6 +76,14 @@ int main(int argc, char **argv) {
     auto value = input;
     td::replace_offending_characters(value);
     print_hex("out", value);
+    return 0;
+  }
+  if (mode == "valid_username") {
+    std::printf("out=%d\n", td::is_valid_username(input) ? 1 : 0);
+    return 0;
+  }
+  if (mode == "allowed_username") {
+    std::printf("out=%d\n", td::is_allowed_username(input) ? 1 : 0);
     return 0;
   }
   std::fprintf(stderr, "unknown mode %s\n", mode.c_str());

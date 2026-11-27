@@ -26,7 +26,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1561 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 协议 / RPC 面 | 14 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 48 op/122 行、web_proxy 26 case、misc 24 case | 各自的 `--selftest`、F103–F129 |
+| 协议 / RPC 面 | 14 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 48 op/122 行、web_proxy 26 case、misc 44 case | 各自的 `--selftest`、F103–F129 |
 | 门禁 | 26 项（本轮新增 `misc`） | `uv run python tools/verify.py` |
 | 定义域 | 87 个 measured cell、7 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -o '\| measured（' docs/coverage-domain.md \| wc -l` / `grep -o '\| unmeasured' docs/coverage-domain.md \| wc -l` |
 
@@ -108,7 +108,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T60 | C 档可判性探测：用假 `RawConnection` + 假回调驱动 `SessionConnection`，注入 rpc_result / bad_server_salt / bad_msg_notification(16/17/99) / 容器，看事件是否可复现 | F122, F123 | done（**可驱动**；6 个场景事件符合预期，两次运行逐字节相同；布局两坑记入 F123） |
 | T61 | C 档实现：以 `session_probe` 为骨架造「可注入字节」的 oracle，再写 Rust 侧的 session 策略子集（rpc_result/容器解析、error_code→动作、换盐），并扩到 `msgs_ack` / `new_session_created` / `req_msg_id==0` / `msg_detailed_info` 族 / `msgs_all_info` / `msgs_state_info` | F122–F125 | done（`session_diff.py`：48 op/122 行、`PASS`；三次变异 RED：code 20 文案、new_session 参数、detailed-info 字段；gzip 与 pong/future_salts 仍未覆盖，记在 F124） |
 | T62 | 换面到 `td/telegram` 纯函数：Web 代理的 `get_web_proxy_secret` / `get_web_proxy_link_secret` / `get_web_proxy_address` / `get_web_proxy_link_secret()`（带标记）/ `get_web_proxy_bridge_capability`（HMAC） | F126, F127 | done（`web_proxy_diff.py`：26 case、`PASS`；RED 由上下文常量 v1→v2 提供） |
-| T63 | 继续换面：`td/telegram/misc.cpp` 的 `clean_username` / `clean_phone_number` / `replace_offending_characters`（`clean_name` 与 `clean_input_string` 需要 utf8_truncate / 空格表 / emoji 规则，本轮标 unmeasured） | F128, F129 | done（`misc_diff.py`：24 case、`PASS`；RED 由去掉小写映射提供） |
+| T63 | 继续换面：`td/telegram/misc.cpp` 的 `clean_username` / `clean_phone_number` / `replace_offending_characters` / `is_valid_username` / `is_allowed_username`（`clean_name` 与 `clean_input_string` 需要 utf8_truncate / 空格表 / emoji 规则，本轮标 unmeasured） | F128, F129 | done（`misc_diff.py`：44 case、`PASS`；两次变异 RED：小写映射、保留前缀表） |
 
 ## 变更记录
 
@@ -165,3 +165,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F127 | T62 | 变异把 bridge 上下文从 v1 改成 v2，bridge 输出全变；证明这条判据绑的是常量与 HMAC 本身 |
 | 2026-11-27 | F128 | T63, 仪器 | 继续换面到 `misc.cpp` 的轻量清洗函数；`clean_name` / `clean_input_string` 的复杂规则先留 unmeasured，避免为一条 lane 复制整套 UTF-8 表 |
 | 2026-11-27 | F129 | T63 | 去掉小写映射的变异被抓在 `DIFF username 416243`；证明三条清洗规则各自在判据里 |
+| 2026-11-27 | F128, F129 | T63 | misc lane 扩到用户名判定：`is_valid_username` / `is_allowed_username` 入判据（44 case），第二次变异（保留前缀表）抓到 `DIFF allowed_username` |

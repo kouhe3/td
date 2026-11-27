@@ -96,6 +96,53 @@ fn replace_offending_characters(input: &[u8]) -> Vec<u8> {
     bytes
 }
 
+fn is_alpha(byte: u8) -> bool {
+    byte.is_ascii_alphabetic()
+}
+
+fn is_valid_username(username: &[u8]) -> bool {
+    if username.is_empty() || username.len() > 32 || !is_alpha(username[0]) {
+        return false;
+    }
+    if username
+        .iter()
+        .any(|&byte| !is_alpha(byte) && !byte.is_ascii_digit() && byte != b'_')
+    {
+        return false;
+    }
+    if username.last() == Some(&b'_') {
+        return false;
+    }
+    !username.windows(2).any(|pair| pair[0] == b'_' && pair[1] == b'_')
+}
+
+fn is_allowed_username(username: &[u8]) -> bool {
+    if !is_valid_username(username) || username.len() < 5 {
+        return false;
+    }
+    let lowered: Vec<u8> = username
+        .iter()
+        .map(|&byte| {
+            if byte.is_ascii_uppercase() {
+                byte - b'A' + b'a'
+            } else {
+                byte
+            }
+        })
+        .collect();
+    const RESERVED: [&[u8]; 8] = [
+        b"admin",
+        b"telegram",
+        b"support",
+        b"security",
+        b"settings",
+        b"contacts",
+        b"service",
+        b"telegraph",
+    ];
+    !RESERVED.iter().any(|prefix| lowered.starts_with(prefix))
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
@@ -107,6 +154,14 @@ fn main() -> ExitCode {
         "username" => clean_username(&input),
         "phone" => clean_phone_number(&input),
         "offending" => replace_offending_characters(&input),
+        "valid_username" => {
+            println!("out={}", is_valid_username(&input) as u8);
+            return ExitCode::SUCCESS;
+        }
+        "allowed_username" => {
+            println!("out={}", is_allowed_username(&input) as u8);
+            return ExitCode::SUCCESS;
+        }
         other => {
             eprintln!("unknown mode {other}");
             return ExitCode::from(2);

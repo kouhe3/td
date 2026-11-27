@@ -53,6 +53,27 @@ def cases() -> list[list[str]]:
         ["offending", bytes([0xE2, 0x80]).hex()],
         ["offending", bytes([0xE2]).hex()],
         ["offending", (b"x" + LRM + RLM + LRM + RLM + b"y").hex()],
+        # username predicates
+        ["valid_username", ""],
+        ["valid_username", b"a".hex()],
+        ["valid_username", b"_a".hex()],
+        ["valid_username", b"a_".hex()],
+        ["valid_username", b"a__b".hex()],
+        ["valid_username", b"abc_def".hex()],
+        ["valid_username", (b"a" * 32).hex()],
+        ["valid_username", (b"a" * 33).hex()],
+        ["valid_username", b"A_b9".hex()],
+        ["valid_username", "Ж".encode().hex()],
+        ["allowed_username", ""],
+        ["allowed_username", b"abcd".hex()],
+        ["allowed_username", b"abcde".hex()],
+        ["allowed_username", b"Admin_1".hex()],
+        ["allowed_username", b"telegram_x".hex()],
+        ["allowed_username", b"support1".hex()],
+        ["allowed_username", b"setting".hex()],
+        ["allowed_username", b"settings_1".hex()],
+        ["allowed_username", b"Admin".hex()],
+        ["allowed_username", b"telegraph".hex()],
     ]
 
 
