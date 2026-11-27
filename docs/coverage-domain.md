@@ -125,6 +125,7 @@
 | `td/telegram/net/DcId` 的值面（静态 `is_valid` / `create` / `from_value`、`is_empty` / `is_main` / `is_exact`、`==` / `<`、`operator<<` 的五个分支） | measured（F147/F148：273 行，含 13 个 int32 边界 + 40 个固定随机值；`get_raw_id` / `internal` / `external` 的 CHECK 分支 unmeasured） | 逐字节 |
 | `tdutils::Slice` 的视图操作（`remove_prefix` / `remove_suffix` / `substr` 的静默截断 / `truncate` 只缩不涨） | measured（F149/F150：119 行 + 17 个 `--check` 例，其中 12 个越界 abort、5 个 `n == size` 对照；F150 三次变异） | 逐字节 + 判定（abort 与否） |
 | `tdutils::Slice` 的查找与比较（`find` / `rfind` 的 `npos`、`==` / `!=`、`<` 的 unsigned 字节序与前缀规则） | measured（F151/F152：595 行，17 载荷 × 9 字节 × 2 + 17×17 比较；F152 三次变异分别打中末字节、signedness、前缀长度） | 逐字节 |
+| `tdutils` 的前后缀判定（`begins_with` / `ends_with`，`misc.h` 的自由函数） | measured（F153/F154：578 行，17 个载荷的两两有序对 × 2；超长 affix 短路与空 affix 的 one-past-end 零长 slice 都覆盖；F154 三次变异） | 逐字节 |
 
 ## 边界之外（永久不在本仪器范围）
 

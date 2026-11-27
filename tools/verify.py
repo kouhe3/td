@@ -77,6 +77,7 @@ GATES = [
     ("dc_id", [PYTHON, "tools/dc_id_diff.py", "--selftest"]),
     ("slice", [PYTHON, "tools/slice_diff.py", "--selftest"]),
     ("slice_cmp", [PYTHON, "tools/slice_cmp_diff.py", "--selftest"]),
+    ("slice_prefix", [PYTHON, "tools/slice_prefix_diff.py", "--selftest"]),
     ("fuzz", [PYTHON, "tools/tdjson_fuzz.py", "--seeds", "20261126,7,99,2027"]),
     ("client_options", [PYTHON, "tools/gen_client_options.py", "--check"]),
     ("client_lane", [PYTHON, "tools/client_diff.py"]),

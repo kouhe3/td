@@ -1,6 +1,6 @@
 # Plan — RIIR（JSON/C ABI 边界差分实现）
 
-gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=34 | status=running | date=2026-11-27
+gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=35 | status=running | date=2026-11-27
 
 ## 范围
 
@@ -26,9 +26,9 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1561 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 协议 / RPC 面 | 23 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 72 op/182 行、web_proxy 26 case、misc 80 case、tls_init 16 扩展 × 8 样本/侧、dh_handshake 32 case、rsa 23 case、public_rsa 9 case、public_rsa_cdn 21 行、buffer_slice 34 行、dc_id 273 行、slice 119 行 + 17 check、slice_cmp 595 行 | 各自的 `--selftest`、F103–F152 |
-| 门禁 | 35 项（本轮新增 `slice_cmp`） | `uv run python tools/verify.py` |
-| 定义域 | 82 个 measured 行、6 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c '\| measured（' docs/coverage-domain.md` \| `grep -c '\| unmeasured \|' docs/coverage-domain.md` |
+| 协议 / RPC 面 | 24 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 72 op/182 行、web_proxy 26 case、misc 80 case、tls_init 16 扩展 × 8 样本/侧、dh_handshake 32 case、rsa 23 case、public_rsa 9 case、public_rsa_cdn 21 行、buffer_slice 34 行、dc_id 273 行、slice 119 行 + 17 check、slice_cmp 595 行、slice_prefix 578 行 | 各自的 `--selftest`、F103–F154 |
+| 门禁 | 36 项（本轮新增 `slice_prefix`） | `uv run python tools/verify.py` |
+| 定义域 | 83 个 measured 行、6 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c '\| measured（' docs/coverage-domain.md` \| `grep -c '\| unmeasured \|' docs/coverage-domain.md` |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
 
@@ -122,6 +122,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T73 | 换回小面：`td/telegram/net/DcId` 的静态 `is_valid` / `create` / `from_value` 边界与派生谓词（`is_empty` / `is_main` / `is_exact` / `get_value` / `==` / `<` / `operator<<`），脚本驱动 276 行；判据形态 = 逐字节（纯值面，无随机源） | F147, F148 | done（`dc_id_diff.py`：273 行、`PASS`；三次变异 RED：上界 `<`、create 回退、is_main 丢失） |
 | T74 | 换到 `tdutils::Slice` 的视图边界：`remove_prefix` / `remove_suffix` / `substr`（含截断） / `truncate`（只缩不涨），脚本驱动 + 每例一进程的 CHECK 车道；判据形态 = 逐字节 + 判定（abort 与否） | F149, F150 | done（`slice_diff.py`：119 行 + 17 check、`PASS`，3 s；三次变异 RED：trunc 截断、substr2 少截 1、prefix 的 CHECK 收紧） |
 | T75 | 换到同一文件的查找与比较：`find` / `rfind`（含 `npos`、首/末命中、空 slice）与 `==` / `!=` / `<`（公共前缀、**unsigned char** 序、前缀短者小）；纯值面，无 abort 分支 | F151, F152 | done（`slice_cmp_diff.py`：595 行、`PASS`，0.3 s；三次变异 RED：find 漏末字节、i8 序、equals 丢长度） |
+| T76 | 收掉 `misc.h` 的前后缀判定：`begins_with` / `ends_with` 的 17×17 全对（超长 affix 返回 false、空 affix 恒 true 且走 one-past-end 零长 slice、含 `0x00`/`0x80`/`0xff` 载荷） | F153, F154 | done（`slice_prefix_diff.py`：578 行、`PASS`，0.3 s；三次变异 RED：begins 读尾、ends 读头、空后缀返 false） |
 
 ## 变更记录
 
@@ -192,3 +193,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F149, F150 | T74, 门禁 | 新增 slice lane：`Slice` 的 `remove_prefix` / `remove_suffix` / `substr` / `truncate` 边界，脚本（合法域）+ `--check`（每例一进程，只比「是否 abort」）；门禁 33 → 34 |
 | 2026-11-27 | F151, F152 | T75, 门禁 | 新增 slice_cmp lane：`Slice` 的 `find` / `rfind`（npos 打印成无符号值）与 `==` / `!=` / `<`（unsigned 序 + 前缀规则），595 行全值面；门禁 34 → 35 |
 | 2026-11-27 | F134–F152 | coverage-domain | 回填 round 26–34 漏记的 8 条 lane（dh_handshake / rsa / public_rsa / public_rsa_cdn / buffer_slice / dc_id / slice / slice_cmp），并把 misc 的 case 数、`clean_name` 的状态、`rpc_result` 的 gzip/pong/future_salts 备注改成已判；定义域 73 → 82 measured、7 → 6 unmeasured，计数口径改成 `grep -c`（原来 `grep -o` 的口径会重复计数） |
+| 2026-11-27 | F153, F154 | T76, 门禁 | 新增 slice_prefix lane：`misc.h` 的 `begins_with` / `ends_with`（超长 affix 短路、空 affix 走 one-past-end 零长 slice、头部/尾部窗口），578 行 17×17 全对；门禁 35 → 36 |
