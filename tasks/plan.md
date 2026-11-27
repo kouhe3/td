@@ -1,6 +1,6 @@
 # Plan — RIIR（JSON/C ABI 边界差分实现）
 
-gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=18 | status=running | date=2026-11-27
+gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=19 | status=running | date=2026-11-27
 
 ## 范围
 
@@ -10,7 +10,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 - 不在范围内：`tddb` / `td/mtproto` / `tdactor` / `tdutils`（合计 6.4 万行）——它们在该边界之下，互操作要匹配 C++ ABI，不可行（记 `unmeasured`，见 `docs/coverage-domain.md`）。
 - 不碰上游 C++ 源码；Rust 侧工程在本仓库 `rust/`（T6 已从 `C:/tmp/td-rs-probe` 移入），本仓库同时放台账、仪器、计划与实现。
 
-## 进度（2026-11-27，round 18）
+## 进度（2026-11-27，round 19）
 
 两个口径分开看，不要混成一句百分比。
 
@@ -26,9 +26,9 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1561 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 协议 / RPC 面 | 10 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case | 各自的 `--selftest`、F103–F117 |
-| 门禁 | 22 项（本轮新增 `proxy_secret`） | `uv run python tools/verify.py` |
-| 定义域 | 70 行 measured、8 行 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c 'measured（' docs/coverage-domain.md` / `grep -c '\| unmeasured' docs/coverage-domain.md` |
+| 协议 / RPC 面 | 11 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头 | 各自的 `--selftest`、F103–F120 |
+| 门禁 | 23 项（本轮新增 `header`） | `uv run python tools/verify.py` |
+| 定义域 | 71 行 measured、8 行 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c 'measured（' docs/coverage-domain.md` / `grep -c '\| unmeasured' docs/coverage-domain.md` |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
 
@@ -103,6 +103,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T55 | 协议面第九块：7 个维护类服务消息的生成编码与两个抽象分派点（`BadMsgNotification` / `MsgDetailedInfo`），含三种解析错误文案；oracle = `tools/fixtures/svc_msg_probe.cpp`，判据 = 41 个 case 双向 roundtrip 逐字节相同 | F114, F115 | done（`PASS cases=41 fields_bytes=344`） |
 | T56 | 维护类消息的**策略**：`SessionConnection::on_packet(bad_msg_notification)` 的 `error_code`→动作表（16/20 重发、17 断连、18/19/32–35/64 失败、其它 unknown）与 `on_packet(bad_server_salt)` 的换盐 + 单条消息失败 | B11 | blocked（方法在 `SessionConnection` 且 private，需要 actor 与活 `RawConnection`；回流条件 = 造出 SessionConnection 级 oracle 或公开解析入口） |
 | T57 | 协议面第十块：`ProxySecret` 全公开行为（`from_link` 三级回退、`from_binary` 长度规则与 truncate、`get_encoded_secret`、`get_proxy_secret`、`use_random_padding`、`emulate_tls`、`get_domain`）与三类错误文案；oracle = `tools/fixtures/proxy_secret_probe.cpp`，判据 = 41 个手写 + 87 个随机 case 逐字节相同 | F116, F117 | done（`PASS cases=128`、`corpus md5=a001043c88beac8cf144567798a7d769`；RED 由 17B 接受条件放宽提供） |
+| T58 | 协议面第十一块：把 `MtprotoHeader` 从单点扩成选项矩阵（代理类型 × emulator × 语言包/语言码 × tz_offset × 非 ASCII/长字符串），同时比 default 与 anonymous；oracle = `tools/fixtures/header_probe.cpp`，判据 = 85 case 两份头逐字节相同 | F118, F119, F120 | done（`PASS cases=85`；RED 由 emulator 位 `1<<10`→`1<<11` 提供；顺带修掉 oracle 的 ANSI argv 坑，F119） |
 
 ## 变更记录
 
@@ -146,3 +147,6 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F113, B11 | T56, coverage-domain | `bad_msg_notification` 的 error_code→动作表仍是 blocked：机制在 `SessionConnection.cpp:344-386`（read-only）可读，但入口 private + actor，无法用探针驱动；只落回流条件，不占 fact |
 | 2026-11-27 | F116 | T57, 仪器 | 协议面第十块换到纯函数：`ProxySecret` 的判据全在公开 API 上，且 base64 / hex 的边界规则本身是被测合同（三级回退顺序、去 padding 的长度规则），因此用「手写边界 + 随机字符串/字节语料」两条腿 |
 | 2026-11-27 | F117 | T57 | 变异只改 17B 的接受条件（去掉 `dd` 检查），首个分歧落在 `link 00…00`；证明 lane 抓的是长度规则而不是「输出有变化」 |
+| 2026-11-27 | F118 | T58, 仪器 | `MtprotoHeader` 从单点扩成矩阵：代理类型、emulator、语言包组合、tz_offset、非 ASCII 与 253/254/300 字节字符串；匿名头一并比 |
+| 2026-11-27 | F119 | T58, 探针 | 非 ASCII 参数的假分歧来自 Windows ANSI argv（GBK）；oracle 探针改读宽命令行再转 UTF-8，判据才落到被测物上 |
+| 2026-11-27 | F120 | T58 | emulator 位变异被抓在 `DIFF … 0 1 none`；证明 flags 的每一位都在判据里 |
