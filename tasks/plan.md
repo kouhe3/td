@@ -115,6 +115,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T66 | 补 T63 的 unmeasured：`clean_name` / `strip_empty_characters` / `clean_input_string`，判据 = 74 条 argv case + 6 条 stdin 长输入（34996/34997/35000 字节边界）逐字节相同 | F134, F135 | done（`misc_diff.py`：80 case、`PASS`；三次变异 RED：NBSP 折叠、LENGTH_LIMIT-3、空格表首字节集） |
 | T67 | 换形态到「随机/边界输入 + 素性判定」：`DhHandshake::check_config` 的四段（位数、`p mod 4g` 表、p 素性、`(p-1)/2` 素性），语料 32 条含 RFC 3526 group 14 与一个非 safe prime；Rust 侧 12 基 Miller-Rabin | F136, F137 | done（`dh_handshake_diff.py`：32 case、`PASS`，3.7 s；三次变异 RED：模表、半素数检查、位数检查） |
 | T68 | 换面到格式驱动：`td/mtproto/RSA.cpp` 的 PEM/SPKI 解析（base64 + DER）、三种失败文案、`get_fingerprint`（TL 序列化 + SHA1 offset 12）、裸 `x^e mod n` 的 encrypt/decrypt；语料 18 条，PEM 由仪器现场构造 | F138, F139 | done（`rsa_diff.py`：18 case、`PASS`；三次变异 RED：模数长度、指纹偏移、`x>=n` 边界） |
+| T69 | 补 PKCS#1 形态并换到查表面：rsa lane 加 PKCS#1 语料（18 → 23），新增 public_rsa lane（`PublicRsaKeySharedMain` 的 main/test 两把 key、指纹顺序语义、`{...}` 文案） | F140, F141 | done（`public_rsa_diff.py`：9 case、`PASS`；三次变异 RED：只查首个指纹、忽略 provider、括号形态） |
 
 ## 变更记录
 
@@ -177,3 +178,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F134, F135 | T66 | 关掉 T63 的 unmeasured：`clean_name` / `strip_empty_characters` / `clean_input_string` 入判据（74 + 6 条），顺带记下 `utf8_truncate` 用字节长度比字符数的怪行为；长输入走 stdin 绕开 argv 上限 |
 | 2026-11-27 | F136, F137 | T67 | 新增 dh_handshake lane：判定函数按四段分支枚举边界 + 随机语料（32 条），Rust 侧自写 12 基 Miller-Rabin 与 OpenSSL 结论对齐；`g` 越界也报 `Bad prime mod 4g`，门禁 27 → 28 |
 | 2026-11-27 | F138, F139 | T68 | 新增 rsa lane：PEM/SPKI（base64 + DER）解析 + 三种失败文案 + 指纹 + 裸 `x^e mod n`（18 case，PEM 现场构造）；指纹输入**不含构造号**（与 F112 同规则），门禁 28 → 29 |
+| 2026-11-27 | F140, F141 | T69 | rsa 补 PKCS#1（`BEGIN RSA PUBLIC KEY`，TDLib 自带 key 表就用它）；新增 public_rsa lane（指纹顺序语义 + `{...}` 文案），门禁 29 → 30 |

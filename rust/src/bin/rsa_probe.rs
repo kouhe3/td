@@ -76,13 +76,20 @@ fn base64_decode(text: &[u8]) -> Option<Vec<u8>> {
     Some(out)
 }
 
-fn pem_body(pem: &[u8]) -> Option<Vec<u8>> {
+/// Returns (DER bytes, is_pkcs1). TDLib's own key table uses the PKCS#1 header
+/// (`BEGIN RSA PUBLIC KEY`), so both wrappers have to be accepted.
+fn pem_body(pem: &[u8]) -> Option<(Vec<u8>, bool)> {
     let text = std::str::from_utf8(pem).ok()?;
-    let begin = "-----BEGIN PUBLIC KEY-----";
-    let end = "-----END PUBLIC KEY-----";
-    let start = text.find(begin)? + begin.len();
-    let stop = start + text[start..].find(end)?;
-    base64_decode(text[start..stop].as_bytes())
+    for (begin, end, pkcs1) in [
+        ("-----BEGIN PUBLIC KEY-----", "-----END PUBLIC KEY-----", false),
+        ("-----BEGIN RSA PUBLIC KEY-----", "-----END RSA PUBLIC KEY-----", true),
+    ] {
+        let Some(header) = text.find(begin) else { continue };
+        let start = header + begin.len();
+        let Some(length) = text[start..].find(end) else { continue };
+        return base64_decode(text[start..start + length].as_bytes()).map(|der| (der, pkcs1));
+    }
+    None
 }
 
 struct Der<'a> {
@@ -134,7 +141,18 @@ impl<'a> Der<'a> {
     }
 }
 
-fn parse_public_key(der: &[u8]) -> Result<(BigUint, BigUint), String> {
+fn parse_public_key(der: &[u8], pkcs1: bool) -> Result<(BigUint, BigUint), String> {
+    if pkcs1 {
+        let mut top = Der::new(der);
+        let sequence = top.tlv(0x30).ok_or(READ_ERROR)?;
+        if !top.at_end() {
+            return Err(READ_ERROR.to_string());
+        }
+        let mut inner = Der::new(sequence);
+        let n = inner.tlv(0x02).ok_or(READ_ERROR)?;
+        let e = inner.tlv(0x02).ok_or(READ_ERROR)?;
+        return Ok((BigUint::from_bytes_be(n), BigUint::from_bytes_be(e)));
+    }
     let mut top = Der::new(der);
     let body = top.tlv(0x30).ok_or(READ_ERROR)?;
     if !top.at_end() {
@@ -210,14 +228,14 @@ fn main() -> ExitCode {
             return ExitCode::from(1);
         }
     };
-    let der = match pem_body(&pem) {
-        Some(der) => der,
+    let (der, pkcs1) = match pem_body(&pem) {
+        Some(pair) => pair,
         None => {
             println!("message={READ_ERROR}");
             return ExitCode::SUCCESS;
         }
     };
-    let (n, e) = match parse_public_key(&der) {
+    let (n, e) = match parse_public_key(&der, pkcs1) {
         Ok(pair) => pair,
         Err(message) => {
             println!("message={message}");
