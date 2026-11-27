@@ -1,18 +1,20 @@
-// Oracle scaffold for SessionConnection: a fake RawConnection injects plaintext
-// packets and a fake callback records what TDLib does with them.
+// Scripted oracle for SessionConnection: fake transport in, events out.
 //
-// This answers the C-tier question -- can rpc_result / msg_container parsing,
-// the bad_msg_notification policy and the bad_server_salt switch be tested
-// without a network? Yes: the class takes its transport by unique_ptr and its
-// callback per flush, so both can be faked. It is not a gate item yet; turning
-// it into an instrument needs a Rust counterpart and a criterion.
+//   session_probe <script.txt>
 //
-// Two layout facts only show up when running it:
-//   * the plaintext passed to RawConnection::Callback is the message prefix plus
-//     the body: [msg_id:long][seq_no:int][length:int][body] (SessionConnection
-//     re-parses it as mtproto_api::message);
-//   * a container is [msg_container#73f1f8dc][count:int][message...] with no
-//     vector constructor, matching TDLib's own ContainerImpl.
+// Script lines:
+//   newconn <session_id:u64> <salt:u64>   start a fresh connection + AuthData
+//   in <msg_id:u64> <seq:int> <body_hex>  inject one plaintext packet
+//   salt                                  print the current server salt
+//
+// The plaintext handed to RawConnection::Callback is the message prefix plus the
+// body: [msg_id:long][seq_no:int][length:int][body]; SessionConnection re-parses
+// it as mtproto_api::message (F123). Containers are
+// [msg_container#73f1f8dc][count:int][message...] with no vector constructor,
+// matching TDLib's own ContainerImpl.
+//
+// Output: one line per op (conn/in/salt) plus the callback events; two runs are
+// byte-identical, so the Rust side can be compared line by line.
 //
 // Build (from a configured C:/tmp/td-build):
 //   g++ -std=c++17 -O2 -fno-exceptions -fno-rtti -I <repo> -I <repo>/tdutils \
@@ -25,8 +27,6 @@
 //       C:/tmp/td-build/tdactor/libtdactor.a C:/tmp/td-build/sqlite/libtdsqlite.a \
 //       -Wl,--end-group -lssl -lcrypto -lz -lws2_32 -liphlpapi -lcrypt32 \
 //       -lpsapi -lmswsock -lshell32 -o session_probe.exe
-//
-// Usage: session_probe.exe  (prints six scenarios to stdout, exit code 0)
 
 #include "td/mtproto/AuthData.h"
 #include "td/mtproto/RawConnection.h"
@@ -39,12 +39,14 @@
 
 #include <cstdio>
 #include <cstring>
+#include <fstream>
+#include <iterator>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
 
 using td::int32;
-using td::int64;
 using td::uint64;
 
 namespace {
@@ -63,15 +65,15 @@ struct FakeRaw final : public td::mtproto::RawConnection {
   td::mtproto::TransportType get_transport_type() const final {
     return td::mtproto::TransportType();
   }
-  size_t send_crypto(const td::Storer &storer, uint64, int64, const td::mtproto::AuthKey &, uint64) final {
+  size_t send_crypto(const td::Storer &storer, uint64, td::int64, const td::mtproto::AuthKey &, uint64) final {
     std::string buffer(storer.size(), '\0');
-    storer.store(reinterpret_cast<td::uint8 *>(&buffer[0]));
+    (void)storer.store(reinterpret_cast<td::uint8 *>(&buffer[0]));
     sent.push_back(buffer);
     return buffer.size();
   }
   void send_no_crypto(const td::Storer &storer) final {
     std::string buffer(storer.size(), '\0');
-    storer.store(reinterpret_cast<td::uint8 *>(&buffer[0]));
+    (void)storer.store(reinterpret_cast<td::uint8 *>(&buffer[0]));
     sent.push_back(buffer);
   }
   td::PollableFdInfo &get_poll_info() final {
@@ -161,6 +163,16 @@ struct Events final : public td::mtproto::SessionConnection::Callback {
   }
 };
 
+std::string unhex(const std::string &text) {
+  std::string out;
+  for (size_t i = 0; i + 1 < text.size(); i += 2) {
+    unsigned int byte = 0;
+    std::sscanf(text.c_str() + i, "%2x", &byte);
+    out.push_back(static_cast<char>(byte));
+  }
+  return out;
+}
+
 void put_i32(std::string &out, td::uint32 value) {
   for (int i = 0; i < 4; i++) {
     out.push_back(static_cast<char>((value >> (8 * i)) & 0xff));
@@ -172,135 +184,80 @@ void put_i64(std::string &out, uint64 value) {
   }
 }
 
-std::string message_envelope(uint64 msg_id, int32 seq_no, const std::string &body) {
-  std::string out;
-  put_i64(out, msg_id);
-  put_i32(out, static_cast<td::uint32>(seq_no));
-  put_i32(out, static_cast<td::uint32>(body.size()));
-  out += body;
-  return out;
-}
-
-std::string container(const std::vector<std::string> &messages) {
-  std::string out;
-  put_i32(out, 0x73f1f8dc);
-  put_i32(out, static_cast<td::uint32>(messages.size()));
-  for (auto &message : messages) {
-    out += message;
-  }
-  return out;
-}
-
-uint64 now_message_id(int low) {
-  return (static_cast<uint64>(td::Time::now()) << 32) | static_cast<uint64>(low);
-}
-
-// The plaintext handed to RawConnection::Callback is the message prefix plus the
-// body: [msg_id][seq_no][length][body]. SessionConnection re-parses it as
-// `mtproto_api::message`, so a bare object must be wrapped here.
-void send_single(FakeRaw &raw, uint64 outer_msg_id, const std::string &body) {
-  td::mtproto::PacketInfo info;
-  info.session_id = 777;
-  info.message_id = td::mtproto::MessageId(outer_msg_id);
-  info.seq_no = 1;
-  info.version = 2;
-  raw.inbound.emplace_back(info, message_envelope(outer_msg_id, 1, body));
-}
-
 struct Harness {
-  td::mtproto::AuthData auth;
+  td::unique_ptr<td::mtproto::AuthData> auth;
   FakeRaw *raw = nullptr;
   td::unique_ptr<td::mtproto::SessionConnection> conn;
   Events events;
 
-  explicit Harness(int64 salt) {
-    auth.set_use_pfs(false);
-    auth.set_main_auth_key(td::mtproto::AuthKey(1, td::string(256, 'a')));
-    auth.set_session_id(777);
-    auth.set_server_salt(static_cast<uint64>(salt), td::Time::now());
-  }
-  void connect() {
+  void open(uint64 session_id, uint64 salt) {
+    conn.reset();
+    raw = nullptr;
+    auth = td::make_unique<td::mtproto::AuthData>();
+    auth->set_use_pfs(false);
+    auth->set_main_auth_key(td::mtproto::AuthKey(1, td::string(256, 'a')));
+    auth->set_session_id(session_id);
+    auth->set_server_salt(salt, td::Time::now());
     auto fake = td::make_unique<FakeRaw>();
     raw = fake.get();
-    conn = td::make_unique<td::mtproto::SessionConnection>(td::mtproto::SessionConnection::Mode::Tcp, std::move(fake),
-                                                           &auth);
+    conn = td::make_unique<td::mtproto::SessionConnection>(td::mtproto::SessionConnection::Mode::Tcp,
+                                                           std::move(fake), auth.get());
+    conn->flush(&events);
+  }
+
+  void inject(uint64 message_id, int32 seq_no, const std::string &body) {
+    std::string packet;
+    put_i64(packet, message_id);
+    put_i32(packet, static_cast<td::uint32>(seq_no));
+    put_i32(packet, static_cast<td::uint32>(body.size()));
+    packet += body;
+    td::mtproto::PacketInfo info;
+    info.session_id = auth->get_session_id();
+    info.message_id = td::mtproto::MessageId(message_id);
+    info.seq_no = seq_no;
+    info.version = 2;
+    raw->inbound.emplace_back(info, packet);
     conn->flush(&events);
   }
 };
 
-void scenario_rpc_result() {
-  std::printf("scenario=rpc_result\n");
-  Harness h(1234);
-  h.connect();
-  uint64 outer = now_message_id(1);
-  std::string child;
-  put_i32(child, 0xf35c6d01);  // rpc_result
-  put_i64(child, 4001);        // req_msg_id
-  put_i32(child, 0x12345678);  // not gzip_packed: the default branch passes it through
-  send_single(*h.raw, outer, child);
-  h.conn->flush(&h.events);
-  std::printf("end\n");
-}
-
-void scenario_bad_server_salt() {
-  std::printf("scenario=bad_server_salt\n");
-  Harness h(1234);
-  h.connect();
-  std::string child;
-  put_i32(child, 0xedab447b);
-  put_i64(child, 4001);
-  put_i32(child, 1);
-  put_i32(child, 48);
-  put_i64(child, 0x99aabbccddeeff00ULL);
-  send_single(*h.raw, now_message_id(1), child);
-  h.conn->flush(&h.events);
-  std::printf("salt_after=%llu\n", static_cast<unsigned long long>(h.auth.get_server_salt(td::Time::now())));
-  std::printf("end\n");
-}
-
-void scenario_bad_msg(int code) {
-  std::printf("scenario=bad_msg code=%d\n", code);
-  Harness h(1234);
-  h.connect();
-  std::string child;
-  put_i32(child, 0xa7eff811);
-  put_i64(child, 4001);
-  put_i32(child, 1);
-  put_i32(child, static_cast<td::uint32>(code));
-  send_single(*h.raw, now_message_id(1), child);
-  h.conn->flush(&h.events);
-  std::printf("end\n");
-}
-
-void scenario_container() {
-  std::printf("scenario=container\n");
-  Harness h(1234);
-  h.connect();
-  std::string first;
-  put_i32(first, 0xf35c6d01);
-  put_i64(first, 4001);
-  put_i32(first, 0x12345678);
-  std::string second;
-  put_i32(second, 0xa7eff811);
-  put_i64(second, 4003);
-  put_i32(second, 1);
-  put_i32(second, 16);
-  std::string body = container({message_envelope(4002, 1, first), message_envelope(4004, 1, second)});
-  send_single(*h.raw, now_message_id(1), body);
-  h.conn->flush(&h.events);
-  std::printf("end\n");
-}
-
 }  // namespace
 
-int main() {
-  td::mtproto::RawConnection *dummy = nullptr;
-  (void)dummy;
-  scenario_rpc_result();
-  scenario_bad_server_salt();
-  scenario_bad_msg(16);
-  scenario_bad_msg(17);
-  scenario_bad_msg(99);
-  scenario_container();
+int main(int argc, char **argv) {
+  if (argc != 2) {
+    std::fprintf(stderr, "usage: session_probe <script.txt>\n");
+    return 2;
+  }
+  std::ifstream input(argv[1], std::ios::binary);
+  std::string text((std::istreambuf_iterator<char>(input)), std::istreambuf_iterator<char>());
+  std::istringstream lines(text);
+  std::string line;
+  Harness harness;
+  while (std::getline(lines, line)) {
+    std::istringstream tokens(line);
+    std::string op;
+    if (!(tokens >> op) || op[0] == '#') {
+      continue;
+    }
+    if (op == "newconn") {
+      unsigned long long session_id = 0;
+      unsigned long long salt = 0;
+      tokens >> session_id >> salt;
+      harness.open(session_id, salt);
+      std::printf("conn session=%llu salt=%llu\n", session_id, salt);
+    } else if (op == "in") {
+      unsigned long long message_id = 0;
+      int seq_no = 0;
+      std::string body;
+      tokens >> message_id >> seq_no >> body;
+      std::printf("in msg=%llu\n", message_id);
+      harness.inject(message_id, seq_no, unhex(body));
+    } else if (op == "salt") {
+      std::printf("salt=%llu\n", static_cast<unsigned long long>(harness.auth->get_server_salt(td::Time::now())));
+    } else {
+      std::fprintf(stderr, "unknown op %s\n", op.c_str());
+      return 2;
+    }
+  }
   return 0;
 }
