@@ -134,6 +134,7 @@
 | `tdutils` 的整数解析（`to_integer` 四宽度、`to_integer_safe`、`hex_to_integer(_safe)`、`hex_decode`/`hex_encode`） | measured（F165/F166：296 行；有符号回绕/取反/夹到 MIN、safe 的逐字节往返、hex 的三条错误文案与 `MAX/16` 溢出检查都在判据里） | 逐字节 |
 | `tdutils` 的 base64/base32（标准与 url 编码、解码的五条错误文案、四个 `is_*` 谓词、`base64_filter`、`base32_encode`/`base32_decode`） | measured（F167/F168：203 行；url 不补 `=`、未用位必须为 0、长度检查先于字符检查、base32 的 `Nonzero padding` 都在判据里） | 逐字节 |
 | `tdutils` 的结构性 UTF-8（`check_utf8` 的 DFA、`utf8_length`、首字节谓词、`next_utf8_unsafe`、`append_utf8_character`、`utf8_truncate`/`utf8_substr`、`utf8_utf16_length`/`truncate`/`substr`） | measured（F169/F170：309 行；overlong/代理/>U+10FFFF/截断的 DFA 边界、字节-字符预算混用、`F8..FF` 在 UTF-16 计数里的不一致都在判据里；`utf8_to_lower`/`utf8_get_search_words` 依赖 unicode 表，不在本行） | 逐字节 |
+| `tdutils::Hints`（`add`/`remove`/改名/`set_rating`/`search`/`search_empty`/`has_key`/`key_to_string`/`size`） | measured（F171/F172：67 行，ASCII-only；`(rating 升序, key 升序)` 的排序方向、交集、`limit` 三种形状、改名删旧词都在判据里；unicode 搜索表与转写规则 unmeasured，`fix_words` 的前缀丢弃不可观察） | 逐字节 |
 
 ## 边界之外（永久不在本仪器范围）
 
