@@ -91,6 +91,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T44 | 协议面第一块：官方向量 samples-auth_key 步骤 1–4（resPQ 解析、pq 分解、`p_q_inner_data_dc` 序列化），Rust 侧 `rust/src/bin/auth_key_probe.rs` + `tools/auth_key_diff.py`；判据是**外部规范向量**，不是 C++ oracle | F103, F104 | done（4 个字段全等；RED→GREEN 已记） |
 | T45 | 协议面第二块：`server_DH_params_ok` 解密与 `server_DH_inner_data` 解析（AES-256-IGE + SHA1 校验），字段 `answer_len/hash_ok/g/server_time/dh_prime/g_a` 对齐官方向量 | F105 | done（11 个字段全等） |
 | T46 | 协议面第三块：`g_b` / `auth_key` 的 2048-bit 模幂与 `new_nonce_hash1` KDF，对齐样本步骤 7–9；至此 DH 握手（步骤 1–9）端到端对齐官方向量 | F106 | done（14 个字段全等） |
+| T47 | 协议面第四块：MTProto 2.0 消息层（msg_key、KDF2、AES-256-IGE 封装）；没有官方向量，判据改为自建 C++ oracle（`tools/fixtures/msgprobe.cpp`，链接 TDLib 的 `KDF2` 与 `aes_ige_encrypt`）；Rust 侧 `rust/src/bin/msg_layer_probe.rs` + `tools/msg_layer_diff.py` | F107 | done（4 个字段全等） |
 
 ## 变更记录
 
@@ -121,3 +122,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F103, F104 | T44, 仪器 | 换面到协议层：第一条 lane 用 Telegram 官方 auth_key 样本当判据（不依赖 C++ oracle）。流程缺陷：预注册与实现同批落账，已用 RED→GREEN 补齐并记在 F103/F104 |
 | 2026-11-27 | F105 | T45 | 协议面第二块：AES-256-IGE + `answer_with_hash` 的哈希口径（只覆盖解析长度，不含对齐填充）落进 F105 |
 | 2026-11-27 | F106 | T46, Rust 依赖 | 协议面第三块：引入 `num-bigint`（纯 Rust）做 2048-bit 模幂；DH 握手 1–9 全对齐官方向量 |
+| 2026-11-27 | F107 | T47, 仪器 | 协议面第四块：消息层没有官方向量，改自建 C++ oracle（`msgprobe.cpp`，链接 `tdmtproto`/`tdutils` 静态库）；KDF2 的拆位规则落进 F107 |
