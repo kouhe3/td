@@ -95,6 +95,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T48 | 协议面第五块：完整包封装（salt / session_id / msg_id / seq_no / length / padding）；oracle = TDLib `Transport::write`，Rust 侧 `rust/src/bin/transport_probe.rs` 按 X=0 解回 | F108 | done（88 B 包、6 字段全等） |
 | T49 | 协议面第六块：intermediate 传输 framing（magic、4 字节小端长度、quick-ack 位、padded 变体）；oracle = TDLib `tcp::IntermediateTransport`，Rust 侧 `rust/src/bin/framing_probe.rs` | F109 | done（3 个 case） |
 | T50 | 协议面第七块：`seq_no` 状态机（逐值对齐）与 `msg_id` 生成（含随机，只判不变式：高 32 位 = `now << 32`、`% 4 == 0`、严格递增）；oracle = TDLib `AuthData`，Rust 侧 `rust/src/bin/msgid_probe.rs` | F110 | done（seq 6/6、两侧不变式均成立） |
+| T51 | RPC 层第一块：请求头 `invokeWithLayer` + `initConnection`（手写 TL 编码，含 flags 与 params jsonObject）；oracle = TDLib `MtprotoHeader::get_default_header`，Rust 侧 `rust/src/bin/rpc_probe.rs` | F111 | done（96 B 逐字节相同） |
 
 ## 变更记录
 
@@ -129,3 +130,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F108 | T48, 仪器 | 协议面第五块：完整包封装；写 X=0 / 读 X=8 的方向差异与「prefix 由 storer 自己写」落进 F108 |
 | 2026-11-27 | F109 | T49, 仪器 | 协议面第六块：intermediate framing；TDLib 无 abridged 分支，范围据此收窄并写进 F109 |
 | 2026-11-27 | F110 | T50, 仪器 | 协议面第七块：seq_no 逐值对齐；msg_id 因 `Random::secure_int32` 只能判不变式——这是第三种判据形态（字节 / 字段 / 不变式） |
+| 2026-11-27 | F111 | T51, 仪器 | RPC 层第一块：请求头手写 TL 编码对齐；oracle 链接 `tdcore`/`tdapi` 等七个静态库才链通，构建命令写进 `tools/fixtures/rpc_probe.cpp` 文件头 |

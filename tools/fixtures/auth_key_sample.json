@@ -63,5 +63,13 @@
     "now": 1700000000,
     "count": 6,
     "source": "TDLib AuthData via tools/fixtures/msgid_probe.cpp"
+  },
+  "rpc": {
+    "source": "TDLib MtprotoHeader::get_default_header via tools/fixtures/rpc_probe.cpp",
+    "api_id": 4,
+    "device_model": "Desktop",
+    "system_version": "Windows 10",
+    "application_version": "1.0",
+    "system_language_code": "en"
   }
 }
