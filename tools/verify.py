@@ -6,8 +6,9 @@
 
 判据:
     退出码 0 = 全部门禁全绿：`cargo build`（0 warning）、`tools/tdjson_diff.py`
-    （failures=0）、`tools/tdjson_fuzz.py`（随机语料零分歧）、`tools/client_diff.py`
-    （首启 lane 对齐）、六个生成器 `--check` 与仓库内容逐字节相同。
+    （failures=0）、`tools/binlog_diff.py`（binlog 四栏与 `binlog_dump` 逐行相同）、
+    `tools/tdjson_fuzz.py`（随机语料零分歧）、`tools/client_diff.py`
+    （首启 lane 对齐）、七个生成器 `--check` 与仓库内容逐字节相同。
 
 覆盖边界:
     覆盖 `tdjson` C ABI 的 `td_execute` 面（29 个同步 action + 全部 1114 个函数的参数解析，
@@ -49,6 +50,7 @@ GATES = [
         ],
     ),
     ("instrument", [PYTHON, "tools/tdjson_diff.py"]),
+    ("binlog", [PYTHON, "tools/binlog_diff.py", "--selftest"]),
     ("fuzz", [PYTHON, "tools/tdjson_fuzz.py", "--seeds", "20261126,7,99"]),
     ("client_options", [PYTHON, "tools/gen_client_options.py", "--check"]),
     ("client_lane", [PYTHON, "tools/client_diff.py"]),

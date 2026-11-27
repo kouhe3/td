@@ -10,6 +10,12 @@ crate-type = ["cdylib"]
 [dependencies]
 # getLanguagePackString reads the same SQLite language pack database as TDLib
 rusqlite = { version = "0.41", features = ["bundled"] }
+# binlog_head: TDLib encrypts its binlog with AES-256-CTR under a PBKDF2 key
+aes = "0.8"
+ctr = "0.9"
+hmac = "0.12"
+pbkdf2 = "0.12"
+sha2 = "0.10"
 
 [profile.release]
 panic = "abort"
