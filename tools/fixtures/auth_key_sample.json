@@ -54,5 +54,9 @@
       "seq_no": 0,
       "msg_key_ok": "true"
     }
+  },
+  "framing": {
+    "source": "TDLib tcp::IntermediateTransport via tools/fixtures/framing_probe.cpp",
+    "frame_payload": "000102030405060708090a0b0c0d0e0f"
   }
 }
