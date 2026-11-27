@@ -22,6 +22,7 @@ use std::process::ExitCode;
 
 use aes::cipher::{BlockDecrypt, KeyInit};
 use aes::Aes256;
+use num_bigint::BigUint;
 use sha1::{Digest, Sha1};
 
 /// The sample prints the TL bytes `95 5F F5 A9`; TL numbers are little-endian.
@@ -305,5 +306,36 @@ fn main() -> ExitCode {
     println!("server_time={server_time}");
     println!("dh_prime_len={}", dh_prime.len());
     println!("g_a_len={}", g_a.len());
+
+    // Steps 7-9: g_b, auth_key and the dh_gen_ok hash.
+    let p = BigUint::from_bytes_be(dh_prime);
+    let g_a_num = BigUint::from_bytes_be(g_a);
+    let b = BigUint::from_bytes_be(&hex_decode(get("b")));
+    let g_b = g_b(&BigUint::from(g as u32), &b, &p);
+    let auth_key = modpow_fixed(&g_a_num, &b, &p, 256);
+
+    let auth_key_sha1 = Sha1::digest(&auth_key);
+    let mut hash_input = hex_decode(get("new_nonce"));
+    hash_input.push(1);
+    hash_input.extend_from_slice(&auth_key_sha1[..8]);
+    let new_nonce_hash = Sha1::digest(&hash_input);
+
+    println!("g_b={}", hex_encode(&g_b));
+    println!("auth_key={}", hex_encode(&auth_key));
+    println!("new_nonce_hash1={}", hex_encode(&new_nonce_hash[4..20]));
     ExitCode::SUCCESS
+}
+
+fn modpow_fixed(base: &BigUint, exp: &BigUint, modulus: &BigUint, len: usize) -> Vec<u8> {
+    let mut bytes = base.modpow(exp, modulus).to_bytes_be();
+    if bytes.len() < len {
+        let mut padded = vec![0u8; len - bytes.len()];
+        padded.extend_from_slice(&bytes);
+        bytes = padded;
+    }
+    bytes
+}
+
+fn g_b(base: &BigUint, exp: &BigUint, modulus: &BigUint) -> Vec<u8> {
+    modpow_fixed(base, exp, modulus, 256)
 }

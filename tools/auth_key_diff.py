@@ -59,6 +59,9 @@ def main():
         ("server_time", str(expect["server_time"])),
         ("dh_prime_len", str(expect["dh_prime_len"])),
         ("g_a_len", str(expect["g_a_len"])),
+        ("g_b", expect["g_b"]),
+        ("auth_key", expect["auth_key"]),
+        ("new_nonce_hash1", expect["new_nonce_hash1"]),
     ]
 
     if args.selftest:
