@@ -7,7 +7,7 @@
       "warnings": 0,
       "tail": [
         "Compiling tdjson_rs v0.1.0 (C:\\projects\\td\\rust)",
-        "    Finished `release` profile [optimized] target(s) in 7.92s"
+        "    Finished `release` profile [optimized] target(s) in 8.21s"
       ]
     },
     {
@@ -18,7 +18,7 @@
       "tail": [
         "  message = \"Failed to parse request as JSON object: Unexpected string end\"",
         "}",
-        "[ 1][t 0][1795770234.171688079][Logging.cpp:160][&client]\tseq-probe"
+        "[ 1][t 0][1795771169.038885831][Logging.cpp:160][&client]\tseq-probe"
       ]
     },
     {
@@ -202,14 +202,25 @@
       ]
     },
     {
+      "gate": "rsa",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/rsa_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=57c6531771ee79a29e25ce854a7a9467 cases=18",
+        "SELFTEST OK: comparator sees a payload change and a key-type change",
+        "PASS cases=18"
+      ]
+    },
+    {
       "gate": "fuzz",
       "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/tdjson_fuzz.py --seeds 20261126,7,99,2027",
       "exit_code": 0,
       "warnings": 0,
       "tail": [
-        "[ 3][t 0][1795770307.055812358][Logging.cpp:160][&client]\t你好",
-        "[ 5][t 0][1795770307.055844545][Logging.cpp:160][&client]\t*bold* __it__ `code`",
-        "[ 5][t 0][1795770307.055850982][Logging.cpp:160][&client]\t#tag @user $USD $btc"
+        "[ 3][t 0][1795771265.626916885][Logging.cpp:160][&client]\t你好",
+        "[ 5][t 0][1795771265.626949071][Logging.cpp:160][&client]\t*bold* __it__ `code`",
+        "[ 5][t 0][1795771265.626954078][Logging.cpp:160][&client]\t#tag @user $USD $btc"
       ]
     },
     {
