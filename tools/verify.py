@@ -73,6 +73,7 @@ GATES = [
     ("rsa", [PYTHON, "tools/rsa_diff.py", "--selftest"]),
     ("public_rsa", [PYTHON, "tools/public_rsa_diff.py", "--selftest"]),
     ("public_rsa_cdn", [PYTHON, "tools/public_rsa_cdn_diff.py", "--selftest"]),
+    ("buffer_slice", [PYTHON, "tools/buffer_slice_diff.py", "--selftest"]),
     ("fuzz", [PYTHON, "tools/tdjson_fuzz.py", "--seeds", "20261126,7,99,2027"]),
     ("client_options", [PYTHON, "tools/gen_client_options.py", "--check"]),
     ("client_lane", [PYTHON, "tools/client_diff.py"]),

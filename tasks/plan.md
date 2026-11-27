@@ -117,6 +117,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T68 | 换面到格式驱动：`td/mtproto/RSA.cpp` 的 PEM/SPKI 解析（base64 + DER）、三种失败文案、`get_fingerprint`（TL 序列化 + SHA1 offset 12）、裸 `x^e mod n` 的 encrypt/decrypt；语料 18 条，PEM 由仪器现场构造 | F138, F139 | done（`rsa_diff.py`：18 case、`PASS`；三次变异 RED：模数长度、指纹偏移、`x>=n` 边界） |
 | T69 | 补 PKCS#1 形态并换到查表面：rsa lane 加 PKCS#1 语料（18 → 23），新增 public_rsa lane（`PublicRsaKeySharedMain` 的 main/test 两把 key、指纹顺序语义、`{...}` 文案） | F140, F141 | done（`public_rsa_diff.py`：9 case、`PASS`；三次变异 RED：只查首个指纹、忽略 provider、括号形态） |
 | T70 | 换到「动态表 + 生命周期」面：`PublicRsaKeySharedCdn` 的 `add_rsa` / `get_rsa_key` / `drop_keys` / `has_keys`，脚本驱动 22 行；Rust 侧只需指纹集合（返回的是请求指纹） | F142, F143 | done（`public_rsa_cdn_diff.py`：21 行、`PASS`；三次变异 RED：drop 不清空、只看首个 key、has 取反） |
+| T71 | 换到内存所有权面：`tdutils::BufferSlice` 的 clone / copy / as_mutable_slice / confirm_read / truncate / after，脚本驱动 37 行；判据形态 = **别名可见性**（clone 共享、copy 隔离、无 COW） | F144, F145 | done（`buffer_slice_diff.py`：34 行、`PASS`；三次变异 RED：clone 变深拷贝、confirm_read 不推进、mutate 忽略 begin） |
 
 ## 变更记录
 
@@ -181,3 +182,4 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | 2026-11-27 | F138, F139 | T68 | 新增 rsa lane：PEM/SPKI（base64 + DER）解析 + 三种失败文案 + 指纹 + 裸 `x^e mod n`（18 case，PEM 现场构造）；指纹输入**不含构造号**（与 F112 同规则），门禁 28 → 29 |
 | 2026-11-27 | F140, F141 | T69 | rsa 补 PKCS#1（`BEGIN RSA PUBLIC KEY`，TDLib 自带 key 表就用它）；新增 public_rsa lane（指纹顺序语义 + `{...}` 文案），门禁 29 → 30 |
 | 2026-11-27 | F142, F143 | T70 | 新增 public_rsa_cdn lane：动态表的 add / get / drop / has（`DcId::external(2)`），去重分支不可观察记在 F142；门禁 30 → 31 |
+| 2026-11-27 | F144, F145 | T71 | 新增 buffer_slice lane：clone 别名 / copy 深拷贝 / `as_mutable_slice` 无 COW / confirm_read / truncate / after（34 行）；顺带记下脚本字节参数的十进制坑，门禁 31 → 32 |
