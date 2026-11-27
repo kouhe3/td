@@ -109,6 +109,7 @@
 | 服务端时间差（`update_server_time_difference` 的 `cur + 1e-4` 迟滞、`reset`）与入站/出站 msg_id 窗口 | measured（F113：`(st−150, st+30)` / `(st−300, st+30)` 四侧边界） | 逐字节 |
 | `check_packet`：session 校验、奇偶、1000 槽 duplicate checker（插入、2N 压缩、duplicate、very old） | measured（F113：含 2,001 条 id 的压缩段与三种错误文案） | 逐字节 |
 | `check_packet` 的 `Ignore too old or too new` 分支 | unmeasured | 时间差被 update 改成 msg_id 高 32 位后该判据恒真，脚本构造不到；回流条件 = 找到能让 update 返回 true 且窗口不成立的输入（或改成可注入的比较器） |
+| 维护类服务消息编解码（`bad_msg_notification` / `bad_server_salt` / `new_session_created` / `pong` / `msg_resend_req` / `msg_detailed_info` / `msg_new_detailed_info`） | measured（F114：41 case / 344 字段字节，含抽象分派双向 roundtrip 与三种解析错误文案） | 逐字节 |
 | `rpc_result` / `msg_container` 解析、`req_msg_id` 匹配 | unmeasured（B11） | 无 oracle：结构被注释、TDLib 解析为 private |
 
 ## 边界之外（永久不在本仪器范围）
