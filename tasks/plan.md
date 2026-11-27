@@ -86,7 +86,7 @@ gate: passed | mode=直接做 | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62
 | T39 | 异步请求路径：`td_send` 任意函数按三支分流——解析错误/同步 action/同步 option 本地作答，其余进 Td（未授权态回 401）；`@extra` 回显插在 `@client_id` 之前；`getOption` 走异步时非同步选项回 `optionValueEmpty`。顺带把 6 条全局 update 改成启动后自发（F097 更正 F079） | F096, F097 | done（`client_diff.py` 的 async 段 16 条请求逐条相同；首启/auth/legacy 三段仍绿） |
 | T40 | 随机语料进门槛：`--seeds` 支持多种子，变异加入结构改动（改/删/加字段、容器压 null）；门禁跑 3 个种子 | F098 | done（2,550 条 + 60 段/1,351 步零分歧） |
 | T41 | 目标定位（用户决定 2026-11-27）：首要目标是检验 face-spaghetti skill 本身，RIIR 是练习载体；此后不按「交付可上生产的 TDLib-RS」推进，覆盖数只作样本有效性 | F099 | done（定位写入 `docs/agents/face-spaghetti.md` 的「目标框架」） |
-| T42 | 存储面第一条 lane：`tddb` binlog 读取器（`rust/src/bin/binlog_head.rs`）+ 仪器 `tools/binlog_diff.py`，判据 = 与 `binlog_dump` 的 `event_id/type/flags/data_len` 逐行相同；顺带实证 binlog 加密方案（首帧明文 `AesCtrEncryption`，其后 AES-256-CTR，默认 key = `raw("cucumber")`） | F100 | done（147 events、`diff_lines=0`；selftest 捕获篡改行；已进 `verify.py` 第 3 项门禁） |
+| T42 | 存储面第一条 lane：`tddb` binlog 读取器（`rust/src/bin/binlog_head.rs`）+ 仪器 `tools/binlog_diff.py`，判据 = 与 `binlog_dump` 的**整份输出**逐行相同（event 行含 `format::escaped` 的 data，尾部含 handler 汇总与 key trie）；顺带实证加密方案（首帧明文 `AesCtrEncryption`，其后 AES-256-CTR，默认 key = `raw("cucumber")`）与 processor 的 Rewrite 替换语义 | F100, F101 | done（438 行 = 147 event + 291 尾部、`diff_lines=0`；selftest 捕获篡改行；已进 `verify.py` 第 3 项门禁） |
 
 ## 变更记录
 

@@ -24,12 +24,6 @@ DEFAULT_CPP = "C:/tmp/td-build/tddb/binlog_dump.exe"
 DEFAULT_RS = REPO / "rust/target/x86_64-pc-windows-gnu/release/binlog_head.exe"
 DEFAULT_BINLOG = REPO / "work/tdlib-oracle/td_test.binlog"
 
-CPP_RE = re.compile(
-    r"\[event_id:0x([0-9a-f]{16})\]\[type:(-?\d+)\]\[flags:(-?\d+)\]\[size:(\d+)\]"
-)
-RS_RE = re.compile(r"^0x([0-9a-f]{16}) (-?\d+) (-?\d+) (\d+)$")
-
-
 def run(cmd, env=None):
     proc = subprocess.run(cmd, capture_output=True, env=env)
     return (
@@ -43,22 +37,14 @@ def cpp_rows(exe, binlog):
     env = dict(os.environ)
     env["PATH"] = MSYS_BIN + ";" + env.get("PATH", "")
     rc, out, err = run([str(exe), str(binlog)], env=env)
-    rows = []
     # binlog_dump prints through LOG(PLAIN), which goes to stderr.
-    for line in (out + "\n" + err).splitlines():
-        m = CPP_RE.search(line)
-        if m:
-            rows.append(m.groups())
+    rows = [line for line in (out + "\n" + err).splitlines() if line.strip()]
     return rc, rows, err
 
 
 def rs_rows(exe, binlog):
     rc, out, err = run([str(exe), str(binlog)])
-    rows = []
-    for line in out.splitlines():
-        m = RS_RE.match(line)
-        if m:
-            rows.append(m.groups())
+    rows = [line for line in out.splitlines() if line.strip()]
     return rc, rows, err
 
 
@@ -70,6 +56,16 @@ def compare(cpp, rs):
         if a != b:
             diffs.append((i, a, b))
     return diffs
+
+
+def squeeze(a, b, pad=20, span=60):
+    """Show the first differing character with a small window around it."""
+    if a is None or b is None:
+        return f"cpp={a!r} rust={b!r}"
+    n = min(len(a), len(b))
+    i = next((k for k in range(n) if a[k] != b[k]), n)
+    lo = max(0, i - pad)
+    return f"@{i} cpp={a[lo:i + span]!r} rust={b[lo:i + span]!r}"
 
 
 def main():
@@ -102,8 +98,8 @@ def main():
         if not rs:
             print("SELFTEST FAIL: no rust rows")
             return 1
-        tampered = [list(r) for r in rs]
-        tampered[0][1] = str(int(tampered[0][1]) + 1)
+        tampered = list(rs)
+        tampered[0] = tampered[0].replace("[type:", "[type:9", 1)
         fake = compare(cpp, tampered)
         if not fake or fake[0][0] != 0:
             print("SELFTEST FAIL: comparator did not catch a mutated type")
@@ -113,11 +109,12 @@ def main():
     if diffs:
         print(f"DIFF {len(diffs)}")
         for i, a, b in diffs[:5]:
-            print(f"  row {i}: cpp={a} rust={b}")
+            print(f"  row {i}: {squeeze(a, b)}")
         return 1
 
-    if len(cpp) != 147:
-        print(f"WARN expected 147 events, got {len(cpp)}")
+    event_rows = sum(1 for row in cpp if row.startswith("LogEvent["))
+    if event_rows != 147:
+        print(f"WARN expected 147 event rows, got {event_rows}")
     print("PASS diff_lines=0")
     return 0
 
