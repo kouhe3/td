@@ -251,6 +251,15 @@ def script_text(lines) -> str:
     return "\n".join(lines) + "\n"
 
 
+def disable_error_dialogs() -> None:
+    """Abort cases must die at once: a WerFault dialog keeps the exe locked."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+
+    ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002 | 0x8000)
+
+
 def run(exe: Path, script: Path, env: dict):
     proc = subprocess.run(
         [str(exe), str(script)],
@@ -309,6 +318,7 @@ def selftest(cpp_lines: dict[str, list[str]]) -> bool:
 
 
 def main() -> int:
+    disable_error_dialogs()
     parser = argparse.ArgumentParser()
     parser.add_argument("--cpp", default=DEFAULT_CPP)
     parser.add_argument("--rs", default=str(DEFAULT_RS))
