@@ -54,6 +54,8 @@ GATES = [
     ),
     ("instrument", [PYTHON, "tools/tdjson_diff.py"]),
     ("binlog", [PYTHON, "tools/binlog_diff.py", "--all", "--selftest"]),
+    ("binlog_write", [PYTHON, "tools/binlog_write_diff.py", "--selftest"]),
+    ("crypto", [PYTHON, "tools/crypto_diff.py", "--selftest"]),
     ("auth_key", [PYTHON, "tools/auth_key_diff.py", "--selftest"]),
     ("msg_layer", [PYTHON, "tools/msg_layer_diff.py", "--selftest"]),
     ("transport", [PYTHON, "tools/transport_diff.py", "--selftest"]),
