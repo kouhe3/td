@@ -367,7 +367,17 @@ def selftest(cases: list[dict], oracle_lines: list[str]) -> int:
     return 0
 
 
+def disable_error_dialogs() -> None:
+    """Abort cases must die at once: a WerFault dialog leaves a zombie holding the exe."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+
+    ctypes.windll.kernel32.SetErrorMode(0x0001 | 0x0002 | 0x8000)
+
+
 def main() -> int:
+    disable_error_dialogs()
     parser = argparse.ArgumentParser()
     parser.add_argument("--cpp", default=DEFAULT_CPP)
     parser.add_argument("--rs", default=str(DEFAULT_RS))

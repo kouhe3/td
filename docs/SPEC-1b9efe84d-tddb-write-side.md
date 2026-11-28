@@ -27,8 +27,8 @@ uv run python tools/binlog_write_diff.py --selftest        # 写侧：27 case（
 uv run python tools/binlog_write_diff.py --encrypted       # 只跑加密半边，0.9 s
 uv run python tools/crypto_diff.py --selftest              # 457 行，6.7 s
 uv run python tools/tddb_paths_diff.py --selftest          # 35 行 + 目录树，0.2 s
-uv run python tools/sqlite_kv_diff.py --selftest           # SQLite KV：11 case + 2 check，8.3 s
-uv run python tools/tqueue_diff.py --selftest              # TQueue：12 case + 2 check，7.0 s
+uv run python tools/sqlite_kv_diff.py --selftest           # SQLite KV：11 case + 2 check，1.4 s
+uv run python tools/tqueue_diff.py --selftest              # TQueue：12 case + 2 check，0.6 s
 uv run python tools/tqueue_binlog_diff.py --selftest       # TQueueBinlog：10 case，4,016 B，1.2 s
 uv run python tools/sqlite_safe_diff.py --selftest         # 连接安全层：8 case（6 + 2 abort）/ 122 行，1.9 s
 uv run python tools/sqlite_async_diff.py --selftest        # 异步层串行驱动：6 case（4 + 2 abort）/ 70 行，1.8 s
