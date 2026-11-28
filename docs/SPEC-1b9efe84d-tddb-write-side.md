@@ -90,7 +90,7 @@ uv run python tools/sqlite_async_diff.py --selftest        # 异步层串行驱�
 |---|---|---|
 | SQLite 文件的字节 | 两侧 sqlite 版本跨 22 个次版本（3.31.0 vs 3.53.1），页布局与 `sqlite_master` 文本不可比 | 两侧对齐到同一份 amalgamation；否则用交叉读代替（已做） |
 | 随机前缀的内容与 `Secret::create_new` 的随机性 | `Random::secure_bytes` 走 OS，两次运行必不同 | 只判结构（长度公式 + 首字节 = 长度 + 16 对齐）；内容不可判 |
-| `encrypt_file` / `decrypt_file` | 文件路径、`FileFd` 的 OS 错误文案与平台相关 | 只判内存路径（`encrypt_value`/`decrypt_value`）；文件变体接 `FileDataView` 后另判 |
+| `encrypt_file` / `decrypt_file` 的**其余** OS 失败 | 除两条已钉的 `FileFd` 文案外，错误文本随平台与本地化变 | happy path、对齐公式、双向交叉读、篡改检测与两条文案已由 `secure_storage_file` lane 判掉（F552）；只把「其余 OS 失败」留在这里 |
 | SQLCipher 加密路径（`PRAGMA key` / `cipher_compatibility`） | `DbKey` 非空才走，`rusqlite` 的 bundled 不带 sqlcipher | 换 `bundled-sqlcipher`，且接受密文仍不可比 |
 | `RawSqliteDb::last_error` 在 `SQLITE_CORRUPT` 时删库 | 需要造一个损坏库，且删完才有可观察差异 | 造损坏库并只比「文件是否还在」 |
 | `SqliteStatement::explain()` 的 query plan 文本 | 计划文本随 sqlite 版本变 | 版本对齐后 |
