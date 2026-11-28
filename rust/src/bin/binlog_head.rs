@@ -30,21 +30,17 @@ use aes::cipher::{KeyIvInit, StreamCipher};
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
-const HEADER_SIZE: usize = 4 + 8 + 4 + 4 + 8;
-const TAIL_SIZE: usize = 4;
-const MIN_SIZE: usize = HEADER_SIZE + TAIL_SIZE;
-const DEFAULT_KEY: &[u8] = b"cucumber";
-const KEY_CHECK: &[u8] = b"cucumbers everywhere";
+#[allow(dead_code)]
+#[path = "../binlog_format.rs"]
+mod binlog_format;
+
+use binlog_format::{u32_at, DEFAULT_KEY, FLAG_REWRITE, HEADER_SIZE, KEY_CHECK, MIN_SIZE, TAIL_SIZE};
+
 const AES_CTR_ENCRYPTION: i32 = -3;
 const CONFIG_PMC_MAGIC: i32 = 0x1f18;
 const BINLOG_PMC_MAGIC: i32 = 0x4327;
-const FLAG_REWRITE: i32 = 1;
 
 type Aes256Ctr = ctr::Ctr128BE<aes::Aes256>;
-
-fn u32_at(data: &[u8], off: usize) -> u32 {
-    u32::from_le_bytes([data[off], data[off + 1], data[off + 2], data[off + 3]])
-}
 
 fn i32_at(data: &[u8], off: usize) -> i32 {
     u32_at(data, off) as i32
