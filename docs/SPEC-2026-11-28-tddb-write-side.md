@@ -1,7 +1,7 @@
-# SPEC（as-built）— `tddb` 存储面（binlog + crypto + KV(binlog/sqlite) + TdDb 路径）
+# SPEC（as-built）— `tddb` 存储面（binlog + crypto + KV(binlog/sqlite) + TQueue + TdDb 路径）
 
 > **as-built 规格，不是 to-build。** 它记录「已判过、数字可复现」的现状，供接手方当底图。
-> 台账行为证据来源：`docs/facts.md` F185–F198。
+> 台账行为证据来源：`docs/facts.md` F185–F201。
 
 ## 1. 定义域
 
@@ -9,9 +9,10 @@
 |---|---|
 | C++ 源 | `tddb/td/db/binlog/{Binlog,BinlogEvent,BinlogInterface}.{h,cpp}`、`tddb/td/db/{BinlogKeyValue.h,SeqKeyValue.h,DbKey.h,KeyValueSyncInterface.h}`、`td/telegram/TdDb.{h,cpp}`、`tdutils/td/utils/crypto.{h,cpp}`、`tdutils/td/utils/port/path.cpp`（`mkpath`/`mkdir`/`realpath`） |
 | C++ 源（SQLite） | `tddb/td/db/{SqliteKeyValue,SqliteDb,SqliteStatement}.{h,cpp}` + `tddb/td/db/detail/RawSqliteDb.{h,cpp}`，跑在仓库内置的 **SQLCipher 3.31.0** 上（`sqlite/`，构建产物 `C:/tmp/td-build/sqlite/libtdsqlite.a`） |
+| C++ 源（TQueue） | `tddb/td/db/TQueue.{h,cpp}`（`TQueueImpl` + `TQueueMemoryStorage`；`TQueueBinlog` 与 `close(Promise)` 不在范围内） |
 | 规模 | 被判 11 个文件 / 2,728 行（`tddb` 全目录 4,792 行）；SQLite 面另加 4 个文件 / 605 行（`SqliteKeyValue` 130 + `SqliteDb` 323 + `SqliteStatement` 205 + `RawSqliteDb` 减少量不计） |
 | oracle | `libtdjson.dll` + `C:/tmp/td-build/tddb/{libtddb.a,binlog_dump.exe}` + `libtdcore.a`（`TdDb` 那条） |
-| 台账 | F185–F198；`tasks/plan.md` T92–T98 |
+| 台账 | F185–F201；`tasks/plan.md` T92–T99 |
 
 ## 2. 可复现现状
 
@@ -23,6 +24,7 @@ uv run python tools/binlog_write_diff.py --encrypted       # 只跑加密半边�
 uv run python tools/crypto_diff.py --selftest              # 457 行，6.7 s
 uv run python tools/tddb_paths_diff.py --selftest          # 35 行 + 目录树，0.2 s
 uv run python tools/sqlite_kv_diff.py --selftest           # SQLite KV：11 case + 2 check，8.3 s
+uv run python tools/tqueue_diff.py --selftest              # TQueue：12 case + 2 check，7.0 s
 ```
 
 ## 3. 判据
@@ -36,6 +38,7 @@ uv run python tools/sqlite_kv_diff.py --selftest           # SQLite KV：11 case
 | KV 层（`BinlogKeyValue` + `SeqKeyValue`） | 明文 binlog 逐字节 + narration + 双向交叉读（四条全跑不短路） | 21 case / 884,208 B（含 4 份副本），`md5=d8c284e1`，1.84 s | F191/F192 |
 | `TdDb` 路径与 key | stdout 逐字节 + **目录树快照** | 35 行，`md5=ad8d60ca`，0.2 s | F193/F194 |
 | SQLite KV（`SqliteKeyValue` + `SqliteDb` 的事务计数 + `SqliteStatement` 的 blob 绑定/视图） | narration 逐行（**行序本身是判据**）+ **双向交叉读**（C++ 读 Rust 库、Rust 读 C++ 库）+ abort 对（`--check`，只比 rc 类别） | 11 case + 2 check 例 / 376,832 B，`md5=715cc4cb`，8.3 s | F196–F198 |
+| TQueue（`TQueueImpl` + `TQueueMemoryStorage` + `EventId`） | narration 逐行 + FLOOR + abort 对（`do_push` 的空 `EventId`）+ **`replay` 重建**（storage 重放到新队列，head/tail/size 必须一致） | 12 case + 2 check 例 / 语料 109 行 / 输出 198 行，`md5=87e3f3e6`，7.0 s | F199–F201 |
 
 判据事实里最容易被接手方踩到的几条（全部有复现命令）：
 
@@ -57,6 +60,13 @@ uv run python tools/sqlite_kv_diff.py --selftest           # SQLite KV：11 case
 - SQLite KV：空 `Slice` 的 `data()` 是 `""` 而不是 `nullptr`（`tdutils/td/utils/Slice-decl.h:139`），所以 `bind_blob` 永远绑成 **zero-length blob**，绝不是 NULL。`get()` 对「缺失的 key」和「空值」都返回 `""`，`crc32` 都是 0；能分开它们的只有 `get_all()` 里那条 `CHECK(!key.empty())`（它只拒绝**空 key**，不拒绝空值）。
 - SQLite KV：`commit` 没有配对的 `begin` 是 `Status::Error("No matching begin for commit")`；计数器在共享的 `RawSqliteDb` 上，**两次 `begin` 需要两次 `commit`**，只提交一次只是把计数从 2 降到 1（不执行 SQL），第三次 `commit` 才报错。
 - SQLite KV：`close()` 是 `*this = SqliteKeyValue()`（丢连接），关闭后 `footprint` 不应留下 `-journal`/`-wal`/`-shm`；`drop()` 之后对象为空，再次 `init` 会 `CREATE TABLE IF NOT EXISTS` 出一张**空表**；`destroy` 删四个路径（`-shm` 不参与「删不掉就报错」的检查）。
+- TQueue：**一条规则贯穿三个 API**——`get_size` 不把 data 为空的**最后一个**事件算进去。于是 `clear(q, 0)` 只返回 `size - 1` 个事件（最后那个保留槽位、保留 `log_event_id`、data 被清空并让 storage rewrite 它），`pop` 对「下一个 id 就是 tail」的事件走 rewrite 而不是删除，`get` 返回的也是这个 size 而不是它交回的事件数（`max_events = 0` 时能观察到 `ret` 与 `n` 分叉）。
+- TQueue：`get` 的清理发生在「满了就停」之前——`max_events = 0` 仍然会把队头过期/空 data 的事件 `pop` 掉，所以一次「什么都没返回」的 `get` 也会改变 head。
+- TQueue：`push` 只在 `tail_id.empty()` 时采纳 `hint_new_id`；有 hint 就把 tail 钉在那里，之后的 push 从 tail 往后数。不给 hint 时 tail 取 `Random::fast(2000001, MAX_ID/2)`，**不可复现**——语料因此全程给 hint。
+- TQueue：`get` 的两个窗口是 `from_id > tail + 10`（future）与 `from_id < head - 100000`（past），**边界值本身不报错**（`tail + 10` 恰好通过）。
+- TQueue：`push` 的检查顺序是 empty-data → 太大 → queue 0 → 满 → 总长 → already-expired，所以一个「又大又过期」的请求报的是 `Data is too big`。
+- TQueue：`EventId::from_int32(0)` **成功**（0 有效但 `empty()`），`MAX_ID = 2000000000` 及以上报 `Invalid ID`；`next()`/`advance()` 先算再校验，`next(1999999999)` 因此失败。
+- TQueue：GC 只在**队列的调度时间严格早于 `unix_time_now`** 时触发，而那个时间是该队列第一次 push 时的 `expires_at`——之后 push 的短命事件不会提前它。
 
 ## 4. 不可判项 + 回流条件
 
@@ -68,6 +78,11 @@ uv run python tools/sqlite_kv_diff.py --selftest           # SQLite KV：11 case
 | `SqliteStatement::explain()` 的 query plan 文本 | 计划文本随 sqlite 版本变 | 版本对齐后 |
 | `trace()` 的 SQL 文本 | 调试接口，不是 KV 合同 | 不判 |
 | 多元素 `set_all` | `FlatHashMap` 遍历序决定写入顺序，进而决定 rowid 序 | 只判单元素；多元素顺序不可复现 |
+| `TQueue` 无 hint 的初始 tail | `Random::fast(2000001, MAX_ID/2)` 不可注入 | 语料全程给 hint；无 hint 只判「落在区间内」 |
+| `run_gc` 的 50 ms 预算与 `(++counter & 128)` 分片 | 小语料一轮远不到 50 ms，也不到 128 次迭代 | 造 >128 个事件并让一轮超过 50 ms，或把时钟变成参数 |
+| `Time::now()` 在 `clear` 的耗时告警里 | 只在超过 20 ms 时打日志 | 造一个清空耗时 >20 ms 的队列 |
+| `TQueueBinlog`（帧 2314 / `extra != 0` 时 2315、`rewrite` 复用 id） | 需要真 `Binlog`，属下一层的写读 | 接 binlog lane 的现有仪器 |
+| `TQueue::close(Promise)` | 需要 actor 才能兑现 Promise | 造出脱离 actor 的 Promise |
 | `TdDb::open` 全流程 | 走 actor/Promise，需要 scheduler | 造出脱离 actor 的入口 |
 | `change_key` 的 `old_db_key` 迁移分支 | 未驱动 | 有迁移语料时 |
 | 同一 `Binlog` 对象加密后再 `init` | C++ 侧 `0xC0000005`（文件完好） | 不判；按 `TdDb` 的用法每次 open 新建对象 |
@@ -86,4 +101,5 @@ uv run python tools/sqlite_kv_diff.py --selftest           # SQLite KV：11 case
 - `tdutils/td/utils/port/path.cpp`（`mkpath`/`mkdir`/`realpath`）；
 - `tddb/td/db/{SqliteKeyValue.{h,cpp},SqliteStatement.{h,cpp},detail/RawSqliteDb.{h,cpp}}`（SQL 语句、绑定与视图、`next_prefix`、事务计数）；
 - `rust/src/sqlite_kv.rs`（Rust 侧同一套语句）；`rusqlite` 的 bundled sqlite 跨大版本（当前 3.53.1）；
+- `tddb/td/db/TQueue.{h,cpp}`（`get_size` 的空尾规则、`pop` 的 rewrite 分支、两个 sanity 窗口、六个 `MAX_*` 常量）；`rust/src/tqueue.rs`（Rust 侧同一套队列语义）；
 - oracle 重建（`libtdjson.dll` md5 变）或 `binlog_dump.exe` 重编。
