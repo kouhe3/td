@@ -154,6 +154,7 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | T104 | `td/telegram/DialogId`（结清 T103）：同一条 lane 的实测记录 —— 7 case + 4 check / 302 行、11 条手算 cell、三条变异 RED；判据事实是「五段负区间的端点开闭」与「`-2×10^12` 落进 monoforum」 | F213, F214 | done（`dialog_id_diff.py`：`PASS cases=7 checks=4 lines=302`，0.9 s；`corpus md5=c40c4258`） |
 | T105 | `SqliteConnectionSafe` 生命周期（懒打开 / `get` 复用 / `close` 不删文件 / `close_and_destroy` 删文件 / 删库后 `get` 的 abort）+ `SqliteKeyValueSafe` 的同步读写；异步层（`SqliteKeyValueAsync`）留作第二段，等串行驱动 | F216, F217, F218, F219 | done（`sqlite_safe_diff.py`：8 case（6 + 2 abort）/ 语料 65 行 / 输出 122 行、`PASS cases=8 aborts=2`，1.9 s；10 条手算 cell；三条变异 RED：close 不加 state / destroy 不删库 / get 不查文件。判据事实：构造不碰库、close 保文件、destroy 删文件、`close_state_` 经致命文案可判（0 vs 65537）、kv 在 close 后仍可读） |
 | T106 | `td/telegram/ForumTopicId` + `SavedMessagesTopicId` 的纯值语义：`is_valid`/`get`/`==`/`operator<<`、`general()`、与 `MessageId` 的双向转换、两个向量转换；`SavedMessagesTopicId` 的 `get_unique_id`/`is_author_hidden`/三种打印形态；判据 = narration 逐行 + abort 对（非 server 的 `MessageId` 转 topic） | F221, F222, F223 | done（`topic_id_diff.py`：5 case（4 + 1 abort）/ 语料 34 行 / 输出 56 行、`PASS cases=5 aborts=1`，0.4 s；12 条手算 cell；三条变异 RED：is_valid 放宽 / server id 右移 19 / 隐藏作者常量 +1。判据事实：`general()==1`、topic 与 server id 的往返、`id==0` 允许而非 server 的其它值 abort、saved 的三种打印形态） |
+| T107 | `td/telegram/Outline.cpp::get_outline_svg_path`：紧凑编码展开、`M/L/H/V/C/S/Z`（含反射控制点与隐式重复）、`int` 截断缩放、`z` 回闭补 `L`、未闭合错误路径；判据 = 输出逐字节 + FLOOR + 错误路径 | F225 | 待证（预注册已落） |
 
 ## 变更记录
 
