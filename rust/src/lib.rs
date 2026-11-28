@@ -1,4 +1,6 @@
 mod emoji_table;
+#[allow(dead_code)]
+mod emoji;
 mod mime_tables;
 mod country_table;
 mod api_functions;

@@ -9,16 +9,16 @@
 
 | 项 | 值 |
 |---|---|
-| C++ 源 | `tdutils/td/utils/` 下的手写函数（22 个文件、6,152 行被判；`tdutils` 全目录 48,142 行） |
+| C++ 源 | `tdutils/td/utils/` 下的手写函数（23 个文件、6,653 行被判；`tdutils` 全目录 48,142 行）。`emoji.{h,cpp}`（36 + 501 行）自带 2370 项 packed 表与 ZWJ/selector 规则 |
 | 语言/构建 | C++（oracle，`C:/tmp/td-build/tdutils/libtdutils.a`）对 Rust（`rust/src/bin/*_probe.rs`，crate `tdjson_rs` 之外的独立 bin） |
 | 判定基座 | C++ 提交 `1b9efe84d`；oracle md5 由 `tools/tdjson_diff.py:54` 钉死 |
-| 台账 | F144–F183；`tasks/plan.md` T71–T91 |
+| 台账 | F144–F183、F292–F296；`tasks/plan.md` T71–T91、T126 |
 
 ## 2. 可复现现状
 
 ```bash
 cd C:/projects/td
-uv run python tools/verify.py            # 58 项（本文件涉及其中 18 项），约 160–330 s（含 build），failures=0
+uv run python tools/verify.py            # 75 项（本文件涉及其中 19 项），约 160–330 s（含 build），failures=0
 ```
 
 每一行判据都自带命令；主命令是 `uv run python tools/<lane>_diff.py --selftest`。
@@ -45,6 +45,7 @@ uv run python tools/verify.py            # 58 项（本文件涉及其中 18 项
 | `unicode` | 逐字节（全码点扫描） | 1,127,703 行（`md5=c823b29b`） | F176/F177 |
 | `string_builder` | 逐字节 + 7 个 abort 例 | 355 行（`md5=8d52ac92`） | F178/F179 |
 | `translit` | 逐字节（返回顺序也算） | 124,186 行（`md5=e2e26092`） | F180/F181 |
+| `emoji` | 判定 + 结构 + 逐字节（2370 项全表 + 边界） | 4,858 行（`md5=9ab95b25`）+ 19 手算 cell | F292–F296 |
 
 每条 lane 的验收形状都相同：`corpus md5=… lines=…` → 双侧 stdout/文件逐字节比较 → 首个差异打印 `DIFF line N` → oracle 重跑（FLOOR）→ `PASS …`，退出码 0 才算通过。变异纪律：只改 Rust 实现、语料冻结，每条 lane 至少三条 RED。
 
@@ -61,12 +62,14 @@ uv run python tools/verify.py            # 58 项（本文件涉及其中 18 项
 | `Slice::operator[]` 越界 | UB | 不判 |
 | `SharedSlice::is_unique` | 只在 `detail::` 里，不公开 | 上游公开 |
 | `fix_words` 的前缀丢弃 | 已证明不可观察（匹配集不变） | 不判 |
+| `is_emoji_element` 的「两个连续 VS16 拒绝」 | 删掉后 lane 仍全绿：剥一个 selector 后的 `X + VS16` 不在表里，需要一个以 `U+FE0F` 结尾的表项才可观察（F296） | 表里出现 `U+FE0F` 结尾的项时重判 |
+| `remove_emoji_selectors` 结尾的 `CHECK(is_emoji(str))` | 所有实测样本删完仍在表里（`#` + VS16 + keycap → `#` + keycap） | 造出一个删完不是 emoji 的样本 |
 
 ## 5. 失效条件
 
 下列任一变化都要重编探针、重跑对应 lane 并重新落快照（`uv run python tools/verify.py --json > docs/gate-<date>.json`）：
 
 - **基座漂移**：判定基座不是 `1b9efe84d`（或 oracle md5 变）⇒ 本文件整体作废，按新 hash 另起一份；
-- `tdutils/td/utils/`：`Slice.h`、`Hash.h`、`PathView.{h,cpp}`、`Hints.{h,cpp}`、`translit.cpp`、`unicode.{h,cpp}`、`utf8.{h,cpp}`、`base64.{h,cpp}`、`misc.{h,cpp}`、`StringBuilder.{h,cpp}`、`SharedSlice.h`、`buffer.h`、`crypto.{h,cpp}`；
+- `tdutils/td/utils/`：`Slice.h`、`Hash.h`、`PathView.{h,cpp}`、`Hints.{h,cpp}`、`translit.cpp`、`unicode.{h,cpp}`、`utf8.{h,cpp}`、`base64.{h,cpp}`、`misc.{h,cpp}`、`StringBuilder.{h,cpp}`、`SharedSlice.h`、`buffer.h`、`crypto.{h,cpp}`、`emoji.{h,cpp}`（表、ZWJ 拆分、selector 剥离、四个 modifier 助手）；**Rust 侧** `rust/src/emoji.rs` 与生成物 `rust/src/emoji_table.rs`（`tools/gen_emoji_table.py --check` 门槛）；
 - oracle 重建（md5 变）或 Rust 换 target/linker；
 - 生成器输入：`unicode.cpp` 的七张表（`tools/gen_unicode_tables.py --check` 会自己变红）。

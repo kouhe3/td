@@ -153,6 +153,12 @@
 |---|---|---|
 | `td::ReactionType`（两种解码 + 三条构造、三层出口、`get_hash`、`get_reaction_types_hash`、`<` 全序、`==`、打印） | measured（F287–F290：9 case + 3 check / 语料 79 行 / 输出 140 行，`PASS cases=9 checks=3 lines=140`，1.5 s；判据 = narration 逐行 + FLOOR + **一组 abort 对**（`#zz` 撞 base64 CHECK、`#abc` 撞 8 字节 CHECK、正常 custom 必须 0）+ 17 条手算 cell。判据事实：`""`/emoji/`#`+base64(LE i64)/`$` 四态、`$ < "" < "#…" < emoji` 的非字典序、空串两个 td_api 出口是 nullptr、`#`/`$` 防伪 + `check_utf8`、`get_hash` 的 md5 大端锚） | `get_hash`/`get_reaction_types_hash` 的 **emoji 分支**（要 `remove_emoji_selectors` → `is_emoji` 与 2370 项 emoji 表，尚未单独成 lane） |
 
+## emoji 面（`tdutils` 的 emoji 表与规则）
+
+| 面 | 状态 | 判据 / 剩余缺口 |
+|---|---|---|
+| `td::is_emoji` / `find_emojis` / `get_fitzpatrick_modifier` / `remove_fitzpatrick_modifier` / `remove_emoji_modifiers` / `remove_emoji_selectors` | measured（F292–F296：5 case / 语料 2434 行（2370 项全表 + 64 边界）/ 输出 4858 行，`PASS cases=5 lines=4858`，0.3 s；判据 = **判定**（`is_emoji` 布尔）+ **结构**（`find_emojis` 的 slice 列表）+ **逐字节**（四个变换）+ FLOOR + 19 条手算 cell。判据事实：表项无 ZWJ 且「基础 + 末尾 VS16」也不在表里，`is_emoji` = 剥一个末尾 VS16 + 按 `U+200D` 拆分逐段判；`is_emoji` 只在前 32 字节找第一个 `0xE2`；`remove_emoji_modifiers(.., false)` 保留 VS16） | `is_emoji_element` 的「两个连续 VS16 拒绝」在当前表下等价（F296）；`remove_emoji_selectors` 结尾的 `CHECK(is_emoji(str))` 不可达 |
+
 ## 协议面与 RPC 面
 
 | 项 | 状态 | 判据形态 |

@@ -605,8 +605,10 @@ pub(crate) fn clean_filename(name: &str) -> String {
     result
 }
 
-pub(crate) fn is_emoji(prefix: &str) -> bool {
-    emoji_table::EMOJIS.binary_search(&prefix).is_ok()
+/// `emoji::is_emoji` also splits on zero-width joiners, so a ZWJ sequence is one
+/// emoji here exactly like it is on the C++ side (the table itself has none).
+fn is_emoji(value: &str) -> bool {
+    crate::emoji::is_emoji_str(value)
 }
 
 pub(crate) fn match_emoji_at(text: &str, pos: usize) -> Option<usize> {
