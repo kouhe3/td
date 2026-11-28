@@ -1,6 +1,6 @@
 # Plan — RIIR（JSON/C ABI 边界差分实现）
 
-gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=67 | status=running | date=2026-11-28
+gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=73 | status=running | date=2026-11-28
 
 ## 范围
 
@@ -170,6 +170,7 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | T120 | 修 `client_options` 门禁的假红（F275）：`gen_client_options.py` 的「第二次运行」复用 `work/gen-client-db`，oracle 偶发没落全时第二次会看到首启形状（129 行 / 127 option）→ 门禁假红；改成 `capture_pair()`：形状不对就整对重放一次 | F275 | done（`--only client_options` 连跑 4 次全绿；失败形态在同一 commit 上可交替复现（FAIL/PASS/FAIL/PASS），所以修的是时序不是实现。**限制**：4 次里重试分支未触发，重试路径本身还没有失败证据覆盖——若将来仍红，说明是另一种形态） |
 | T121 | 并行 slot 1：ABI 密度 lane（N2）——给 `tdjson_diff.py` 的 MATCH 表加 `getFileMimeType` / `getFileExtension` / `cleanFileName` 三类边界 cell | F500–F503 | done（新增 15 条 cell，`MATCH` 1564 → **1579**、`failures=0`；0 改实现。新增的 cell：mime 的 `PHOTO.JPG` / `photo.JPEG` / `file.tar.GZ` / `noext` / `trailing.` / `a.b.c` / `中文.pdf`，extension 的 `IMAGE/JPEG` / `application/x-tar` / `text/plain; charset=utf-8` / 空串，cleanFileName 的 `dir/sub\file.txt` / 双空格 / 200 字符 / 非 ASCII+全非法字符。RED：把 `mime_lookup` 的 `to_ascii_lowercase` 去掉 → `failures=6`，且失败名单正好是大小写相关的 6 条（含 3 条老 cell）） |
 | T122 | 并行 slot 2：`secure_storage_file` lane——`encrypt_file` / `decrypt_file` 的文件变体，双向交叉读 + 结构比较 | F550–F553 | done（`secure_storage_file_diff.py`：8 case / 语料 42 行 / 输出 68 行、`PASS cases=8 checks=102`，0.88 s，`corpus md5=7f22224b`；26 条手算 cell（md5 用 `hashlib`）；判据 = narration 逐行 + FLOOR + **双向交叉读** + 篡改最后一字节的两侧 `Hash mismatch` + 结构比较（密文长 `prefix_length(n)+n`、sidecar 32 字节）。判据事实：空文件密文 32 字节、1 字节 → 48（前缀 47）、对齐公式 `((32 + 15 + n) & -16) - n`、两条 `FileFd` 文案逐字相同。RED：去掉 `decrypt_file` 的哈希比对 → `FAIL crafted narration line 4`） |
+| T123 | N3：`TQueueBinlog<Binlog>` 的**加密**路径——同一脚本在 `DbKey::raw_key("cucumber")` 下再走一遍，判据 = 加密文件结构（size 序列 / 首帧 `type=-3`）+ Python 独立重算 key_hash + 双向交叉 replay + 错误 key 对；明文段保持逐字节 | F277, F278 | 进行中（预注册已落） |
 
 ## 下一步（2026-11-28，round 66 收口后）
 
@@ -179,7 +180,7 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 |---|---|---|---|
 | N1 | `td/telegram` 纯面继续：`SecureStorage` 的 `encrypt_file` / `decrypt_file` 文件变体（`NotificationGroupType` / `TopDialogCategory` 已由 T115 收掉，`DialogPhoto` 可判的一半已由 T117 收掉，其 `FileManager*` 半边 blocked） | F246, F247, F272 | 与已完成 lane 同形（`tools/fixtures/*.cpp` + `tools/*_diff.py`；`verify.py` 已自动发现，不用登记）；`store` / `parse` 一类先跑两条可达性否决再立项（F252, F257） |
 | N2 | ABI 面加密度：按 F184 的先例继续给 `td_execute` 加 cell | F184, F121 | 比新开 lane 便宜，只动 `tools/tdjson_diff.py` 的 MATCH 表与 fuzz 语料 |
-| N3 | `TQueueBinlog` 的加密路径 | F189, F190, F204 | 价值一般，排最后；binlog 加密写侧已由 F189/F190 覆盖 |
+| N3 | `TQueueBinlog` 的加密路径 | F189, F190, F204 | **已立项 T123（round 73）**；binlog 加密写侧已由 F189/F190 覆盖，这里判的是「加密对队列层透明」 |
 | N0 | 基座同步判断：`upstream/master` = `e7ac61dd6`，相对判定基座 `1b9efe84d` 领先 18 提交 | F173 | 三条之一成立才触发（源文件相交 / `td_api.tl` 或数据表变更 / 新 lane 源文件被上游改过）；触发后 merge + `ninja tdjson` + 重编探针 + 重跑全部门禁 + 重落快照 |
 
 ### 并行化改造（`SKILL.md` §1 并行门的前置；当前不可并行）
@@ -309,3 +310,4 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | 2026-11-28 | F276 | 门禁, 冻结树 | 拆 `lib.rs` 之后的 71 项快照入库：`docs/gate-54f4abfcf.json`（commit `54f4abfcf`、`worktree_dirty=false`、`failures=0`、build `warnings=0`、255 s）；冻结树表补 round 71 与「快照（71 项，round 71）」两行。 |
 | 2026-11-28 | F500–F503 | T121, ABI SPEC | 并行 slot 1：ABI 密度（N2）。`tools/tdjson_diff.py` 的 MATCH 表 +15 条边界 cell（mime 大小写/多扩展名/无扩展名、extension 参数化与空串、cleanFileName 分隔符与非 ASCII），`MATCH` 1564 → 1579、`failures=0`、实现零改动；RED = 去掉 `mime_lookup` 的 `to_ascii_lowercase()` → 6 条 cell 红（含 3 条老 cell）。ABI SPEC 的 MATCH 数字同步到 1579。 |
 | 2026-11-28 | F554 | 全部 lane, 冻结树 | **第一次真开两路并行**（round 72）：slot 1 ABI 密度（+15 cell，`MATCH` 1579，实现零改动）与 slot 2 `secure_storage_file` lane 同时落地，两者改的文件不相交；门禁 71 → 72（`verify.py` 未改）。快照 `docs/gate-722aaf97d.json`（`failures=0`、`warnings=0`、276 s）；冻结树补 round 72 与快照行。 |
+| 2026-11-28 | —（预注册，无实现） | T123, 台账, 门禁 | 预注册 N3（`TQueueBinlog` 加密路径）：F277（加密只改 Binlog 层字节，队列层帧序列不变）+ F278（不比逐字节，改判结构 / key 重算 / 双向交叉读 / 错误 key 对）。plan gate 行的 `round` 由 67 修正为 73（与冻结树表一致）。 |
