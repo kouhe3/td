@@ -79,6 +79,7 @@ GATES = [
     ("misc", [PYTHON, "tools/misc_diff.py", "--selftest"]),
     ("usernames", [PYTHON, "tools/usernames_diff.py", "--selftest"]),
     ("message_id", [PYTHON, "tools/message_id_diff.py", "--selftest"]),
+    ("dialog_id", [PYTHON, "tools/dialog_id_diff.py", "--selftest"]),
     ("tls_init", [PYTHON, "tools/tls_init_diff.py", "--selftest"]),
     ("dh_handshake", [PYTHON, "tools/dh_handshake_diff.py", "--selftest"]),
     ("rsa", [PYTHON, "tools/rsa_diff.py", "--selftest"]),
