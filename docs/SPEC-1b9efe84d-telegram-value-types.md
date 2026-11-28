@@ -21,8 +21,8 @@
 
 ```bash
 cd C:/projects/td
-uv run python tools/usernames_diff.py --selftest    # 21 case + 1 check / 146 行语料 / 242 行输出，7.3 s
-uv run python tools/message_id_diff.py --selftest   # 8 case + 4 check / 268 行语料 / 430 行输出，28.8 s
+uv run python tools/usernames_diff.py --selftest    # 21 case + 1 check / 146 行语料 / 242 行输出，0.9 s
+uv run python tools/message_id_diff.py --selftest   # 8 case + 4 check / 268 行语料 / 430 行输出，1.1 s
 ```
 
 实测（2026-11-28）：`PASS cases=21 checks=1 lines=242`，`corpus md5=c0cb8ba7e1d426f9cac0550c443a8a43`；冷构建后首跑 16.6 s。四条判据全跑不短路（narration 逐行、FLOOR、abort 对、8 条手算 cell）。
