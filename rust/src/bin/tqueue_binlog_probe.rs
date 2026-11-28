@@ -1,13 +1,15 @@
 //! Judge `td::TQueueBinlog<td::Binlog>` (tddb/td/db/TQueue.h) against the C++
 //! oracle (`tools/fixtures/tqueue_binlog_probe.cpp`).
 //!
-//!   tqueue_binlog_probe <script.txt> <binlog_path>
+//!   tqueue_binlog_probe [--key empty|raw] <script.txt> <binlog_path>
 //!
 //! The queue is the real `TQueueImpl` from `rust/src/tqueue.rs`; the storage
 //! callback turns every mutation into a binlog frame, and `replay` reads those
-//! frames back. The plaintext writer here is the minimal shape the queue needs
-//! (`add`/`rewrite`/`erase`/`erase_batch` + the id counter); reindex and
-//! encryption belong to the binlog lanes and are exercised there.
+//! frames back. The writer here is the minimal shape the queue needs
+//! (`add`/`rewrite`/`erase`/`erase_batch` + the id counter). With `--key raw`
+//! the file gets the same `type = -3` header and AES-256-CTR layer as
+//! `binlog_write_probe` (shared `binlog_crypto`); reindex under a key stays
+//! out of scope and is exercised by the binlog lanes.
 //!
 //! Frame body (`TQueueLogEvent::store`, TQueue.cpp):
 //!   queue_id:i64 ‖ event_id:i32 ‖ expires_at:i32 ‖ data:TL-string ‖ [extra:i64]
@@ -25,6 +27,9 @@
 #[path = "../binlog_format.rs"]
 mod binlog_format;
 #[allow(dead_code)]
+#[path = "../binlog_crypto.rs"]
+mod binlog_crypto;
+#[allow(dead_code)]
 #[path = "../tqueue.rs"]
 mod tqueue;
 
@@ -33,6 +38,7 @@ use std::fs::File;
 use std::io::Write;
 use std::rc::Rc;
 
+use binlog_crypto::{apply_keystream, derive_key, key_hash, Header, SERVICE_AES_CTR_ENCRYPTION};
 use binlog_format::{
     make_event, store_tl_string, take_tl_string, walk_frames, Frame, Processor, FLAG_REWRITE, SERVICE_EMPTY,
 };
@@ -74,10 +80,19 @@ struct Binlog {
     file: Option<File>,
     buffer: Vec<u8>,
     last_event_id: u64,
+    /// `DbKey` in use; `None` is `DbKey::empty()` and means plaintext
+    key: Option<Vec<u8>>,
+    header: Option<Header>,
+    derived: Option<[u8; 32]>,
+    /// ciphertext bytes written since the header, i.e. the keystream position
+    cipher_offset: usize,
 }
 
 impl Binlog {
-    fn open(path: &str, fresh: bool) -> Result<Binlog, String> {
+    /// `Binlog::init`: open the file, verify the key against its header (or
+    /// write a fresh header when a key is in use), and hand back the plaintext
+    /// frames the caller replays.
+    fn open(path: &str, fresh: bool, key: Option<Vec<u8>>) -> Result<(Binlog, Vec<Frame>), String> {
         if fresh {
             let _ = std::fs::remove_file(path);
         }
@@ -88,11 +103,36 @@ impl Binlog {
             .truncate(fresh)
             .open(path)
             .map_err(|error| format!("open {path}: {error}"))?;
-        Ok(Binlog {
+        let bytes = if fresh {
+            Vec::new()
+        } else {
+            std::fs::read(path).map_err(|error| format!("read {path}: {error}"))?
+        };
+        let (header, derived, body_start, frames) = decode_file(&bytes, key.as_deref())?;
+        let mut binlog = Binlog {
             file: Some(file),
             buffer: Vec::new(),
             last_event_id: 0,
-        })
+            key,
+            header,
+            derived,
+            cipher_offset: bytes.len() - body_start,
+        };
+        if binlog.header.is_none() {
+            if let Some(key) = binlog.key.clone() {
+                // `Binlog::init` reindexes a file opened with a key: the header
+                // frame is plaintext and everything after it is keystream.
+                let (header, derived) = Header::generate(&key)?;
+                let raw = make_event(0, SERVICE_AES_CTR_ENCRYPTION, 0, &header.encode()).raw;
+                let file = binlog.file.as_mut().ok_or_else(|| "binlog closed".to_owned())?;
+                file.write_all(&raw).map_err(|error| format!("write: {error}"))?;
+                file.sync_all().map_err(|error| format!("sync: {error}"))?;
+                binlog.header = Some(header);
+                binlog.derived = Some(derived);
+                binlog.cipher_offset = 0;
+            }
+        }
+        Ok((binlog, frames))
     }
 
     fn next_event_id(&mut self) -> u64 {
@@ -141,12 +181,50 @@ impl Binlog {
 
     fn close(&mut self) -> Result<(), String> {
         if let Some(mut file) = self.file.take() {
-            file.write_all(&self.buffer).map_err(|error| format!("write: {error}"))?;
+            let mut chunk = std::mem::take(&mut self.buffer);
+            if let (Some(derived), Some(header)) = (&self.derived, &self.header) {
+                apply_keystream(&mut chunk, derived, &header.iv, self.cipher_offset)?;
+                self.cipher_offset += chunk.len();
+            }
+            file.write_all(&chunk).map_err(|error| format!("write: {error}"))?;
             file.sync_all().map_err(|error| format!("sync: {error}"))?;
         }
         self.buffer.clear();
         Ok(())
     }
+}
+
+/// Strip and verify the `type = -3` header, undo the keystream, and walk the
+/// plaintext body. Returns `(header, derived key, body offset, live frames)`.
+fn decode_file(
+    bytes: &[u8],
+    key: Option<&[u8]>,
+) -> Result<(Option<Header>, Option<[u8; 32]>, usize, Vec<Frame>), String> {
+    let raw = walk_frames(bytes);
+    let mut header = None;
+    let mut body_start = 0;
+    if let Some(first) = raw.first() {
+        if first.id == 0 && first.event_type == SERVICE_AES_CTR_ENCRYPTION {
+            header = Some(Header::parse(&first.data).ok_or_else(|| "bad encryption header".to_owned())?);
+            body_start = first.raw.len();
+        }
+    }
+    let mut plain = bytes[body_start..].to_vec();
+    let mut derived = None;
+    match (key, &header) {
+        (Some(key), Some(found)) => {
+            let value = derive_key(key, &found.salt);
+            if key_hash(&value)[..] != found.hash[..] {
+                return Err("Wrong password".to_owned());
+            }
+            apply_keystream(&mut plain, &value, &found.iv, 0)?;
+            derived = Some(value);
+        }
+        // `Binlog::init` reports WrongPassword before it can reindex
+        (None, Some(_)) => return Err("Wrong password".to_owned()),
+        _ => {}
+    }
+    Ok((header, derived, body_start, walk_frames(&plain)))
 }
 
 /// `TQueueLogEvent::store`.
@@ -254,6 +332,8 @@ fn print_events(events: &[tqueue::Event]) {
 
 struct Env {
     path: String,
+    /// `DbKey` in use; `None` is `DbKey::empty()` and means plaintext
+    key: Option<Vec<u8>>,
     binlog: Option<Rc<RefCell<Binlog>>>,
     queue: Option<TQueueImpl>,
     open: bool,
@@ -261,27 +341,26 @@ struct Env {
 
 impl Env {
     fn init(&mut self, fresh: bool, replayed: Option<&mut u64>) -> Result<(), String> {
-        let binlog = Rc::new(RefCell::new(Binlog::open(&self.path, fresh)?));
+        let (binlog, frames) = Binlog::open(&self.path, fresh, self.key.clone())?;
         let mut queue = TQueueImpl::create();
         let mut seen = 0u64;
         // A fresh file has no frames; an existing one is replayed before the
         // callback is installed, exactly like the oracle's `helper` instance.
         // `Binlog::init` hands over the processor's *live* set, not the raw
         // frames, so folded rewrites and erased ids never reach the queue.
-        if let Ok(bytes) = std::fs::read(&self.path) {
-            let mut processor = Processor::default();
-            for frame in walk_frames(&bytes) {
-                if let Err(error) = processor.add(frame) {
-                    println!("replay err={error}");
-                }
-            }
-            for frame in processor.live() {
-                match replay_event(frame, &mut queue) {
-                    Ok(()) => seen += 1,
-                    Err(error) => println!("replay err={error}"),
-                }
+        let mut processor = Processor::default();
+        for frame in frames {
+            if let Err(error) = processor.add(frame) {
+                println!("replay err={error}");
             }
         }
+        for frame in processor.live() {
+            match replay_event(frame, &mut queue) {
+                Ok(()) => seen += 1,
+                Err(error) => println!("replay err={error}"),
+            }
+        }
+        let binlog = Rc::new(RefCell::new(binlog));
         queue.set_callback(Box::new(TQueueBinlogStorage(Rc::clone(&binlog))));
         self.binlog = Some(binlog);
         self.queue = Some(queue);
@@ -310,7 +389,7 @@ impl Env {
     }
 }
 
-fn run_script(script_path: &str, binlog_path: &str) -> i32 {
+fn run_script(script_path: &str, binlog_path: &str, key: Option<Vec<u8>>) -> i32 {
     let file = match File::open(script_path) {
         Ok(file) => file,
         Err(e) => {
@@ -335,6 +414,7 @@ fn run_script(script_path: &str, binlog_path: &str) -> i32 {
     }
     let mut env = Env {
         path: binlog_path.to_string(),
+        key,
         binlog: None,
         queue: None,
         open: false,
@@ -531,10 +611,17 @@ fn run_script(script_path: &str, binlog_path: &str) -> i32 {
                     continue;
                 }
                 let bytes = std::fs::read(binlog_path).unwrap_or_default();
+                let frames = match decode_file(&bytes, env.key.as_deref()) {
+                    Ok((_, _, _, frames)) => frames,
+                    Err(error) => {
+                        println!("replay err={error}");
+                        continue;
+                    }
+                };
                 let mut fresh = TQueueImpl::create();
                 let mut seen = 0u64;
                 let mut processor = Processor::default();
-                for frame in walk_frames(&bytes) {
+                for frame in frames {
                     if let Err(error) = processor.add(frame) {
                         println!("replay err={error}");
                     }
@@ -571,9 +658,23 @@ fn run_script(script_path: &str, binlog_path: &str) -> i32 {
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    if args.len() != 3 {
-        eprintln!("usage: tqueue_binlog_probe <script.txt> <binlog_path>");
+    let usage = "usage: tqueue_binlog_probe [--key empty|raw] <script.txt> <binlog_path>";
+    let mut index = 1;
+    let mut key = None;
+    if args.len() > 1 && args[1] == "--key" {
+        match args.get(2).map(String::as_str) {
+            Some("empty") => {}
+            Some("raw") => key = Some(binlog_format::DEFAULT_KEY.to_vec()),
+            _ => {
+                eprintln!("{usage}");
+                std::process::exit(2);
+            }
+        }
+        index = 3;
+    }
+    if args.len() != index + 2 {
+        eprintln!("{usage}");
         std::process::exit(2);
     }
-    std::process::exit(run_script(&args[1], &args[2]));
+    std::process::exit(run_script(&args[index], &args[index + 1], key));
 }

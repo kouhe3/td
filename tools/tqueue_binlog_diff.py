@@ -31,14 +31,32 @@ What the corpus pins down (measured; docs/facts.md F202/F203):
     rewrite replaces the earlier frame and an erased id disappears, so the frame
     count the queue sees is not the frame count on disk.
 
-Not covered: encryption (`DbKey` non-empty), reindex (the corpus is tiny), and
-`TQueue::close(Promise)` -- each with a return condition in F202.
+Encrypted generation (`--key raw` = `DbKey::raw_key("cucumber")`): the queue is
+the same, so the whole narration except the file digest must stay identical and
+the file must be exactly 128 bytes longer (the plaintext `type = -3` header;
+AES-256-CTR is length preserving). The bytes themselves are never compared --
+salt and iv are fresh per generation -- so four criteria replace them:
+
+  (e) the encrypted file's structure: first frame `id=0 type=-3 size=128`, and
+      Python re-derives `PBKDF2-HMAC-SHA256("cucumber", salt, 2)` and
+      `HMAC(key, "cucumbers everywhere")` from the file's own salt;
+  (f) cross replay with the key (C++ reads the Rust file and vice versa);
+  (g) a wrong-key pair: `--key empty` on an encrypted file is `Wrong password`
+      (exit 3) and the narration is identical on both sides;
+  (h) FLOOR on the encrypted side: a second run agrees on size and on the
+      narration with the digest masked.
+
+Not covered: reindex under a key (the corpus is far below the 50 KiB
+threshold), reopening a *plaintext* file with a key (`Binlog::init` would
+regenerate it), and `TQueue::close(Promise)` -- each with a return condition in
+F202/F277.
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import hmac
 import os
 import shutil
 import struct
@@ -298,8 +316,8 @@ def script_text(lines) -> str:
     return "\n".join(lines) + "\n"
 
 
-def run(exe: Path, script: Path, binlog: Path, env: dict):
-    proc = subprocess.run([str(exe), str(script), str(binlog)], capture_output=True, env=env)
+def run(exe: Path, script: Path, binlog: Path, env: dict, key: str = "empty"):
+    proc = subprocess.run([str(exe), "--key", key, str(script), str(binlog)], capture_output=True, env=env)
     return (
         proc.returncode,
         proc.stdout.decode("utf-8", "replace").splitlines(),
@@ -307,7 +325,7 @@ def run(exe: Path, script: Path, binlog: Path, env: dict):
     )
 
 
-def cross_read(args, env, name: str, cpp_file: Path, rs_file: Path) -> bool:
+def cross_read(args, env, name: str, cpp_file: Path, rs_file: Path, key: str = "empty") -> bool:
     read_dir = WORK / "read"
     paths = {
         "cpp_own": read_dir / f"{name}.cpp.cpp.binlog",
@@ -322,17 +340,17 @@ def cross_read(args, env, name: str, cpp_file: Path, rs_file: Path) -> bool:
     script = WORK / "scripts" / "read.txt"
 
     results = {}
-    for key, exe in (
+    for label, exe in (
         ("cpp_own", Path(args.cpp)),
         ("cpp_rs", Path(args.cpp)),
         ("rs_own", Path(args.rs)),
         ("rs_cpp", Path(args.rs)),
     ):
-        rc, lines, stderr = run(exe, script, paths[key], env)
+        rc, lines, stderr = run(exe, script, paths[label], env, key)
         if rc != 0:
-            print(f"DIFF cross={key}/{name} exit={rc} stderr={stderr!r}")
+            print(f"DIFF cross={label}/{name} exit={rc} stderr={stderr!r}")
             return False
-        results[key] = lines
+        results[label] = lines
 
     for label, left, right in (
         ("cpp-on-rust", "cpp_own", "cpp_rs"),
@@ -344,7 +362,72 @@ def cross_read(args, env, name: str, cpp_file: Path, rs_file: Path) -> bool:
     return True
 
 
-def selftest(cpp_files: dict[str, bytes], cpp_lines: dict[str, list[str]]) -> bool:
+HEADER_FRAME_SIZE = 128
+
+
+def masked(lines):
+    """Mask the file digest: salt and iv are fresh per generation, so the sha256
+    of an encrypted file is not a criterion -- its length still is."""
+    out = []
+    for line in lines:
+        if line.startswith("dumpfile size="):
+            size = line.split("size=")[1].split(" ")[0]
+            out.append(f"dumpfile size={size} sha256=<random>")
+        else:
+            out.append(line)
+    return out
+
+
+def encrypted_header(data: bytes):
+    """Parse the plaintext `type = -3` header; everything behind it is ciphertext,
+    so the frame walk stops right after that frame."""
+    rows, _ = frames(data)
+    if not rows:
+        return None
+    first = rows[0]
+    if first["id"] != 0 or first["type"] != -3:
+        return None
+    body = first["data"]
+    if len(body) < 4:
+        return None
+    salt, offset = tl_string(body, 4)
+    iv, offset = tl_string(body, offset)
+    stored, offset = tl_string(body, offset)
+    if salt is None or iv is None or stored is None or offset != len(body):
+        return None
+    return {"size": first["size"], "salt": salt, "iv": iv, "hash": stored}
+
+
+def header_key_matches(header) -> bool:
+    derived = hashlib.pbkdf2_hmac("sha256", b"cucumber", header["salt"], 2, dklen=32)
+    want = hmac.new(derived, b"cucumbers everywhere", "sha256").digest()
+    return want == header["hash"]
+
+
+def wrong_key(args, env, name: str, cpp_file: Path, rs_file: Path) -> bool:
+    """Both sides must refuse an encrypted file opened with `DbKey::empty()`."""
+    read_dir = WORK / "read"
+    cpp_wrong = read_dir / f"{name}.cpp.wrong.binlog"
+    rs_wrong = read_dir / f"{name}.rs.wrong.binlog"
+    shutil.copyfile(cpp_file, cpp_wrong)
+    shutil.copyfile(rs_file, rs_wrong)
+    script = WORK / "scripts" / "read.txt"
+    cpp_rc, cpp_out, _ = run(Path(args.cpp), script, cpp_wrong, env, "empty")
+    rs_rc, rs_out, _ = run(Path(args.rs), script, rs_wrong, env, "empty")
+    if (cpp_rc, cpp_out) != (rs_rc, rs_out):
+        print(f"DIFF {name} wrong-key: oracle=({cpp_rc}, {cpp_out}) rust=({rs_rc}, {rs_out})")
+        return False
+    if cpp_rc != 3 or not any(line.startswith("init err=Wrong password") for line in cpp_out):
+        print(f"DIFF {name} wrong-key: expected exit 3 and 'init err=Wrong password', got {cpp_out}")
+        return False
+    return True
+
+
+def selftest(
+    cpp_files: dict[str, bytes],
+    cpp_lines: dict[str, list[str]],
+    enc_files: dict[str, bytes],
+) -> bool:
     def want(condition: bool, message: str) -> bool:
         if not condition:
             print(f"SELFTEST FAIL: {message}")
@@ -434,6 +517,21 @@ def selftest(cpp_files: dict[str, bytes], cpp_lines: dict[str, list[str]]) -> bo
         size_line = narration(cpp_lines[name], "dumpfile")[0]
         size = int(size_line.split("size=")[1].split(" ")[0])
         ok &= want(size == len(cpp_files[name]), f"{name}: dumpfile size matches the file")
+
+    # 8. the encrypted generation: the same frames behind a 128-byte `-3` header,
+    #    and the key_hash inside that header is PBKDF2 + HMAC of the raw key.
+    for name in ("basic", "erase_kinds", "long_data"):
+        header = encrypted_header(enc_files[name])
+        ok &= want(header is not None, f"{name}: the encrypted file starts with an id=0 type=-3 frame")
+        if header is None:
+            continue
+        ok &= want(header["size"] == HEADER_FRAME_SIZE, f"{name}: the header frame is 128 bytes")
+        ok &= want(
+            len(enc_files[name]) == len(cpp_files[name]) + HEADER_FRAME_SIZE,
+            f"{name}: encrypted size is the plaintext size + 128",
+        )
+        ok &= want(len(header["salt"]) == 32 and len(header["iv"]) == 16, f"{name}: salt is 32 B, iv is 16 B")
+        ok &= want(header_key_matches(header), f"{name}: key_hash is PBKDF2 + HMAC of the raw key")
     return ok
 
 
@@ -465,6 +563,7 @@ def main() -> int:
     total_bytes = 0
     cpp_files: dict[str, bytes] = {}
     cpp_lines: dict[str, list[str]] = {}
+    enc_files: dict[str, bytes] = {}
 
     for name, body in CASES:
         script = WORK / "scripts" / f"{name}.txt"
@@ -498,7 +597,45 @@ def main() -> int:
         if not cross_read(args, env, name, cpp_file, rs_file):
             return 1
 
-    if args.selftest and not selftest(cpp_files, cpp_lines):
+        cpp_enc_file = WORK / "cpp" / f"{name}.enc.binlog"
+        rs_enc_file = WORK / "rs" / f"{name}.enc.binlog"
+        cpp_enc_rc, cpp_enc_out, cpp_enc_err = run(Path(args.cpp), script, cpp_enc_file, env, "raw")
+        rs_enc_rc, rs_enc_out, rs_enc_err = run(Path(args.rs), script, rs_enc_file, env, "raw")
+        if cpp_enc_rc != rs_enc_rc or cpp_enc_rc != 0:
+            print(
+                f"DIFF {name} encrypted exit: oracle={cpp_enc_rc} rust={rs_enc_rc} "
+                f"{cpp_enc_err!r} {rs_enc_err!r}"
+            )
+            return 1
+        cpp_enc = cpp_enc_file.read_bytes()
+        rs_enc = rs_enc_file.read_bytes()
+        enc_files[name] = cpp_enc
+        total_bytes += len(cpp_enc) + len(rs_enc)
+        if len(cpp_enc) != len(rs_enc):
+            print(f"DIFF {name} encrypted size: oracle={len(cpp_enc)} rust={len(rs_enc)}")
+            return 1
+        if len(cpp_enc) != len(cpp_bytes) + HEADER_FRAME_SIZE:
+            print(
+                f"DIFF {name} encrypted size: {len(cpp_enc)} != plaintext {len(cpp_bytes)} "
+                f"+ {HEADER_FRAME_SIZE}"
+            )
+            return 1
+        if not compare_lines(f"{name} encrypted narration", masked(cpp_enc_out), masked(rs_enc_out)):
+            return 1
+        if not cross_read(args, env, f"{name}.enc", cpp_enc_file, rs_enc_file, "raw"):
+            return 1
+        if not wrong_key(args, env, name, cpp_enc_file, rs_enc_file):
+            return 1
+        floor_rc, floor_out, _ = run(Path(args.cpp), script, cpp_enc_file, env, "raw")
+        if (
+            floor_rc != cpp_enc_rc
+            or masked(floor_out) != masked(cpp_enc_out)
+            or len(cpp_enc_file.read_bytes()) != len(cpp_enc)
+        ):
+            print(f"FLOOR FAIL: the oracle is not deterministic on {name} (encrypted)")
+            return 1
+
+    if args.selftest and not selftest(cpp_files, cpp_lines, enc_files):
         return 1
 
     elapsed = time.time() - started

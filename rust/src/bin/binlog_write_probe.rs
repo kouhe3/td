@@ -77,120 +77,24 @@ use std::fs::{self, File};
 use std::io::{Seek, SeekFrom, Write};
 use std::process::ExitCode;
 
-use aes::Aes256;
-use ctr::cipher::{KeyIvInit, StreamCipher, StreamCipherSeek};
-use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256};
 
 #[allow(dead_code)]
 #[path = "../binlog_format.rs"]
 mod binlog_format;
+#[allow(dead_code)]
+#[path = "../binlog_crypto.rs"]
+mod binlog_crypto;
 
+use binlog_crypto::{
+    apply_keystream, derive_key, key_hash, Header, SERVICE_AES_CTR_ENCRYPTION,
+};
 use binlog_format::{
-    create_raw, from_hex, store_tl_string, take_tl_string, u32_at, u64_at, DEFAULT_KEY, FLAG_REWRITE,
-    HEADER_SIZE, KEY_CHECK, LAZY_FLUSH_THRESHOLD, MIN_SIZE, REINDEX_LEVELS, SERVICE_EMPTY,
-    TAIL_SIZE,
+    create_raw, from_hex, store_tl_string, u32_at, u64_at, DEFAULT_KEY, FLAG_REWRITE, HEADER_SIZE,
+    LAZY_FLUSH_THRESHOLD, MIN_SIZE, REINDEX_LEVELS, SERVICE_EMPTY, TAIL_SIZE,
 };
 
-const SERVICE_AES_CTR_ENCRYPTION: i32 = -3;
 const DATA_PREVIEW: usize = 32;
-/// `detail::AesCtrEncryptionEvent` for a raw key (`kdf_fast_iteration_count`)
-const KDF_ITERATIONS: u32 = 2;
-const SALT_SIZE: usize = 32;
-const IV_SIZE: usize = 16;
-const KEY_HASH_SIZE: usize = 32;
-/// `BEGIN_STORE_FLAGS`/`END_STORE_FLAGS` write one zeroed `uint32` first
-const HEADER_FLAGS_SIZE: usize = 4;
-const BCRYPT_USE_SYSTEM_PREFERRED_RNG: u32 = 2;
-
-type Aes256Ctr = ctr::Ctr128BE<Aes256>;
-
-#[link(name = "bcrypt")]
-extern "system" {
-    /// The RNG `Random::secure_bytes` ends up in on Windows.
-    fn BCryptGenRandom(algorithm: *mut core::ffi::c_void, buffer: *mut u8, len: u32, flags: u32) -> i32;
-}
-
-fn secure_bytes(len: usize) -> Result<Vec<u8>, String> {
-    let mut out = vec![0u8; len];
-    let status = unsafe {
-        BCryptGenRandom(core::ptr::null_mut(), out.as_mut_ptr(), len as u32, BCRYPT_USE_SYSTEM_PREFERRED_RNG)
-    };
-    if status != 0 {
-        return Err(format!("BCryptGenRandom failed: 0x{status:08x}"));
-    }
-    Ok(out)
-}
-
-/// `PBKDF2-HMAC-SHA256(db_key, key_salt, kdf_fast_iteration_count, 32)`.
-fn derive_key(key: &[u8], salt: &[u8]) -> [u8; 32] {
-    let mut derived = [0u8; 32];
-    pbkdf2::pbkdf2_hmac::<Sha256>(key, salt, KDF_ITERATIONS, &mut derived);
-    derived
-}
-
-/// `AesCtrEncryptionEvent::generate_hash` (HMAC-SHA256 under a literal message).
-fn key_hash(key: &[u8]) -> [u8; 32] {
-    let mut mac = <Hmac<Sha256>>::new_from_slice(key).expect("HMAC accepts any key length");
-    mac.update(KEY_CHECK);
-    mac.finalize().into_bytes().into()
-}
-
-/// XOR `data` with the AES-256-CTR keystream at byte position `offset`; CTR is
-/// its own inverse, so this both encrypts and decrypts.
-fn apply_keystream(data: &mut [u8], key: &[u8; 32], iv: &[u8], offset: usize) -> Result<(), String> {
-    let mut iv_bytes = [0u8; IV_SIZE];
-    if iv.len() != IV_SIZE {
-        return Err(format!("iv must be {IV_SIZE} bytes, got {}", iv.len()));
-    }
-    iv_bytes.copy_from_slice(iv);
-    let mut cipher = Aes256Ctr::new(key.into(), (&iv_bytes).into());
-    cipher.seek(offset as u64);
-    cipher.apply_keystream(data);
-    Ok(())
-}
-
-/// The plaintext `type = -3` header event: three TL strings behind a flags word.
-struct Header {
-    salt: Vec<u8>,
-    iv: Vec<u8>,
-    hash: Vec<u8>,
-}
-
-impl Header {
-    /// Fresh salt and iv, hash derived from the key -- `reset_encryption`.
-    fn generate(key: &[u8]) -> Result<(Header, [u8; 32]), String> {
-        let salt = secure_bytes(SALT_SIZE)?;
-        let iv = secure_bytes(IV_SIZE)?;
-        let derived = derive_key(key, &salt);
-        let hash = key_hash(&derived).to_vec();
-        Ok((Header { salt, iv, hash }, derived))
-    }
-
-    fn encode(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(HEADER_FLAGS_SIZE + SALT_SIZE + IV_SIZE + KEY_HASH_SIZE + 12);
-        out.extend_from_slice(&0u32.to_le_bytes());
-        out.extend_from_slice(&store_tl_string(&self.salt));
-        out.extend_from_slice(&store_tl_string(&self.iv));
-        out.extend_from_slice(&store_tl_string(&self.hash));
-        out
-    }
-
-    fn parse(data: &[u8]) -> Option<Header> {
-        if data.len() < HEADER_FLAGS_SIZE {
-            return None;
-        }
-        let mut rest = &data[HEADER_FLAGS_SIZE..];
-        let salt = take_tl_string(&mut rest)?;
-        let iv = take_tl_string(&mut rest)?;
-        let hash = take_tl_string(&mut rest)?;
-        Some(Header {
-            salt: salt.to_vec(),
-            iv: iv.to_vec(),
-            hash: hash.to_vec(),
-        })
-    }
-}
 
 fn to_hex(data: &[u8], limit: usize) -> String {
     let shown = data.len().min(limit);

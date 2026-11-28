@@ -30,7 +30,7 @@ uv run python tools/crypto_diff.py --selftest              # 457 行，6.7 s
 uv run python tools/tddb_paths_diff.py --selftest          # 35 行 + 目录树，0.2 s
 uv run python tools/sqlite_kv_diff.py --selftest           # SQLite KV：11 case + 2 check，1.4 s
 uv run python tools/tqueue_diff.py --selftest              # TQueue：12 case + 2 check，0.6 s
-uv run python tools/tqueue_binlog_diff.py --selftest       # TQueueBinlog：10 case，4,016 B，1.2 s
+uv run python tools/tqueue_binlog_diff.py --selftest       # TQueueBinlog：10 case × 明文/加密两代，10,592 B，3.2 s
 uv run python tools/sqlite_safe_diff.py --selftest         # 连接安全层：8 case（6 + 2 abort）/ 122 行，1.9 s
 uv run python tools/sqlite_async_diff.py --selftest        # 异步层串行驱动：6 case（4 + 2 abort）/ 70 行，1.8 s
 ```
@@ -49,6 +49,7 @@ uv run python tools/sqlite_async_diff.py --selftest        # 异步层串行驱�
 | SQLite KV（`SqliteKeyValue` + `SqliteDb` 的事务计数 + `SqliteStatement` 的 blob 绑定/视图） | narration 逐行（**行序本身是判据**）+ **双向交叉读**（C++ 读 Rust 库、Rust 读 C++ 库）+ abort 对（`--check`，只比 rc 类别） | 11 case + 2 check 例 / 376,832 B，`md5=715cc4cb`，8.3 s | F196–F198 |
 | TQueue（`TQueueImpl` + `TQueueMemoryStorage` + `EventId`） | narration 逐行 + FLOOR + abort 对（`do_push` 的空 `EventId`）+ **`replay` 重建**（storage 重放到新队列，head/tail/size 必须一致） | 12 case + 2 check 例 / 语料 109 行 / 输出 198 行，`md5=87e3f3e6`，7.0 s | F199–F201 |
 | TQueueBinlog（`push`→`add`/`rewrite`、`pop`→`erase`、`pop_batch`→`erase_batch`、`replay`） | **binlog 文件逐字节** + narration + **双向交叉 replay** + FLOOR；selftest 用**独立的 Python 帧解析**反算 type/flags/size/body（不复用任何一侧的 walker） | 10 case / 4,016 B，`md5=15f996ad`，1.2 s | F202–F204 |
+| TQueueBinlog 加密代（`--key raw` = `DbKey::raw_key("cucumber")`） | **不比字节**（salt/iv 每代随机）：加密文件 `size = 明文 + 128`（明文 `-3` 头帧，CTR 保长）+ narration 除文件摘要外与明文逐行相同 + Python 用文件自身 salt 重算 key_hash + 带 key 的**双向交叉 replay** + 错误 key 对（两侧 `init err=Wrong password`、rc=3）+ 加密侧 FLOOR | 10 case × 2 代 / 10,592 B，`PASS cases=10`，3.2 s | F277–F280 |
 | `SqliteConnectionSafe` / `SqliteKeyValueSafe` | narration 逐行 + **文件存在性** + abort（致命文案里的 `state N` token）+ FLOOR | 8 case（6 + 2 abort）/ 122 行，1.9 s | F217–F219 |
 | `SqliteKeyValueAsync` | narration 逐行（含 promise 载荷）+ FLOOR + 两条 abort（空 key）+ 手算 cell | 6 case（4 + 2 abort）/ 70 行，1.8 s | F229–F231 |
 
@@ -99,8 +100,8 @@ uv run python tools/sqlite_async_diff.py --selftest        # 异步层串行驱�
 | `TQueue` 无 hint 的初始 tail | `Random::fast(2000001, MAX_ID/2)` 不可注入 | 语料全程给 hint；无 hint 只判「落在区间内」 |
 | `run_gc` 的 50 ms 预算与 `(++counter & 128)` 分片 | 小语料一轮远不到 50 ms，也不到 128 次迭代 | 造 >128 个事件并让一轮超过 50 ms，或把时钟变成参数 |
 | `Time::now()` 在 `clear` 的耗时告警里 | 只在超过 20 ms 时打日志 | 造一个清空耗时 >20 ms 的队列 |
-| `TQueueBinlog` 的加密形态（`DbKey` 非空 → 帧体 AES-CTR） | 未驱动 `TQueueBinlog` + 非空 `DbKey` 的组合；binlog 写侧加密本身已判（F189/F190） | 接 `DbKey` 重跑，只多一条 8 字节级断言 |
-| `TQueueBinlog` 的 reindex | 语料 4,016 B，远低于 `> 50 KiB + 5:1 死比` 的触发线 | 造 10 万级事件的队列语料 |
+| `TQueueBinlog` 的 reindex（明文与加密都未驱动） | 语料 4,016 B，远低于 `> 50 KiB + 5:1 死比` 的触发线；加密下 reindex 会重写 `-3` 头并从头重加密，这条路径没有判据 | 造 10 万级事件的队列语料（两侧都跑 `--key raw`） |
+| 明文文件用 key 重开（`Binlog::init` 的 regenerate 分支） | 语料只从「空文件 + key」开始；把已有明文文件用 `--key raw` 打开会重生成整份文件，C++ 与 Rust 的帧序都还没判 | 先 `--key empty` 写一份，再 `--key raw` 重开并交叉读 |
 | `TQueue::close(Promise)` | 需要 actor 才能兑现 Promise | 造出脱离 actor 的 Promise |
 | `TdDb::open` 全流程 | 走 actor/Promise，需要 scheduler | 造出脱离 actor 的入口 |
 | `change_key` 的 `old_db_key` 迁移分支 | 未驱动 | 有迁移语料时 |
@@ -119,7 +120,7 @@ uv run python tools/sqlite_async_diff.py --selftest        # 异步层串行驱�
 
 - **基座漂移**：判定基座不是 `1b9efe84d`（或 oracle md5 变）⇒ 本文件整体作废，按新 hash 另起一份；
 - `tddb/td/db/binlog/Binlog.{h,cpp}`、`BinlogEvent.{h,cpp}`、`BinlogInterface.h`、`BinlogKeyValue.h`、`SeqKeyValue.h`、`DbKey.h`；
-- **Rust 侧**：`rust/src/binlog_format.rs`（三份探针共享的帧格式，改动会同时影响 write / kv / read 三条仪器）；
+- **Rust 侧**：`rust/src/binlog_format.rs`（三份探针共享的帧格式，改动会同时影响 write / kv / read 三条仪器）；`rust/src/binlog_crypto.rs`（write / tqueue_binlog 两条探针共享的 header、PBKDF2、HMAC 与 keystream）；
 - `tdutils/td/utils/crypto.{h,cpp}`（PBKDF2 迭代次数、HMAC 常量、AES-CTR 进位）；
 - `td/telegram/TdDb.{h,cpp}`（`as_db_key`、`check_parameters`、两个路径 static）；
 - `tdutils/td/utils/port/path.cpp`（`mkpath`/`mkdir`/`realpath`）；

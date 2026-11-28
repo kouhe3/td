@@ -1,10 +1,12 @@
 // Oracle for td::TQueueBinlog<td::Binlog> (tddb/td/db/TQueue.h) driven by a script.
 //
-//   tqueue_binlog_probe <script.txt> <binlog_path>
+//   tqueue_binlog_probe [--key empty|raw] <script.txt> <binlog_path>
 //
-// A real `td::Binlog` opened at <binlog_path> with `DbKey::empty()` (plaintext),
-// a real `td::TQueue::create()`, and `TQueueBinlog<Binlog>` between them as the
-// `StorageCallback`. So every queue mutation turns into a binlog frame:
+// A real `td::Binlog` opened at <binlog_path> with `DbKey::empty()` (plaintext)
+// or `--key raw` = `DbKey::raw_key("cucumber")` (a plaintext `type = -3` header
+// frame, then AES-256-CTR), a real `td::TQueue::create()`, and
+// `TQueueBinlog<Binlog>` between them as the `StorageCallback`. So every queue
+// mutation turns into a binlog frame:
 //
 //   push   -> add(2314 + (extra != 0), TQueueLogEvent)      (first time)
 //          -> rewrite(log_event_id, ...)                     (rewrite)
@@ -43,6 +45,8 @@
 //   -lssl -lcrypto -lz -lws2_32 -lpsapi -o C:/tmp/td-probe/tqueue_binlog_probe.exe
 
 #include "td/db/TQueue.h"
+#include "td/db/DbKey.h"
+
 #include "td/db/binlog/Binlog.h"
 #include "td/db/binlog/BinlogEvent.h"
 
@@ -156,6 +160,7 @@ bool parse_i32(const std::string &s, int32_t &out) {
 
 struct Env {
   std::string path;
+  td::DbKey key;
   std::shared_ptr<td::Binlog> binlog;
   td::unique_ptr<td::TQueue> queue;
   bool open = false;
@@ -167,14 +172,17 @@ struct Env {
     td::TQueueBinlog<td::Binlog> helper;
     helper.set_binlog(binlog);
     uint64_t seen = 0;
-    auto status = binlog->init(path, [&](const td::BinlogEvent &event) {
-      auto replay_status = helper.replay(event, *queue);
-      if (replay_status.is_error()) {
-        std::printf("replay err=%s\n", replay_status.message().str().c_str());
-      } else {
-        seen++;
-      }
-    });
+    auto status = binlog->init(
+        path,
+        [&](const td::BinlogEvent &event) {
+          auto replay_status = helper.replay(event, *queue);
+          if (replay_status.is_error()) {
+            std::printf("replay err=%s\n", replay_status.message().str().c_str());
+          } else {
+            seen++;
+          }
+        },
+        key);
     if (status.is_error()) {
       std::printf("init err=%s\n", status.message().str().c_str());
       return false;
@@ -210,7 +218,7 @@ void print_events(td::MutableSpan<td::TQueue::Event> &span) {
   }
 }
 
-int run_script(const char *script_path, const char *binlog_path) {
+int run_script(const char *script_path, const char *binlog_path, td::DbKey key) {
   std::ifstream in(script_path);
   if (!in) {
     std::fprintf(stderr, "cannot read %s\n", script_path);
@@ -238,6 +246,7 @@ int run_script(const char *script_path, const char *binlog_path) {
 
   Env env;
   env.path = binlog_path;
+  env.key = key;
   if (!attach) {
     td::Binlog::destroy(td::CSlice(binlog_path)).ignore();
   }
@@ -402,14 +411,17 @@ int run_script(const char *script_path, const char *binlog_path) {
       td::TQueueBinlog<td::Binlog> helper;
       helper.set_binlog(binlog);
       uint64_t seen = 0;
-      auto status = binlog->init(binlog_path, [&](const td::BinlogEvent &event) {
-        auto replay_status = helper.replay(event, *fresh);
-        if (replay_status.is_error()) {
-          std::printf("replay err=%s\n", replay_status.message().str().c_str());
-        } else {
-          seen++;
-        }
-      });
+      auto status = binlog->init(
+          binlog_path,
+          [&](const td::BinlogEvent &event) {
+            auto replay_status = helper.replay(event, *fresh);
+            if (replay_status.is_error()) {
+              std::printf("replay err=%s\n", replay_status.message().str().c_str());
+            } else {
+              seen++;
+            }
+          },
+          env.key);
       if (status.is_error()) {
         std::printf("replay err=%s\n", status.message().str().c_str());
         continue;
@@ -442,9 +454,21 @@ int run_script(const char *script_path, const char *binlog_path) {
 }  // namespace
 
 int main(int argc, char **argv) {
-  if (argc != 3) {
-    std::fprintf(stderr, "usage: tqueue_binlog_probe <script.txt> <binlog_path>\n");
+  td::DbKey key = td::DbKey::empty();
+  int arg = 1;
+  if (argc >= 2 && std::strcmp(argv[1], "--key") == 0) {
+    if (argc < 3 || (std::strcmp(argv[2], "empty") != 0 && std::strcmp(argv[2], "raw") != 0)) {
+      std::fprintf(stderr, "usage: tqueue_binlog_probe [--key empty|raw] <script.txt> <binlog_path>\n");
+      return 2;
+    }
+    if (std::strcmp(argv[2], "raw") == 0) {
+      key = td::DbKey::raw_key("cucumber");
+    }
+    arg = 3;
+  }
+  if (argc != arg + 2) {
+    std::fprintf(stderr, "usage: tqueue_binlog_probe [--key empty|raw] <script.txt> <binlog_path>\n");
     return 2;
   }
-  return run_script(argv[1], argv[2]);
+  return run_script(argv[arg], argv[arg + 1], key);
 }
