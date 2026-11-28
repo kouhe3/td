@@ -6,7 +6,7 @@
 **/auto/
 /work/
 /rust/target/
-/.omp/plugins/node_modules/
+/.omp/
 /tdlib/
 vcpkg/
 .clang-tidy
