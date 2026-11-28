@@ -4,7 +4,7 @@
 >
 > **as-built 规格，不是 to-build。** 边界由 `docs/adr/0001-json-abi-as-the-rewrite-boundary.md` 钉死：一个进程里同时加载两个 dll，同一 JSON 请求，逐字节比较输出。
 > 台账行：F001–F143、F184、F234–F238；`tasks/plan.md` T1–T70、T109。
-> **注意**：`MATCH 1564` 只说明这些样本有效，不说明交付——上游每天更新，仓库只有快照态。
+> **注意**：`MATCH 1579` 只说明这些样本有效，不说明交付——上游每天更新，仓库只有快照态。
 
 ## 1. 定义域
 
@@ -20,7 +20,7 @@
 
 ```bash
 cd C:/projects/td
-uv run python tools/tdjson_diff.py                          # MATCH 1564，~25 s，failures=0
+uv run python tools/tdjson_diff.py                          # MATCH 1579，~25 s，failures=0
 uv run python tools/tdjson_fuzz.py --seeds 20261126,7,99,2027   # 随机语料零分歧
 uv run python tools/client_diff.py                          # 客户端四段（首启/第二次/未授权/遗留 C ABI/异步）
 uv run python tools/gen_api_functions.py --check            # 6 个生成表门禁之一（全部 --check 逐字节）
