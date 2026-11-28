@@ -1,6 +1,6 @@
 # Plan — RIIR（JSON/C ABI 边界差分实现）
 
-gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=46 | status=running | date=2026-11-28
+gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=66 | status=running | date=2026-11-28
 
 ## 范围
 
@@ -163,6 +163,30 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | T113 | `photo_size_source` 面：六个工厂与 `get_type`、`operator<<`、`get_file_type`、`get_unique`（compare type 映射 + 12/13 字节布局）、`unique_less`/`unique_equal`、`get_unique_name`、`operator==`、`get_input_peer`、`get_input_sticker_set`；四条 abort 对；判据 = narration 逐行 + FLOOR + 四条 abort 对 + 手算 cell | F254–F257 | done（`photo_size_source_diff.py`：8 case + 4 check / 语料 65 行 / 输出 114 行、`PASS cases=8 checks=4`，1.26 s；20 条手算 cell；三条变异 RED：去掉 `'c'` 折叠 / 少前导 `0x02` / name 打字符。判据事实：8/10 变体可造、默认源 offset -1、type 2 是 13 字节、name 用十进制、Chat 丢 hash、默认源不等于自己；顺带把 `DialogId` 抽成 `telegram_dialog_id.rs`） |
 | T114 | `message_search_filter` 面：`count`、`index`（`f-1`）、`index_mask`（`1 << index`，Empty 为 0）、`call_message_search_filter_index`、`get_input_messages_filter`（17 个合法 + 两个 phone-calls）、`get_message_search_filter`（19 个 td_api 类 + nullptr）、`operator<<`；七条 abort 对；判据 = narration 逐行 + FLOOR + abort 对 + 手算 cell | F259–F262 | done（`message_search_filter_diff.py`：6 case + 7 check / 语料 107 行 / 输出 202 行、`PASS cases=6 checks=7`，1.41 s；16 条手算 cell；三条变异 RED：mask(Empty)=1 / missed 位写反 / callindex(MissedCall)=2） |
 
+## 下一步（2026-11-28，round 66 收口后）
+
+### 实现路线
+
+| # | 条目 | 依据 | 备注 |
+|---|---|---|---|
+| N1 | `td/telegram` 纯面继续：`DialogPhoto`（`need_update_profile_photo` / `as_fake_dialog_photo`）、`SecureStorage` 的 `encrypt_file` / `decrypt_file` 文件变体、`NotificationGroupType` / `TopDialogCategory`（纯映射，快但信息量低） | F246, F247, F256 | 与已完成 lane 同形（`tools/fixtures/*.cpp` + `tools/*_diff.py` + `GATES` 一行 + 台账行）；`store` / `parse` 一类先跑两条可达性否决再立项（F252, F257） |
+| N2 | ABI 面加密度：按 F184 的先例继续给 `td_execute` 加 cell | F184, F121 | 比新开 lane 便宜，只动 `tools/tdjson_diff.py` 的 MATCH 表与 fuzz 语料 |
+| N3 | `TQueueBinlog` 的加密路径 | F189, F190, F204 | 价值一般，排最后；binlog 加密写侧已由 F189/F190 覆盖 |
+| N0 | 基座同步判断：`upstream/master` = `e7ac61dd6`，相对判定基座 `1b9efe84d` 领先 18 提交 | F173 | 三条之一成立才触发（源文件相交 / `td_api.tl` 或数据表变更 / 新 lane 源文件被上游改过）；触发后 merge + `ninja tdjson` + 重编探针 + 重跑 69 项 + 重落快照 |
+
+### 并行化改造（`SKILL.md` §1 并行门的前置；当前不可并行）
+
+三个共享写点：`rust/src/lib.rs`（8,100 行单文件）、`tools/verify.py:46` 的 `GATES` 手维护列表、`docs/facts.md` 的顺序 id。并行门五件只满足「每 lane 隔离命名空间」（`work/client/`、`work/langpack/{cpp,rs}`、`work/logs*`）；仪器自证部分有（selftest 手算 cell + 三条变异 RED），缺**统一控制面命令 ABI** 与 **lane 表**。
+
+| # | 改造 | 完成判据 |
+|---|---|---|
+| P1 | `rust/src/lib.rs` 按 lane 拆模块 | 老 lane 输出逐字节不变（沿用 15 个共享模块的 codemod 搬移手法） |
+| P2 | `GATES` 改为按 `tools/*_diff.py` 自动发现 | 一次跑完仍是 69 项、`failures=0`，项数与 `docs/gate-66490fbae.json` 相同 |
+| P3 | fact id 段位预分配（子代理只写占位符，编排者统一落账） | 段位表写进 `docs/agents/face-spaghetti.md` 的落点表 |
+| P4 | 门禁 `--only <lane>` / 分片 | 单 lane 可单独跑；`client_lane` 是最慢项（约 30–47 s，见落点表的冻结树节），并行后先分片它 |
+
+**需用户决定**：并行度（2 路 / 4 路）；N1 与 P1–P4 的先后——默认 N1 先行，因为 P1 一次覆盖多条 lane 的模型更安全。
+
 ## 变更记录
 
 | 日期 | 依据 | 受影响 | 决定 |
@@ -265,3 +289,4 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | 2026-11-28 | F254–F258 | T113, 门禁, coverage-domain | 新增 `photo_size_source` lane（值类型面第五项）：六个工厂与变体 offset、打印、`get_file_type`、`get_unique`（compare type 折叠 + 12/13 字节）、`unique_less`/`unique_equal`、`get_unique_name`（十进制 type / `uint32` version）、`operator==`、`get_input_peer`（Chat 丢 hash）、`get_input_sticker_set`；四条 abort 对（FullLegacy、StickerSetThumbnailLegacy、超宽 thumbnail type、默认源）；顺带把 `DialogId` 抽成共享模块（老 lane 302 行不变）。门禁 67 → 68 |
 | 2026-11-28 | F259–F263 | T114, 门禁, coverage-domain | 新增 `message_search_filter` lane（过滤面）：`count`（20）、`index`（`f-1`）、`mask`（`1 << index`，Empty 为 0，顶到 524288）、`call_message_search_filter_index`、`get_input_messages_filter`（15 个单 id + 两个 phone-calls + Pinned/Poll）、`get_message_search_filter`（19 个 td_api 类 + nullptr）、`operator<<`（20 个名字）；七条 abort 对。门禁 68 → 69 |
 | 2026-11-28 | —（文档变更，非行为） | backlog.md | 改写 `tasks/backlog.md` 头部理由：tracker 自 2026-11-26 已配（GitHub issues，钉 `kouhe3/td`），本文件不再是「setup 缺失时的默认落点」，而是两层队列的第一层——未到可行动门槛的暂缓项留在这里，成为可执行任务时开 issue 并回填号码；表结构不变（id / 条目 / 为什么暂缓 / 回流条件） |
+| 2026-11-28 | F173, F184, F189, F190, F246, F252, F256, F257；`docs/agents/face-spaghetti.md` 冻结树节 | T1–T114, 门禁, 并行门 | gate 行的 `round` 由 46 修正为 66（语义 = 与冻结树表一致的轮次；round 47–66 此前只更新了进度节）；新增「下一步」节：实现路线 N0–N3、并行化改造 P1–P4 与各自完成判据，并把并行门现状记成事实（三个共享写点 + 五件前置只满足隔离命名空间） |
