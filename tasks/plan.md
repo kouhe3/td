@@ -10,7 +10,7 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 - 不在范围内：`tddb` / `td/mtproto` / `tdactor` / `tdutils`（合计 6.4 万行）——它们在该边界之下，互操作要匹配 C++ ABI，不可行（记 `unmeasured`，见 `docs/coverage-domain.md`）。
 - 不碰上游 C++ 源码；Rust 侧工程在本仓库 `rust/`（T6 已从 `C:/tmp/td-rs-probe` 移入），本仓库同时放台账、仪器、计划与实现。
 
-## 进度（2026-11-27，round 32）
+## 进度（2026-11-28，round 52）
 
 两个口径分开看，不要混成一句百分比。
 
@@ -26,19 +26,19 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1564 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 协议 / RPC 面 | 42 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 72 op/182 行、web_proxy 26 case、misc 80 case、tls_init 16 扩展 × 8 样本/侧、dh_handshake 32 case、rsa 23 case、public_rsa 9 case、public_rsa_cdn 21 行、buffer_slice 34 行、shared_slice 69 行、dc_id 273 行、slice 119 行 + 17 check、slice_cmp 595 行、slice_prefix 578 行、slice_ptr 106 行 + 5 check、hash 70 行、slice_hash 28 行、path_view 54 行、string 88 行、number 296 行、base64 203 行、utf8 309 行、hints 156 行、unicode 1,127,703 行、string_builder 355 行 + 7 check、translit 124,186 行、binlog_write 27 case/345,272 B、binlog_kv 21 case/884,208 B、crypto 457 行、tddb_paths 35 行 | 各自的 `--selftest`、F103–F194 |
-| 门禁 | 53 项（本轮新增 `binlog_kv` / `tddb_paths`） | `uv run python tools/verify.py` |
-| 定义域 | 101 个 measured 行、6 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c '\| measured（' docs/coverage-domain.md` \| `grep -c '\| unmeasured \|' docs/coverage-domain.md` |
+| 协议 / RPC / 存储面 | 45 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 72 op/182 行、web_proxy 26 case、misc 80 case、tls_init 16 扩展 × 8 样本/侧、dh_handshake 32 case、rsa 23 case、public_rsa 9 case、public_rsa_cdn 21 行、buffer_slice 34 行、shared_slice 69 行、dc_id 273 行、slice 119 行 + 17 check、slice_cmp 595 行、slice_prefix 578 行、slice_ptr 106 行 + 5 check、hash 70 行、slice_hash 28 行、path_view 54 行、string 88 行、number 296 行、base64 203 行、utf8 309 行、hints 156 行、unicode 1,127,703 行、string_builder 355 行 + 7 check、translit 124,186 行、binlog 读侧 14 fixture、binlog_write 27 case/345,272 B（加密半边另 7 case/201,168 B）、crypto 457 行、binlog_kv 21 case/884,208 B、tddb_paths 35 行 + 目录树快照、sqlite_kv 11 case + 2 check/376,832 B、tqueue 12 case + 2 check/198 行、tqueue_binlog 10 case/4,016 B | 各自的 `--selftest`、F103–F204 |
+| 门禁 | 56 项（存储面 8 项：`binlog` / `binlog_write` / `crypto` / `binlog_kv` / `tddb_paths` / `sqlite_kv` / `tqueue` / `tqueue_binlog`） | `uv run python tools/verify.py` |
+| 定义域 | 105 个 measured 行、5 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c '\| measured（' docs/coverage-domain.md` \| `grep -c '\| unmeasured \|' docs/coverage-domain.md` |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
 
 | 项 | 数字 | 复现 |
 |---|---|---|
-| 手写 Rust | 8,708 行 | `wc -l rust/src/lib.rs` |
-| 生成 / 数据表 | 13,324 行 | `wc -l rust/src/{api_functions,client_options,tl_schema,emoji_table,mime_tables,country_table}.rs` |
+| 手写 Rust | 8,100 行（另有 3 个手写 lane 模块 `binlog_format.rs` / `tqueue.rs` / `sqlite_kv.rs` 与 45 个 bin 探针） | `wc -l rust/src/lib.rs` |
+| 生成 / 数据表 | 13,318 行 | `wc -l rust/src/{api_functions,client_options,tl_schema,emoji_table,mime_tables,country_table}.rs` |
 | 上游 C++（不含 `auto/`） | 380,965 行 | `find td -name '*.cpp' -o -name '*.h' \| grep -v /auto/ \| xargs wc -l \| tail -1` |
 
-代码量比 2.3%，但这个数字不当进度用：`tddb` / `td/mtproto` / `tdactor` / `tdutils`（约 6.4 万行）一行没碰，客户端状态机只有「消息表回放」——真实登录的 222 条消息（F080）是录制来的，不是 Rust 侧算出来的。
+代码量比 2.1%，但这个数字不当进度用：`tddb` 只判了存储面的薄层（binlog / KV / TQueue / SQLite KV，F185–F204），`td/mtproto`（7,443 行）与 `tdactor`（5,695 行）一行没碰，客户端状态机只有「消息表回放」——真实登录的 222 条消息（F080）是录制来的，不是 Rust 侧算出来的。
 
 **一句话**：「`tdjson` 的可判表面」约等于完成，「TDLib 本体」约等于没开始，中间隔的是 MTProto 引擎。
 
@@ -143,6 +143,8 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | T95 | KV 层：`BinlogKeyValue<Binlog>` 的 `set`/`erase`/`erase_batch`/访问器/`external_init_*`/三档 magic + `SeqKeyValue` 序号语义，判据 = 明文 binlog 逐字节 + 双向交叉读（任一侧写、另一侧重放出同一 map） | F191, F192 | done（`binlog_kv_diff.py`：282 行脚本 / **21 case / 884,208 字节**、`PASS`，1.84 s；每 case 四条判据全跑不短路；三次变异 RED：同值早退、Rewrite 目标 id、magic 未入帧头）。判据顺带证明 `init` **不过滤 magic**（外来类型会变活条目、且后续 set 会 rewrite 它的 id——TdDb 的 `default: LOG(FATAL)` 才是真正的闸门）与 magic 是 per-init 的 |
 | T96 | `TdDb` 的路径与 key 派生：`as_db_key`、`get_binlog_path`、`get_sqlite_path`、`check_parameters`（默认值、连带置位、尾斜杠、realpath、失败文案），判据 = 逐字节 | F193, F194 | done（`tddb_paths_diff.py`：37 行脚本 / 35 行输出、`PASS`，0.2 s；判据 = stdout 逐字节 + **目录树快照**；两次更正：`check_parameters` 是 private、两个路径函数在匿名命名空间里；三次变异 RED：尾分隔符取反、连带置位反向、`mkpath` 按 `/` 切，另有「跳过最深 mkdir → narration 相同但树不同」证明树判据承重） |
 | T97 | 抽 `rust/src/binlog_format.rs`：三份帧实现合成一份共享模块（常量、`crc32`、TL 字符串、`create_raw`/`walk_frames`、hex 助手），判据 = **行为逐字节不变**（三条仪器的 stdout 前后 `cmp` + 53 项门禁），任何差异一律回退 | F195 | done（模块 146 行；`head +6/−10`、`kv +9/−130`、`write +10/−132`；三处 `#[allow(dead_code)] #[path]` 接线；故意不合并 5 处「同名不同型」的副本。判据更正：「逐字节」被 `key[0]`（随机 salt）与 `elapsed` 两个天生抖动字段打破，用同一二进制连跑两次证明差异集合相同，掩码后四对全等） |
+| T86 | 判定基座记账：`verify.py --json` 增 `commit` / `worktree_dirty` / `cpp_oracle_md5` 三个自证字段，`coverage-domain.md` 立同步闸门；上游 18 提交与点名源文件的交集只有不可观察的 `Td.cpp`，基座仍 `1b9efe84d`，本轮不同步 | F173 | done（门禁仍 45） |
+| T87 | 所有权面 lane：`SharedSlice` / `UniqueSharedSlice` / `UniqueSlice` / `SecureString` 的 clone 共享、构造的偷 / 深拷贝两分支、无 COW、`clone_as_buffer_slice` 的独立拷贝，73 行脚本 / 69 行输出 | F174, F175 | done（`shared_slice_diff.py`，门禁 45 → 46；默认构造与零长分配在公开接口上不可区分，记范围限制） |
 | T98 | SQLite 存储面：`td::SqliteKeyValue` 的 `set`/`get`/`get_all`/`get_by_prefix`/`get_by_range`/`erase`/`erase_batch`/`erase_by_prefix`/`drop` + `SqliteDb` 的事务计数 + `SqliteStatement` 的 blob 绑定与视图，判据 = narration 逐行（含 rowid 序 vs PK 索引序）+ **双向交叉读**（C++ 读 Rust 库、Rust 读 C++ 库）+ 空 key 的 `get_all` abort；**不比 SQLite 文件字节** | F196, F197, F198 | done（`sqlite_kv_diff.py`：11 case + 2 check 例 / 语料 118 行 / **376,832 B**、`PASS cases=11 checks=2`，8.3 s（冷缓存 17.1 s）；判据 = narration 逐行 + 双向交叉读 + FLOOR + abort 对，五条全跑不短路；`--check` 只比 rc 类别。两次**预注册更正**：嵌套 `begin` 的计数是两层（`begin begin … commit commit` 两次 commit 都 ok，第三次才报错）、`prefix 00` 剥出 15 字节不是 14。三次变异 RED：不剥前缀 / 空 `from` 改走索引（结果集不变、顺序变） / 删掉 `get_all` 的 CHECK） |
 | T99 | TQueue 队列语义：`TQueueImpl`（`push`/`do_push`/`get`/`forget`/`clear`/`run_gc`/`get_head`/`get_tail`/`get_size`）+ `TQueueMemoryStorage`（log_event_id 分配、`pop`、`replay`）+ `EventId` 的边界与 `operator<<`，判据 = narration 逐行 + 无 hint 路径的区间不变式 + abort 对；**`TQueueBinlog` 与 `close(Promise)` 不在本任务** | F199, F200, F201 | done（`tqueue_diff.py`：12 case + 2 check 例 / 语料 109 行 / 输出 198 行、`PASS cases=12 checks=2`，7.0 s；四条判据全跑（narration、FLOOR、abort 对、`replay` 重建）。判据事实：`get_size` 不数空尾槽位、`get` 返回 size 而非事件数、`max_events=0` 仍 pop 过期事件、`pop` 对最后事件走 rewrite、`push` 只在 tail 空时采纳 hint、错误检查顺序里「太大」先于「已过期」。四处手算更正（`get 111` 恰在窗口内、forget 后 head 不变、gc 调度时间取首次 push 的 `expires_at`、tail 是 104）。三次变异 RED：不数空尾 / get 返回事件数 / 无条件采纳 hint） |
 | T100 | `TQueueBinlog<Binlog>`：把 `StorageCallback` 接到真 `td::Binlog`（`add`/`rewrite`/`erase`/`erase_batch` + `magic = 2314 + (extra != 0)` + `TQueueLogEvent` 的 TL 布局）与 `replay`（`BinlogEvent` → `do_push`，错误文案 `Wrong magic` / `Failed to add event`）；判据 = **文件逐字节** + narration + **交叉 replay** + FLOOR。前置重构：`Frame`/`make_event`/`walk_frames`/`Processor` 从 `binlog_kv_probe.rs` 并入 `binlog_format.rs` | F202, F203, F204 | done（`tqueue_binlog_diff.py`：10 case / 语料 82 行 / **4,016 B**、`PASS cases=10 bytes=4016`，1.2 s；四条判据全跑（文件逐字节、narration、双向交叉 replay、FLOOR）+ selftest 用**独立 Python 帧解析**反算 type/flags/size/body。判据事实：`magic = 2314 + (extra != 0)`（帧长 = 32 + body）、rewrite **只清 data 不清 extra** 所以 2315 的事件清空后仍 2315、erase 是 32 字节 `-2/1` 帧且 id 指向被删的 log_event_id、`erase_batch` 先 `next_event_id(0)`、**replay 走 processor 的 live 集**（6 帧 → 1 个）、300 字节 payload 用 `0xFE` 长度形式。三处手算更正（extra 不随 data 清空 / 帧长按 body 算错 / 独立解析把 header 当成 24 字节）。三次变异 RED：固定 magic / rewrite 用 seq_no / erase 用 2314。前置重构后 `binlog_kv` 仍 `bytes=884208`） |

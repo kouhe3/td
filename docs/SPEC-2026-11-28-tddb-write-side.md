@@ -87,7 +87,8 @@ uv run python tools/tqueue_binlog_diff.py --selftest       # TQueueBinlog：10 c
 | `TQueue` 无 hint 的初始 tail | `Random::fast(2000001, MAX_ID/2)` 不可注入 | 语料全程给 hint；无 hint 只判「落在区间内」 |
 | `run_gc` 的 50 ms 预算与 `(++counter & 128)` 分片 | 小语料一轮远不到 50 ms，也不到 128 次迭代 | 造 >128 个事件并让一轮超过 50 ms，或把时钟变成参数 |
 | `Time::now()` 在 `clear` 的耗时告警里 | 只在超过 20 ms 时打日志 | 造一个清空耗时 >20 ms 的队列 |
-| `TQueueBinlog`（帧 2314 / `extra != 0` 时 2315、`rewrite` 复用 id） | 需要真 `Binlog`，属下一层的写读 | 接 binlog lane 的现有仪器 |
+| `TQueueBinlog` 的加密形态（`DbKey` 非空 → 帧体 AES-CTR） | 未驱动 `TQueueBinlog` + 非空 `DbKey` 的组合；binlog 写侧加密本身已判（F189/F190） | 接 `DbKey` 重跑，只多一条 8 字节级断言 |
+| `TQueueBinlog` 的 reindex | 语料 4,016 B，远低于 `> 50 KiB + 5:1 死比` 的触发线 | 造 10 万级事件的队列语料 |
 | `TQueue::close(Promise)` | 需要 actor 才能兑现 Promise | 造出脱离 actor 的 Promise |
 | `TdDb::open` 全流程 | 走 actor/Promise，需要 scheduler | 造出脱离 actor 的入口 |
 | `change_key` 的 `old_db_key` 迁移分支 | 未驱动 | 有迁移语料时 |

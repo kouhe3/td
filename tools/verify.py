@@ -9,9 +9,11 @@
     （failures=0）、`tools/binlog_diff.py`（binlog 四栏与 `binlog_dump` 逐行相同）、
     协议/RPC lane（`auth_key`、`msg_layer`、`transport`、`framing`、`msgid`、`rpc`、
     `rpc_error`、`auth_data`、`svc_msg`、`proxy_secret`、`header`、`session`、`web_proxy`、
-    `misc` 的 `--selftest`）、`tools/tdjson_fuzz.py`
-    （随机语料零分歧）、`tools/client_diff.py`（客户端 lane 对齐）、八个生成器
-    `--check` 与仓库内容逐字节相同。
+    `misc` 的 `--selftest`）、存储面 lane（`binlog`、`binlog_write`、`crypto`、
+    `binlog_kv`、`tddb_paths`、`sqlite_kv`、`tqueue`、`tqueue_binlog`）、
+    `tools/tdjson_fuzz.py`（随机语料零分歧）、`tools/client_diff.py`（客户端 lane 对齐）、
+    七个 `gen_*.py --check` 生成器（`client_options`、`tl_schema`、`mime_tables`、
+    `emoji_table`、`country_table`、`ton_address`、`api_functions`）与仓库内容逐字节相同。
 
 覆盖边界:
     覆盖 `tdjson` C ABI 的 `td_execute` 面（29 个同步 action + 全部 1114 个函数的参数解析，
