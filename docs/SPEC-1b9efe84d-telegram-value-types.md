@@ -3,7 +3,8 @@
 > **版本**：基座 commit `1b9efe84d`（master，判定基座）× oracle `libtdjson.dll` md5 `0398814038978aaeef7f8d6ac62bb8ff`（同一基座的 C++ 构建）。文件名里的 hash 就是版本：基座或 oracle 漂移 ⇒ 按新 hash 另起 `docs/SPEC-<新hash>-<area>.md`，本文件置「过期」，不原地改数字。
 >
 > **as-built 规格，不是 to-build。** 它只记录「已判过、数字可复现」的现状，供接手方当底图。
-> 台账行：`docs/facts.md` F205–F223。
+> 台账行：`docs/facts.md` F205–F223（值类型）+ F234–F242、F249–F273（对象 / 几何 / 声音 / 来源 / 过滤 / 枚举映射 / 照片面）。
+> 静态加密（`SecureStorage`，F244–F247）记在存储面那份：`docs/SPEC-1b9efe84d-tddb-write-side.md` §3。
 
 ## 1. 定义域
 
@@ -44,6 +45,8 @@ uv run python tools/topic_id_diff.py --selftest     # 5 case（4 + 1 abort）/ 3
 | `photo_size_source`（文件来源） | narration 逐行 + FLOOR + 四条 abort 对 + 手算 cell | 8 case + 4 check / 114 行 | F254–F257 |
 | `notification_sound`（通知声音） | narration 逐行（原始字节）+ FLOOR + 两条 abort 对 + 手算 cell | 9 case + 2 check / 134 行 | F249–F252 |
 | `media_geometry`（`Dimensions` + `MediaAreaCoordinates`） | narration 逐行（64 位位型 + 六位小数 + `areaPosition` JSON）+ FLOOR + 两条 abort 对 + 手算 cell | 3 case + 2 check / 102 行 | F239–F242 |
+| `top_dialog_category`（枚举映射：`TopDialogCategory` + `NotificationGroupType`） | narration 逐行 + FLOOR + 八条 abort 对 + 手算 cell | 6 case + 8 check / 96 行 | F264–F267 |
+| `dialog_photo`（照片面，只判不碰 `FileManager` 的 11 个函数） | narration 逐行 + FLOOR + 手算 cell（**无 abort 对**：这半没有 CHECK 路径） | 9 case / 88 行 | F270–F273 |
 
 判据句（每条都是验收）：
 
@@ -105,6 +108,7 @@ uv run python tools/topic_id_diff.py --selftest     # 5 case（4 + 1 abort）/ 3
 | `DialogId` 的 storer/parser | `store_long`/`fetch_long` | 同上 |
 | 吃 `Td` 的 topic 方法（topic type object / input peer / input user） | 需要 `Td` 与 user/dialog manager | 造 `Td` 的 seam，或按 ABI 面 indirect 判 |
 | `SavedMessagesTopicId(DialogId, MessageForwardInfo*, DialogId)` | 需要转发信息对象 | 与 topic type object 一起做 |
+| `DialogPhoto` 的 8 个 `FileManager*` 函数（`get_profile_photo` / `get_dialog_photo` / `as_dialog_photo` / `as_profile_photo` / `is_same_dialog_photo` / 三个 `*_object`） | **blocked**：`FileManager` 是 `final : public Actor` 挡派生；构造器在 `FileManager.cpp:1312` 走 `G()->use_file_database()`，无 `Td` 即 `LOG_CHECK` abort（实测 stderr `[Global.h:916][&context != nullptr && context->get_id() == Global::ID]`），内部 `Context` 虚接口无法单独使用 | 上游去掉构造器里的 `G()` 依赖，或提供可注入的 `FileManager` 接口；探针里的 `static_assert(std::is_final_v<td::FileManager>)` 会在去掉 `final` 时让重编失败 |
 
 ## 5. 失效条件
 
@@ -118,3 +122,6 @@ uv run python tools/topic_id_diff.py --selftest     # 5 case（4 + 1 abort）/ 3
 - `telegram_api::username` 的字段集或其 booleans 的含义；
 - `tdutils` 的 `check_utf8` 或 `StringBuilder` 的 vector 打印格式；
 - oracle 重建（`libtdcore.a` / `libtdapi.a` 换构建）。
+- `td/telegram/TopDialogCategory.{h,cpp}` / `NotificationGroupType.{h,cpp}`（映射表或 `Size` 常量）；
+- `td/telegram/DialogPhoto.{h,cpp}` 的纯函数，或 `td/telegram/PhotoSize.cpp` 的 `get_minithumbnail_size` / `need_update_dialog_photo_minithumbnail`；
+- `td/telegram/files/FileManager.h` 的 `final` 修饰（去掉即让 `dialog_photo` 的 blocked 半边重新可判）或 `FileManager.cpp` 构造器里的 `G()` 依赖。

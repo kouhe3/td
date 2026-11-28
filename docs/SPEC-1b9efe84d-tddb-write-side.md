@@ -3,7 +3,7 @@
 > **版本**：基座 commit `1b9efe84d`（master，判定基座）× oracle `libtdjson.dll` md5 `0398814038978aaeef7f8d6ac62bb8ff`。文件名里的 hash 就是版本：基座或 oracle 漂移 ⇒ 按新 hash 另起 `docs/SPEC-<新hash>-<area>.md`，本文件置「过期」，不原地改数字。
 >
 > **as-built 规格，不是 to-build。** 它记录「已判过、数字可复现」的现状，供接手方当底图。
-> 台账行为证据来源：`docs/facts.md` F185–F204。
+> 台账行为证据来源：`docs/facts.md` F185–F247（含 `td/telegram/SecureStorage` 的 F244–F247）。
 
 ## 1. 定义域
 
@@ -14,9 +14,10 @@
 | C++ 源（TQueue） | `tddb/td/db/TQueue.{h,cpp}`（`TQueueImpl` + `TQueueMemoryStorage` + `TQueueBinlog<Binlog>` 模板的显式实例化；只有 `close(Promise)` 不在范围内） |
 | C++ 源（连接安全层） | `tddb/td/db/{SqliteConnectionSafe.{h,cpp},SqliteKeyValueSafe.h}`：`LazySchedulerLocalStorage` 上的懒连接、`close_state_` 计数、`close_and_destroy`；驱动需要 scheduler actor（F216） |
 | C++ 源（异步层） | `tddb/td/db/SqliteKeyValueAsync.cpp`：actor 内的 buffer/flush、promise 合批、`erase_by_prefix`/`set_all`/`close` 的强制 flush |
+| C++ 源（静态加密，唯一不在 `tddb` 下的一条） | `td/telegram/SecureStorage.{h,cpp}`（195 + 408 = 603 行）：`ValueHash`、两条 `AesCbcState` 派生、`Secret`、`gen_random_prefix`、两个流状态机、`encrypt_value`/`decrypt_value`；判据只走内存路径 |
 | 规模 | 被判 11 个文件 / 2,728 行（`tddb` 全目录 4,792 行）；SQLite 面另加 4 个文件 / 605 行（`SqliteKeyValue` 130 + `SqliteDb` 323 + `SqliteStatement` 205 + `RawSqliteDb` 减少量不计） |
 | oracle | `libtdjson.dll` + `C:/tmp/td-build/tddb/{libtddb.a,binlog_dump.exe}` + `libtdcore.a`（`TdDb` 那条） |
-| 台账 | F185–F204；`tasks/plan.md` T92–T100 |
+| 台账 | F185–F247；`tasks/plan.md` T92–T117 |
 
 ## 2. 可复现现状
 
@@ -128,3 +129,4 @@ uv run python tools/sqlite_async_diff.py --selftest        # 异步层串行驱�
 - `TQueueLogEvent::store/parse` 的字段顺序、`BINLOG_EVENT_TYPE`（2314）、`rust/src/binlog_format.rs` 的 `Frame`/`walk_frames`/`Processor`；
 - `tddb/td/db/{SqliteConnectionSafe.{h,cpp},SqliteKeyValueSafe.h}` 或 `LazySchedulerLocalStorage` 的语义；
 - oracle 重建（`libtdjson.dll` md5 变）或 `binlog_dump.exe` 重编。
+- `td/telegram/SecureStorage.{h,cpp}`（哈希、两条 `AesCbcState` 派生、校验和 `(255 + 239 - sum % 255) % 255`、前缀结构、两个状态机）或 `tdutils` 的 `DataView` 分块大小（128 KiB）。
