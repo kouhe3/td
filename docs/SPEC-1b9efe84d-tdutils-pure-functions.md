@@ -1,5 +1,7 @@
 # SPEC（as-built）— `tdutils` 纯函数面
 
+> **版本**：基座 commit `1b9efe84d`（master，判定基座）× oracle `libtdjson.dll` md5 `0398814038978aaeef7f8d6ac62bb8ff`。文件名里的 hash 就是版本：基座或 oracle 漂移 ⇒ 按新 hash 另起 `docs/SPEC-<新hash>-<area>.md`。
+>
 > **这份是 as-built 规格，不是 to-build 规格。** 它描述的是「已经被差分判据测过、数字可复现」的现状，供接手方（spec-driven 流程）当测绘底图；`待证` 状态的东西不在这里，见文末「不可判项」。
 > 每个判断都要能由文中命令复现；台账行（`docs/facts.md`）是同一事实的证据来源。
 
@@ -64,6 +66,7 @@ uv run python tools/verify.py            # 56 项（本文件涉及其中 18 项
 
 下列任一变化都要重编探针、重跑对应 lane 并重新落快照（`uv run python tools/verify.py --json > docs/gate-<date>.json`）：
 
+- **基座漂移**：判定基座不是 `1b9efe84d`（或 oracle md5 变）⇒ 本文件整体作废，按新 hash 另起一份；
 - `tdutils/td/utils/`：`Slice.h`、`Hash.h`、`PathView.{h,cpp}`、`Hints.{h,cpp}`、`translit.cpp`、`unicode.{h,cpp}`、`utf8.{h,cpp}`、`base64.{h,cpp}`、`misc.{h,cpp}`、`StringBuilder.{h,cpp}`、`SharedSlice.h`、`buffer.h`、`crypto.{h,cpp}`；
 - oracle 重建（md5 变）或 Rust 换 target/linker；
 - 生成器输入：`unicode.cpp` 的七张表（`tools/gen_unicode_tables.py --check` 会自己变红）。

@@ -1,5 +1,7 @@
 # SPEC（as-built）— `tddb` 存储面（binlog + crypto + KV(binlog/sqlite) + TQueue + TdDb 路径）
 
+> **版本**：基座 commit `1b9efe84d`（master，判定基座）× oracle `libtdjson.dll` md5 `0398814038978aaeef7f8d6ac62bb8ff`。文件名里的 hash 就是版本：基座或 oracle 漂移 ⇒ 按新 hash 另起 `docs/SPEC-<新hash>-<area>.md`，本文件置「过期」，不原地改数字。
+>
 > **as-built 规格，不是 to-build。** 它记录「已判过、数字可复现」的现状，供接手方当底图。
 > 台账行为证据来源：`docs/facts.md` F185–F204。
 
@@ -101,6 +103,7 @@ uv run python tools/tqueue_binlog_diff.py --selftest       # TQueueBinlog：10 c
 
 任一变化都要重编探针 + 重跑对应 lane + 重新落快照：
 
+- **基座漂移**：判定基座不是 `1b9efe84d`（或 oracle md5 变）⇒ 本文件整体作废，按新 hash 另起一份；
 - `tddb/td/db/binlog/Binlog.{h,cpp}`、`BinlogEvent.{h,cpp}`、`BinlogInterface.h`、`BinlogKeyValue.h`、`SeqKeyValue.h`、`DbKey.h`；
 - **Rust 侧**：`rust/src/binlog_format.rs`（三份探针共享的帧格式，改动会同时影响 write / kv / read 三条仪器）；
 - `tdutils/td/utils/crypto.{h,cpp}`（PBKDF2 迭代次数、HMAC 常量、AES-CTR 进位）；
