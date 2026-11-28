@@ -125,6 +125,12 @@
 | `td::DialogId`（六个构造 + 五段负区间与 User 正区间 + 四个 CHECK 取值 + 五个 `get_dialog_ids` 重载 + `remove_secret_chat_dialog_ids` + `operator<<`） | measured（F212–F214：7 case + 4 check / 199 行语料 / 302 行输出，`PASS cases=7 checks=4`，0.9 s；判据 = narration 逐行 + FLOOR + 四条 abort 对 + 11 条手算 cell。判据事实：区间端点开闭是核心——`-2×10^12` 不是 secret chat，`-2002147483649` 反而是 Channel；构造器不 CHECK） | `get_message_dialog_id`、`Peer`/`DialogPeer` 构造、storer/parser 不在范围内（需要 TL 对象） |
 | `td::ForumTopicId` + `td::SavedMessagesTopicId`（纯值部分：`is_valid`/`get`/`==`/`operator<<`、`general()`、与 `MessageId` 往返、`get_unique_id`/`is_author_hidden`、三种打印） | measured（F221–F223：5 case（4 + 1 abort）/ 34 行语料 / 56 行输出，`PASS cases=5 aborts=1`，0.4 s；判据 = narration 逐行 + FLOOR + 一条 abort + 12 条手算 cell。判据事实：topic id 就是 server id、`id==0` 允许而非 server 其它值 abort、隐藏作者常量 `DialogId(2666000)`） | 吃 `Td` 的方法（topic type object / input peer）、`MessageForwardInfo` 构造、storer/parser 不在范围内 |
 
+## 文本变换面（`td/telegram` 的纯字符串函数）
+
+| 项 | 状态 | blocker / 回流条件 |
+|---|---|---|
+| `get_outline_svg_path`（紧凑编码展开 + `M/L/H/V/C/S/Z` 归一化 + `int` 截断缩放 + `z` 回闭） | measured（F225–F227：6 case / 33 行语料 / 54 行输出，`PASS cases=6`，0.2 s；输出逐字节 + FLOOR + 9 条手算 cell。判据事实：函数自补 `M`/`z`、`z` 仅在偏离起点时补 `L`、`int` 截断、`S` 反射、未知命令空串） | `get_outline_object`（td_api 对象）与紧凑编码的 `>=64`/`>=128` 简写不在范围内 |
+
 ## 协议面与 RPC 面
 
 | 项 | 状态 | 判据形态 |
