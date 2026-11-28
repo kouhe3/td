@@ -1,6 +1,6 @@
 # Backlog
 
-`/setup-matt-pocock-skills` 未安装（本仓库没有启用 mattpocock marketplace plugin），按 face-spaghetti §7 第 3 条退回到本文件。每条必须写「为什么暂缓 + 回流条件」。
+本文件是两层队列的第一层，不是「tracker 缺失时的默认落点」：`docs/agents/issue-tracker.md` 已配（GitHub issues，钉 `kouhe3/td`），条目成为可执行任务时在那里开 issue 并在本行回填号码；未到可行动门槛的暂缓项留在这里。每条必须写「为什么暂缓 + 回流条件」（face-spaghetti §7 第 3 条）。
 
 | id | 条目 | 为什么暂缓 | 回流条件 |
 |---|---|---|---|
