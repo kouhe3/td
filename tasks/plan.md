@@ -1,6 +1,6 @@
 # Plan — RIIR（JSON/C ABI 边界差分实现）
 
-gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=74 | status=running | date=2026-11-28
+gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=75 | status=running | date=2026-11-28
 
 ## 范围
 
@@ -172,6 +172,7 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | T122 | 并行 slot 2：`secure_storage_file` lane——`encrypt_file` / `decrypt_file` 的文件变体，双向交叉读 + 结构比较 | F550–F553 | done（`secure_storage_file_diff.py`：8 case / 语料 42 行 / 输出 68 行、`PASS cases=8 checks=102`，0.88 s，`corpus md5=7f22224b`；26 条手算 cell（md5 用 `hashlib`）；判据 = narration 逐行 + FLOOR + **双向交叉读** + 篡改最后一字节的两侧 `Hash mismatch` + 结构比较（密文长 `prefix_length(n)+n`、sidecar 32 字节）。判据事实：空文件密文 32 字节、1 字节 → 48（前缀 47）、对齐公式 `((32 + 15 + n) & -16) - n`、两条 `FileFd` 文案逐字相同。RED：去掉 `decrypt_file` 的哈希比对 → `FAIL crafted narration line 4`） |
 | T123 | N3：`TQueueBinlog<Binlog>` 的**加密**路径——同一脚本在 `DbKey::raw_key("cucumber")` 下再走一遍，判据 = 加密文件结构（size 序列 / 首帧 `type=-3`）+ Python 独立重算 key_hash + 双向交叉 replay + 错误 key 对；明文段保持逐字节 | F277–F280 | done（`tqueue_binlog_diff.py`：10 case × 明文/加密两代 / 10,592 B、`PASS cases=10`，3.2 s，`corpus md5=15f996ad lines=82`；加密段判据 = `size = 明文 + 128` + 首帧 `id=0 type=-3 size=128` + Python 用文件自身 salt 重算 key_hash + 带 key 的双向交叉 replay + 错误 key 对（两侧 `init err=Wrong password`、rc=3）+ 加密侧 FLOOR，narration 掩掉 `dumpfile` 摘要后与明文逐行相同 ⇒ **加密对队列层透明**。顺带把加密原语抽成 `rust/src/binlog_crypto.rs` 供两个 probe 共用，`binlog_write_diff` 的 `345272` / `201168` 未变。RED：`decode_file` 的 keystream offset 0→1 → `DIFF basic encrypted narration line 9`） |
 | T124 | N1：`td::FormattedDate` 纯值面——两条 `get_formatted_date`（字符串格式 vs td_api 对象）、构造器、`get_date_time_formatting_type_object`、两条 telegram_api 对象（`messageEntityFormattedDate` / `textDate`）、`operator==` 与打印 | F282–F285 | done（`formatted_date_diff.py`：7 case / 语料 101 行 / 输出 188 行、`PASS cases=7 lines=188`，0.30 s，`corpus md5=2886548b`；22 条手算 cell。判据事实：`"dD"` 与 `"Dd"` 都是 24 而构造器只给 8、只有 td_api 重载拒绝 `date<=0`、`"rt"` 非法、`typeobj 33` 是 `rel`（1 位压过 32）、参数解析用 `strtoll` + 截断。**无 abort 对**：唯一的 `UNREACHABLE` 在 `get_formatted_date(date,type_ptr)` 的 `default:`，`DateTimeFormattingType` 只有两个子类。RED：去掉 `date<=0` 检查 → `DIFF api_types line 12`；`'D'` 映射错 → `DIFF formats line 9`） |
+| T125 | N1 续：`td::ReactionType` 纯值面——四种编码（空 / emoji / `#`+base64 / `$`）、三条构造（telegram_api / td_api / `paid()`）、三层出口、`get_hash`、`get_reaction_types_hash`、`<` 全序、`==`、打印；custom 的非法 base64 作 abort 对 | F287, F288 | 进行中（预注册已落） |
 
 ## 下一步（2026-11-28，round 66 收口后）
 
@@ -317,3 +318,4 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | 2026-11-28 | —（预注册，无实现） | T124, 台账, 门禁 | 预注册 N1：选 `td::FormattedDate`（纯值面，零 `G()`/`Time::now`/actor；可判性探针已跑通）。F282（两条解析路径不等价：`get_date_flags("dD")` = 24 而构造器只给 8；`"rt"` 是非法格式）+ F283（判据形态与那条不可达的 `UNREACHABLE`）。plan gate 行 `round` 73 → 74。 |
 | 2026-11-28 | F282–F285 | T124, 门禁, coverage-domain, SPEC, 落点表 | round 74（N1）：`td::FormattedDate` 纯值面。探针 `tools/fixtures/formatted_date_probe.cpp`（九条命令，`libtdcore.a` 直接驱动），Rust `rust/src/telegram_formatted_date.rs` + `rust/src/bin/formatted_date_probe.rs`，仪器 `tools/formatted_date_diff.py`（`PASS cases=7 lines=188`，22 条手算 cell）。门禁 72 → 73（自动发现收进 `formatted_date_diff.py`，`verify.py` 未改）。 |
 | 2026-11-28 | F286 | 全部 lane, 冻结树 | round 74 的 73 项快照入库：`docs/gate-aa2fe7685.json`（commit `aa2fe7685`、`worktree_dirty=false`、`failures=0`、build `warnings=0`、267 s）；冻结树补 round 74 与快照行。 |
+| 2026-11-28 | —（预注册，无实现） | T125, 台账, 门禁 | 预注册 N1 续：选 `td::ReactionType`（零 `Td*`/`G()`/actor；可判性探针已跑通：`paid<empty=1`、`custom<emoji=1`、空串两个出口 nullptr、伪造 `reactionEmoji("#abc")` 被清空）。F287（四种编码 + 非字典序全序）+ F288（abort 对与 `get_hash` 的两个可判分支）。plan gate 行 `round` 74 → 75。 |
