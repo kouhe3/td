@@ -115,6 +115,12 @@
 | `td::TQueue`（`TQueueImpl` 的 `push`/`do_push`/`get`/`forget`/`clear`/`run_gc`/`get_head`/`get_tail`/`get_size` + `TQueueMemoryStorage` 的 log_event_id 分配/`pop`/`replay` + `EventId` 边界与 `operator<<`） | measured（F199–F201：12 case + 2 check 例 / 语料 109 行 / 输出 198 行，`PASS cases=12 checks=2`，7.0 s；判据 = narration 逐行 + FLOOR + abort 对 + `replay` 重建。判据事实：`get_size` **不数 data 为空的末尾槽位**，这条同时决定 `clear(q,0)` 只返回 `size-1` 个、`pop` 对最后一个事件走 rewrite（清 data 留 id）、`get` 返回的是 size 而不是事件数；`max_events=0` 仍会把过期事件从队头 pop 掉；`push` 只在 `tail_id.empty()` 时采纳 hint；错误检查顺序里「太大」先于「已过期」；`EventId::from_int32(0)` 成功且 `empty()`） | `Random::fast` 的初值（语料全程给 hint，无 hint 只判区间）、`run_gc` 的 50 ms 预算与 `& 128` 分片、`Time::now()`、`TQueueBinlog` 的 2314/2315 帧、`close(Promise)` 需要 actor，逐条回流条件见 F199 |
 | `td::TQueueBinlog<Binlog>`（`push` 的 `add`/`rewrite`、`pop` 的 `erase`、`pop_batch` 的 `erase_batch`、`replay`） | measured（F202–F204：10 case / 4,016 B，`PASS cases=10 bytes=4016`，1.2 s；判据 = **binlog 文件逐字节** + narration + **双向交叉 replay**（C++ 读 Rust 文件、Rust 读 C++ 文件）+ FLOOR，selftest 另用**独立的 Python 帧解析**反算 type/flags/size/body。判据事实：`magic = 2314 + (extra != 0)`、帧长 = 32 + body、rewrite **只清 data 不清 extra**（2315 清空后仍 2315）、erase 是 32 字节 `-2/1` 帧且 id 指向被删的 `log_event_id`、`erase_batch` 先 `next_event_id(0)`、**replay 走 processor 的 live 集**（6 帧 → 1 个）、300 字节 payload 用 `0xFE` 长度形式） | 加密（`DbKey` 非空）、reindex（语料 4 KB）、`TQueue::close(Promise)`，逐条回流条件见 F202 |
 
+## 值类型面（`td/telegram` 的纯值类型）
+
+| 项 | 状态 | blocker / 回流条件 |
+|---|---|---|
+| `td::Usernames`（构造分类 + `change_editable_username`/`toggle`/`add_secondary`/`delete_secondary`/`deactivate_all`/`reorder_to` + `check_validness` + `can_*` + `operator<<`） | measured（F205–F207：21 case + 1 check / 146 行语料 / 242 行输出，`PASS cases=21 checks=1`，7.3 s；判据 = narration 逐行 + FLOOR + abort 对 + 8 条手算 cell。两条现状只能靠差分发现：无 editable 时打印仍有前导逗号；`reorder_to` 不复制 disabled 标志 → 整对象作废） | `store`/`parse` 序列化与 `get_usernames_object()` 的 td_api 对象不在范围内（需要 TL storer 与生成对象） |
+
 ## 协议面与 RPC 面
 
 | 项 | 状态 | 判据形态 |

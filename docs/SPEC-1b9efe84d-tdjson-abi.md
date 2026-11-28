@@ -58,7 +58,7 @@ uv run python tools/gen_api_functions.py --check            # 6 个生成表门�
 
 ## 5. 失效条件
 
-任一变化都要重编 oracle、更新 `tools/tdjson_diff.py:54` 的 md5 pin、重跑 56 项并重新落快照：
+任一变化都要重编 oracle、更新 `tools/tdjson_diff.py:54` 的 md5 pin、重跑 57 项并重新落快照：
 
 - **基座漂移**：判定基座不是 `1b9efe84d`（或 oracle md5 变）⇒ 本文件整体作废，按新 hash 另起一份；
 - `td_api.tl` 的定义行（会先让 `gen_tl_schema`/`gen_api_functions` 自己变红）；
