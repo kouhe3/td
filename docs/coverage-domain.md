@@ -147,6 +147,12 @@
 |---|---|---|
 | `td::FormattedDate`（两条 `get_formatted_date`、七 bool 构造器、`get_date_time_formatting_type_object`、`get_input_message_entity_formatted_date`、`get_input_text_date`、`==`/打印） | measured（F282–F285：7 case / 语料 101 行 / 输出 188 行，`PASS cases=7 lines=188`，0.30 s；判据 = narration 逐行 + FLOOR + 22 条手算 cell，**无 abort 对**。判据事实：`"dD"`/`"Dd"` 都是 24 而构造器只给 8、只有 td_api 重载拒绝 `date<=0`、`"rt"` 非法、空串合法、`typeobj 33` 是 `rel`、`typeobj 0` 是 nullptr） | `store`/`parse`（两个 int32，无独立语义）与 `get_formatted_date(date,type_ptr)` 的 `UNREACHABLE` 分支（两个子类，构造不出第三个） |
 
+## 反应面（`td::ReactionType` 的四种编码）
+
+| 面 | 状态 | 判据 / 剩余缺口 |
+|---|---|---|
+| `td::ReactionType`（两种解码 + 三条构造、三层出口、`get_hash`、`get_reaction_types_hash`、`<` 全序、`==`、打印） | measured（F287–F290：9 case + 3 check / 语料 79 行 / 输出 140 行，`PASS cases=9 checks=3 lines=140`，1.5 s；判据 = narration 逐行 + FLOOR + **一组 abort 对**（`#zz` 撞 base64 CHECK、`#abc` 撞 8 字节 CHECK、正常 custom 必须 0）+ 17 条手算 cell。判据事实：`""`/emoji/`#`+base64(LE i64)/`$` 四态、`$ < "" < "#…" < emoji` 的非字典序、空串两个 td_api 出口是 nullptr、`#`/`$` 防伪 + `check_utf8`、`get_hash` 的 md5 大端锚） | `get_hash`/`get_reaction_types_hash` 的 **emoji 分支**（要 `remove_emoji_selectors` → `is_emoji` 与 2370 项 emoji 表，尚未单独成 lane） |
+
 ## 协议面与 RPC 面
 
 | 项 | 状态 | 判据形态 |
