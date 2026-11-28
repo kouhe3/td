@@ -1,0 +1,792 @@
+{
+  "commit": "aa2fe7685f83f7dee7bfcaa73fed4c2a0cb85b3a",
+  "worktree_dirty": false,
+  "cpp_oracle": "C:\\tmp\\td-build\\libtdjson.dll",
+  "cpp_oracle_md5": "0398814038978aaeef7f8d6ac62bb8ff",
+  "cpp_oracle_expected_md5": "0398814038978aaeef7f8d6ac62bb8ff",
+  "gates": [
+    {
+      "gate": "build",
+      "command": "cargo build --release --target x86_64-pc-windows-gnu --manifest-path rust/Cargo.toml",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "Compiling tdjson_rs v0.1.0 (C:\\projects\\td\\rust)",
+        "    Finished `release` profile [optimized] target(s) in 32.02s"
+      ]
+    },
+    {
+      "gate": "auth_data",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/auth_data_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=c0f60584b47084b070f634718a011f5a scripts=9",
+        "SELFTEST OK: comparator sees a one-digit change",
+        "PASS scripts=9 steps=3026"
+      ]
+    },
+    {
+      "gate": "auth_key",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/auth_key_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "SELFTEST OK: comparator sees field changes",
+        "PASS fields=14"
+      ]
+    },
+    {
+      "gate": "base64",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/base64_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=f1310293692b3800ba211fa6707c9aaa lines=204",
+        "SELFTEST OK: 23 hand-checked cells (padding, unused bits, url, filter, base32)",
+        "PASS lines=203"
+      ]
+    },
+    {
+      "gate": "binlog",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/binlog_diff.py --all --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "tdlib-oracle: lines cpp=438 rust=438",
+        "PASS tdlib-oracle diff_lines=0",
+        "PASS 14 binlogs diff_lines=0"
+      ]
+    },
+    {
+      "gate": "binlog_kv",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/binlog_kv_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=d8c284e133ce93f7e0fe83dfef8c97c0 lines=282",
+        "SELFTEST OK: set body, TL string forms, map dump, erase frame, magic types, foreign types, zlib crc32",
+        "PASS cases=21 bytes=884208 elapsed=2.98s"
+      ]
+    },
+    {
+      "gate": "binlog_write",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/binlog_write_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "SELFTEST OK: frame geometry, zlib crc32, empty payload, TL string padding, flush equivalence",
+        "SELFTEST ENC: cases=7 header=128B first_diff=[33, 33, 33, 33, 33, 33] key[0]=e22b99a3bc1e206f1bc55dd7b402a25beb8d8d237d2de4d880db87fb9cb1a095",
+        "PASS cases=27 bytes=345272 elapsed=2.97s"
+      ]
+    },
+    {
+      "gate": "buffer_slice",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/buffer_slice_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=a79631e5fd509f94e65ae1831964e25e lines=37",
+        "SELFTEST OK: comparator sees an aliasing change",
+        "PASS lines=34"
+      ]
+    },
+    {
+      "gate": "client_lane",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/client_diff.py",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS rust commit_hash 是 40 位 hex",
+        "",
+        "failures=0"
+      ]
+    },
+    {
+      "gate": "crypto",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/crypto_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "REJECT pbkdf2 dest 16 bytes: oracle_rc=3221226505 rust_rc=3221226505",
+        "SELFTEST OK: hashlib/hmac/zlib recompute 457 values, published vectors RFC 7914/RFC 4231 x3 + NIST F.5.5 x4, 44 splits resume, flipped bit caught",
+        "PASS lines=457"
+      ]
+    },
+    {
+      "gate": "dc_id",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/dc_id_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=a68c9b8fb246f12067194beb3ab697c7 lines=276",
+        "SELFTEST OK: 5 printer branches present, flipped predicate caught",
+        "PASS lines=273"
+      ]
+    },
+    {
+      "gate": "dh_handshake",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/dh_handshake_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=35759f059c786fe222b8d71b0329e197 cases=32",
+        "SELFTEST OK: comparator sees a g change and a primality change",
+        "PASS cases=32 nonsafe_prime_bits=2048"
+      ]
+    },
+    {
+      "gate": "dialog_id",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/dialog_id_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  check sid_on_chat: both aborted (oracle rc=3221226505 rust rc=3221226505)",
+        "  selftest 11 cells OK",
+        "PASS cases=7 checks=4 lines=302 elapsed=1.33s"
+      ]
+    },
+    {
+      "gate": "dialog_photo",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/dialog_photo_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=d1ffa1ee67045478b42490b9f9256602 lines=53",
+        "  selftest 18 cells OK",
+        "PASS cases=9 checks=0 lines=88 elapsed=0.64s"
+      ]
+    },
+    {
+      "gate": "formatted_date",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/formatted_date_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=2886548be2eb6b93dc3c9c86dce6c987 lines=101",
+        "  selftest 22 cells OK",
+        "PASS cases=7 lines=188 elapsed=0.41s"
+      ]
+    },
+    {
+      "gate": "framing",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/framing_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "DIFF selftest-mutant.packet @0: want=10000000000102030405060708090a0b got=00000000000102030405060708090a0b",
+        "SELFTEST OK: mutated packet rejected",
+        "PASS cases=3"
+      ]
+    },
+    {
+      "gate": "hash",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/hash_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=7b6469efa5850e1eb75079fd9286eb0a lines=71",
+        "SELFTEST OK: sign extension, unsigned zero extension, pair order, Hasher init, flipped hash caught",
+        "PASS lines=70"
+      ]
+    },
+    {
+      "gate": "header",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/header_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=17f3006a5e54dd2e73dcd8d7a5bb0817 cases=85",
+        "SELFTEST OK: comparator sees a tz_offset change",
+        "PASS cases=85"
+      ]
+    },
+    {
+      "gate": "hints",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/hints_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=2c86c15503d6dcfd74f713ca1c96605e lines=160",
+        "SELFTEST OK: 43 hand-checked cells (prefix, intersection, limits, lifecycle)",
+        "PASS lines=156"
+      ]
+    },
+    {
+      "gate": "media_geometry",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/media_geometry_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  check input_invalid: both aborted (oracle rc=3221226505 rust rc=3221226505)",
+        "  selftest 12 cells OK",
+        "PASS cases=3 checks=2 lines=102 elapsed=0.64s"
+      ]
+    },
+    {
+      "gate": "message_id",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/message_id_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  check next_none: both aborted (oracle rc=3221226505 rust rc=3221226505)",
+        "  selftest 10 cells OK",
+        "PASS cases=8 checks=4 lines=430 elapsed=1.38s"
+      ]
+    },
+    {
+      "gate": "message_search_filter",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/message_search_filter_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  check input_unread_poll_vote: both aborted (oracle rc=3221226505 rust rc=3221226505)",
+        "  selftest 16 cells OK",
+        "PASS cases=6 checks=7 lines=202 elapsed=2.34s"
+      ]
+    },
+    {
+      "gate": "misc",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/misc_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=db0919ed02fcede22a8aae9108dc03a8 cases=80",
+        "SELFTEST OK: comparator sees a one-byte change",
+        "PASS cases=74"
+      ]
+    },
+    {
+      "gate": "msg_layer",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/msg_layer_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "SELFTEST OK: comparator sees field changes",
+        "PASS fields=4"
+      ]
+    },
+    {
+      "gate": "msgid",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/msgid_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "SELFTEST OK: mutated sequence rejected",
+        "PASS seq=6 msg_id_invariants=ok"
+      ]
+    },
+    {
+      "gate": "notification_sound",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/notification_sound_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  check parse: both aborted (oracle rc=3221226505 rust rc=3221226505)",
+        "  selftest 32 cells OK",
+        "PASS cases=9 checks=2 lines=134 elapsed=1.21s"
+      ]
+    },
+    {
+      "gate": "number",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/number_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=622d04a420c45bffe5b50376fc3650f9 lines=297",
+        "SELFTEST OK: 26 hand-checked cells (wrap, clamp, safe round-trip, hex errors)",
+        "PASS lines=296"
+      ]
+    },
+    {
+      "gate": "outline",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/outline_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=5b526137f03641527ada9f5e79b735f4 lines=33",
+        "  selftest 9 cells OK",
+        "PASS cases=6 lines=54 elapsed=0.37s"
+      ]
+    },
+    {
+      "gate": "path_view",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/path_view_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=36001ac2ac70aa1247c684e1883b0c13 lines=55",
+        "SELFTEST OK: dot scan, empty/trailing dot, drive letter, TD_DIR_SLASH, relative, dir_and_file",
+        "PASS lines=54"
+      ]
+    },
+    {
+      "gate": "photo_size_source",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/photo_size_source_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  check type_default: both aborted (oracle rc=3221226505 rust rc=3221226505)",
+        "  selftest 20 cells OK",
+        "PASS cases=8 checks=4 lines=114 elapsed=1.50s"
+      ]
+    },
+    {
+      "gate": "proxy_secret",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/proxy_secret_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=a001043c88beac8cf144567798a7d769 cases=128",
+        "SELFTEST OK: comparator sees a one-byte change",
+        "PASS cases=128"
+      ]
+    },
+    {
+      "gate": "public_rsa_cdn",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/public_rsa_cdn_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=99aa5810bf72943bb6cd6856dd453008 lines=22 main_fp=-3414540481677951611 test_fp=-5595554452916591101",
+        "SELFTEST OK: comparator sees a table change and the CDN message",
+        "PASS lines=21"
+      ]
+    },
+    {
+      "gate": "public_rsa",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/public_rsa_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=c9b5957bdf1be17e3273db1ebcea55a4 cases=9 main_fp=-3414540481677951611 test_fp=-5595554452916591101",
+        "SELFTEST OK: comparator sees a fingerprint change and a provider change",
+        "PASS cases=9"
+      ]
+    },
+    {
+      "gate": "rpc",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/rpc_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "SELFTEST OK: comparator sees field changes",
+        "PASS header_bytes=96"
+      ]
+    },
+    {
+      "gate": "rpc_error",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/rpc_error_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "SELFTEST OK: comparator sees field changes",
+        "PASS fields_bytes=28"
+      ]
+    },
+    {
+      "gate": "rsa",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/rsa_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=73311ee02ee72dcbbc220a4807bff223 cases=23",
+        "SELFTEST OK: comparator sees a payload change and a key-type change",
+        "PASS cases=23"
+      ]
+    },
+    {
+      "gate": "secure_storage",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/secure_storage_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  cross-read rust: payload ok, tampered block reaches the same message",
+        "  selftest 15 cells OK",
+        "PASS cases=5 lines=94 elapsed=1.36s"
+      ]
+    },
+    {
+      "gate": "secure_storage_file",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/secure_storage_file_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  cross-read rust: payload ok, tampered last block reaches the same message",
+        "  selftest 26 cells OK",
+        "PASS cases=8 checks=102 lines=68 elapsed=0.78s"
+      ]
+    },
+    {
+      "gate": "session",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/session_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=efc48293c5027df7a3e6fe9945a09ab0 ops=72",
+        "SELFTEST OK: comparator sees 3 corpus changes",
+        "PASS lines=182"
+      ]
+    },
+    {
+      "gate": "shared_slice",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/shared_slice_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=eb4270527554fefdc1f2c8a48e9571ea lines=73",
+        "SELFTEST OK: comparator sees the copy/steal split",
+        "PASS lines=69"
+      ]
+    },
+    {
+      "gate": "slice_cmp",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/slice_cmp_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=d946dbfab915f66880ad1d36c6f4c072 lines=613",
+        "SELFTEST OK: first/last/npos/empty, unsigned order, prefix rule, flipped bit caught",
+        "PASS lines=595"
+      ]
+    },
+    {
+      "gate": "slice",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/slice_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=dd6bbb5f888989c83b9af8bc167c1ff5 lines=239 checks=17",
+        "SELFTEST OK: truncate no-op and substr2 clamp present, flipped size caught, abort lane has a control",
+        "PASS lines=119 checks=17"
+      ]
+    },
+    {
+      "gate": "slice_hash",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/slice_hash_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=bb5ef62db38683eb918760cad7c9652a lines=43",
+        "SELFTEST OK: oracle matches an independent formula on all payloads, flipped hash caught",
+        "PASS lines=28"
+      ]
+    },
+    {
+      "gate": "slice_prefix",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/slice_prefix_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=108a17ef7b4bc4305f10ecf055b96cb9 lines=596",
+        "SELFTEST OK: empty/longer/equal affixes and both windows present, flipped bit caught",
+        "PASS lines=578"
+      ]
+    },
+    {
+      "gate": "slice_ptr",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/slice_ptr_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=e5b6ef462e32b0127f0f964a75853de0 lines=155 checks=5",
+        "SELFTEST OK: back/index values, moved window, flipped value caught, abort lane has controls",
+        "PASS lines=106 checks=5"
+      ]
+    },
+    {
+      "gate": "sqlite_async",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/sqlite_async_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  abort erase_empty_key: both died (oracle rc=3221226505 rust rc=3221226505)",
+        "  selftest 11 cells OK",
+        "PASS cases=6 aborts=2 lines=70 elapsed=1.98s"
+      ]
+    },
+    {
+      "gate": "sqlite_kv",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/sqlite_kv_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  check empty_getall: abort=yes cpp_rc=3221226505 rs_rc=3221226505",
+        "  check empty_prefix: abort=no cpp_rc=0 rs_rc=0",
+        "PASS cases=11 checks=2 bytes=376832 elapsed=2.37s"
+      ]
+    },
+    {
+      "gate": "sqlite_safe",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/sqlite_safe_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  abort get_after_destroy: both died, state=65537",
+        "  selftest 10 cells OK",
+        "PASS cases=8 aborts=2 lines=122 elapsed=2.25s"
+      ]
+    },
+    {
+      "gate": "string_builder",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/string_builder_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=8d52ac92a63791ba7fa63e4878c4162a lines=389",
+        "SELFTEST OK: 145 lines recomputed independently (integer widths incl. INT32_MIN/INT64_MIN/UINT64_MAX, fixed doubles); flipped size caught",
+        "PASS lines=355 checks=7 probes=554ms total=1899ms"
+      ]
+    },
+    {
+      "gate": "string",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/string_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=09ffdf84f0cdddcc21c052ac89faf0dc lines=71",
+        "SELFTEST OK: 32 hand-checked cells, including the \\f/\\v/\\0 trim set",
+        "PASS lines=88"
+      ]
+    },
+    {
+      "gate": "svc_msg",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/svc_msg_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "SELFTEST OK: one-field change changes the bytes",
+        "PASS cases=41 fields_bytes=344"
+      ]
+    },
+    {
+      "gate": "td_api_objects",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/td_api_objects_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  check badutf: both aborted (oracle rc=3221226505 rust rc=3221226505)",
+        "  selftest 13 cells OK",
+        "PASS cases=5 checks=1 lines=100 elapsed=0.67s"
+      ]
+    },
+    {
+      "gate": "tddb_paths",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/tddb_paths_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=ad8d60ca0994e068f8b7b3e386b0b028 lines=37",
+        "SELFTEST OK: path templates, flag chain, \".\" default, files copy, 400 texts, 15 corpus cells, created tree, comparators",
+        "PASS lines=35"
+      ]
+    },
+    {
+      "gate": "instrument",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/tdjson_diff.py",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  message = \"Failed to parse request as JSON object: Unexpected string end\"",
+        "}",
+        "[ 1][t 0][1795869640.398584604][Logging.cpp:160][&client]\tseq-probe"
+      ]
+    },
+    {
+      "gate": "tls_init",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/tls_init_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "rust: 8 samples, length set [1733, 1765, 1797, 1829]",
+        "SELFTEST OK: comparator sees a fixed-byte change and the HMAC check rejects it",
+        "PASS extensions=16 total_lengths=[1733, 1765, 1797, 1829]"
+      ]
+    },
+    {
+      "gate": "top_dialog_category",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/top_dialog_category_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  check ngt_print_oor: both aborted (oracle rc=3221226505 rust rc=3221226505)",
+        "  selftest 13 cells OK",
+        "PASS cases=6 checks=8 lines=96 elapsed=2.49s"
+      ]
+    },
+    {
+      "gate": "topic_id",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/topic_id_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  abort frommsg_abort: both died (oracle rc=3221226505 rust rc=3221226505)",
+        "  selftest 12 cells OK",
+        "PASS cases=5 aborts=1 lines=56 elapsed=0.46s"
+      ]
+    },
+    {
+      "gate": "tqueue_binlog",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/tqueue_binlog_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=15f996ade4e49d5d14f4cfe5c0d4ab41 lines=82",
+        "PASS cases=10 bytes=10592 elapsed=2.92s"
+      ]
+    },
+    {
+      "gate": "tqueue",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/tqueue_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  check invalid_event_id: abort=yes cpp_rc=3221226505 rs_rc=3221226505",
+        "  check valid_event_id: abort=no cpp_rc=0 rs_rc=0",
+        "PASS cases=12 checks=2 lines=198 elapsed=0.83s"
+      ]
+    },
+    {
+      "gate": "translit",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/translit_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=e2e26092cc1a41b07d517fef7190e02c lines=36899",
+        "SELFTEST OK: 19 hand-checked cells (table order, partials, dedup, guards)",
+        "PASS lines=124186"
+      ]
+    },
+    {
+      "gate": "transport",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/transport_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "SELFTEST OK: comparator sees field changes",
+        "PASS fields=6"
+      ]
+    },
+    {
+      "gate": "unicode",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/unicode_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=c823b29b191b8de3cb0cc34f23aa2e1c lines=13560",
+        "SELFTEST OK: 26 hand-checked cells (categories, lowercasing, search)",
+        "PASS lines=1127703 wall=6.77s"
+      ]
+    },
+    {
+      "gate": "usernames",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/usernames_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "  check reorder_missing: both aborted (oracle rc=3221226505 rust rc=3221226505)",
+        "  selftest 8 cells OK",
+        "PASS cases=21 checks=1 lines=242 elapsed=1.63s"
+      ]
+    },
+    {
+      "gate": "utf8",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/utf8_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=e3abfdc56e38f955b5f8f663bc9a133f lines=310",
+        "SELFTEST OK: 34 hand-checked cells (DFA edges, byte/char budget, UTF-16 units)",
+        "PASS lines=309"
+      ]
+    },
+    {
+      "gate": "web_proxy",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/web_proxy_diff.py --selftest",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "corpus md5=7c808de0a4c842b4208e93c7b817b561 cases=26",
+        "SELFTEST OK: comparator sees the path change",
+        "PASS cases=26"
+      ]
+    },
+    {
+      "gate": "fuzz",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/tdjson_fuzz.py --seeds 20261126,7,99,2027",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "[ 3][t 0][1795869688.261618137][Logging.cpp:160][&client]\t你好",
+        "[ 5][t 0][1795869688.261715888][Logging.cpp:160][&client]\t*bold* __it__ `code`",
+        "[ 5][t 0][1795869688.261734724][Logging.cpp:160][&client]\t#tag @user $USD $btc"
+      ]
+    },
+    {
+      "gate": "client_options",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_client_options.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS rust\\src\\client_options.rs matches the oracle"
+      ]
+    },
+    {
+      "gate": "tl_schema",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_tl_schema.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS rust\\src\\tl_schema.rs matches td_api.tl"
+      ]
+    },
+    {
+      "gate": "mime_tables",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_mime_tables.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS mime tables are byte-identical to the generator output"
+      ]
+    },
+    {
+      "gate": "emoji_table",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_emoji_table.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS emoji table is byte-identical to the generator output"
+      ]
+    },
+    {
+      "gate": "country_table",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_country_table.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS country table is byte-identical to the generator output"
+      ]
+    },
+    {
+      "gate": "ton_address",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_ton_address.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS instrument carries both generated addresses",
+        "EQAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHx2j",
+        "UQAAAQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eH0Bm"
+      ]
+    },
+    {
+      "gate": "api_functions",
+      "command": "C:\\Users\\K\\AppData\\Roaming\\uv\\python\\cpython-3.14-windows-x86_64-none\\python.exe tools/gen_api_functions.py --check",
+      "exit_code": 0,
+      "warnings": 0,
+      "tail": [
+        "PASS rust\\src\\api_functions.rs"
+      ]
+    }
+  ],
+  "failures": 0
+}
