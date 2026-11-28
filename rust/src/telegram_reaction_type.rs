@@ -278,12 +278,11 @@ fn get_vector_hash(numbers: &[u64]) -> i64 {
     acc as i64
 }
 
-/// `remove_emoji_selectors` is the identity for every string `is_emoji()`
-/// rejects. `is_emoji` lives in `text_search.rs` with the packed 2370-entry
-/// table, so this lane keeps `hash`/`vechash` on non-emoji inputs and the emoji
-/// branch stays `unmeasured` (F288).
+/// `remove_emoji_selectors`: for an emoji, drop every `U+FE0F`; otherwise the
+/// string unchanged. The rules (table, ZWJ split, the trailing `CHECK`) live in
+/// `rust/src/emoji.rs`, shared with `text_search` and the emoji lane.
 fn remove_emoji_selectors(value: &str) -> String {
-    value.to_string()
+    String::from_utf8_lossy(&crate::emoji::remove_emoji_selectors(value.as_bytes())).into_owned()
 }
 
 fn custom_string(custom_emoji_id: i64) -> String {

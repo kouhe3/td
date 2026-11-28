@@ -9,6 +9,12 @@
 //! `td:custom:<id>`, `td:paid`.
 
 #[allow(dead_code)]
+#[path = "../emoji_table.rs"]
+mod emoji_table;
+#[allow(dead_code)]
+#[path = "../emoji.rs"]
+mod emoji;
+#[allow(dead_code)]
 #[path = "../md5.rs"]
 mod md5;
 #[allow(dead_code)]

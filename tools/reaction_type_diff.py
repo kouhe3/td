@@ -20,9 +20,12 @@ Criteria:
       first eight md5 bytes big-endian, a custom hash is the document id, and
       paid sorts before everything.
 
-Not covered (return conditions in F288/Spec): `get_hash`/`get_reaction_types_hash`
-on an actual emoji, because `remove_emoji_selectors` needs `is_emoji` with the
-packed 2370-entry table, which has no lane of its own yet.
+The `emoji_hash` case closes what F288 left unmeasured: `remove_emoji_selectors`
+now calls the shared `rust/src/emoji.rs`, so `get_hash` / `get_reaction_types_hash`
+are judged on a plain emoji, the same emoji with a trailing `U+FE0F`, a
+Fitzpatrick variant and a ZWJ sequence. Those lines are *also* re-derived in
+Python (`hashlib.md5` plus the `get_vector_hash` recurrence), so the oracle is not
+grading itself.
 """
 
 from __future__ import annotations
@@ -41,6 +44,12 @@ MSYS_BIN = "C:/msys64/ucrt64/bin"
 DEFAULT_CPP = "C:/tmp/td-probe/reaction_type_probe.exe"
 DEFAULT_RS = REPO / "rust/target/x86_64-pc-windows-gnu/release/reaction_type_probe.exe"
 WORK = REPO / "work" / "reaction_type"
+
+EMOJI_THUMBS = "f09f918d"
+EMOJI_THUMBS_VS16 = "f09f918defb88f"
+EMOJI_FITZ = "f09f918df09f8fbb"
+EMOJI_ZWJ = "f09f91a8e2808df09f91a9e2808df09f91a7"
+MASK64 = (1 << 64) - 1
 
 CASES = [
     (
@@ -158,6 +167,19 @@ CASES = [
             "nope x",
         ],
     ),
+    (
+        "emoji_hash",
+        [
+            f"hash e:{EMOJI_THUMBS}",
+            f"hash e:{EMOJI_THUMBS_VS16}",
+            f"hash e:{EMOJI_FITZ}",
+            f"hash e:{EMOJI_ZWJ}",
+            f"vechash e:{EMOJI_THUMBS}",
+            f"vechash e:{EMOJI_THUMBS_VS16}",
+            f"vechash e:{EMOJI_THUMBS} c:1",
+            f"vechash e:{EMOJI_ZWJ}",
+        ],
+    ),
 ]
 
 # (case, expected exit is non-zero). `bad_b64` and `short_b64` hit the two CHECKs
@@ -250,6 +272,58 @@ def selftest(cpp_lines: dict[str, list[str]]) -> bool:
     return ok
 
 
+def emoji_cells(cpp_lines: dict[str, list[str]]) -> bool:
+    """Re-derive the emoji hash lines in Python instead of trusting the oracle."""
+    lines = cpp_lines.get("emoji_hash")
+    if lines is None or len(lines) != 8:
+        print(f"CHECK FAIL emoji_hash: expected 8 lines, got {0 if lines is None else len(lines)}")
+        return False
+
+    def md5_hash(data: bytes) -> int:
+        return int.from_bytes(hashlib.md5(data).digest()[:8], "big")
+
+    def emoji_numbers(data: bytes) -> list[int]:
+        digest = hashlib.md5(data).digest()
+        value = int.from_bytes(digest[:4], "big")
+        signed = value - (1 << 32) if value >= (1 << 31) else value
+        return [0, signed & MASK64]
+
+    def vector_hash(numbers: list[int]) -> int:
+        acc = 0
+        for number in numbers:
+            acc ^= acc >> 21
+            acc ^= (acc << 35) & MASK64
+            acc ^= acc >> 4
+            acc = (acc + number) & MASK64
+        return acc - (1 << 64) if acc >= (1 << 63) else acc
+
+    thumbs = bytes.fromhex(EMOJI_THUMBS)
+    fitz = bytes.fromhex(EMOJI_FITZ)
+    zwj = bytes.fromhex(EMOJI_ZWJ)
+    custom_one = [0, 1]  # (document_id >> 32) == 0, (document_id & 0xFFFFFFFF) == 1
+
+    expected = [
+        f"hash e:{EMOJI_THUMBS} {md5_hash(thumbs)}",
+        # the trailing U+FE0F is stripped, so this is the same hash as above
+        f"hash e:{EMOJI_THUMBS_VS16} {md5_hash(thumbs)}",
+        f"hash e:{EMOJI_FITZ} {md5_hash(fitz)}",
+        f"hash e:{EMOJI_ZWJ} {md5_hash(zwj)}",
+        f"vechash e:{EMOJI_THUMBS} {vector_hash(emoji_numbers(thumbs))}",
+        f"vechash e:{EMOJI_THUMBS_VS16} {vector_hash(emoji_numbers(thumbs))}",
+        f"vechash e:{EMOJI_THUMBS} c:1 {vector_hash(emoji_numbers(thumbs) + custom_one)}",
+        f"vechash e:{EMOJI_ZWJ} {vector_hash(emoji_numbers(zwj))}",
+    ]
+
+    ok = True
+    for index, want in enumerate(expected):
+        if lines[index] != want:
+            print(f"CHECK FAIL emoji_hash[{index}]: oracle={lines[index]!r} expected={want!r}")
+            ok = False
+    if ok:
+        print(f"  selftest {len(expected)} emoji cells OK (hashlib cross-check)")
+    return ok
+
+
 def check_pairs(args, env) -> bool:
     """The two abort cases must fail and the control must pass, on both sides."""
     for case, want_abort in CHECK_CASES:
@@ -315,7 +389,7 @@ def main() -> int:
     if not check_pairs(args, env):
         return 1
 
-    if args.selftest and not selftest(cpp_lines):
+    if args.selftest and not (selftest(cpp_lines) and emoji_cells(cpp_lines)):
         return 1
 
     elapsed = time.time() - started

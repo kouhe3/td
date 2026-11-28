@@ -31,7 +31,7 @@ uv run python tools/message_id_diff.py --selftest   # 8 case + 4 check / 268 行
 uv run python tools/dialog_id_diff.py --selftest    # 7 case + 4 check / 199 行语料 / 302 行输出，0.9 s
 uv run python tools/topic_id_diff.py --selftest     # 5 case（4 + 1 abort）/ 34 行语料 / 56 行输出，0.4 s
 uv run python tools/formatted_date_diff.py --selftest  # 7 case / 101 行语料 / 188 行输出，0.30 s
-uv run python tools/reaction_type_diff.py --selftest    # 9 case + 3 check / 79 行语料 / 140 行输出，1.5 s
+uv run python tools/reaction_type_diff.py --selftest    # 10 case + 3 check / 88 行语料 / 156 行输出，1.2 s
 ```
 
 实测（2026-11-28）：`PASS cases=21 checks=1 lines=242`，`corpus md5=c0cb8ba7e1d426f9cac0550c443a8a43`；冷构建后首跑 16.6 s。四条判据全跑不短路（narration 逐行、FLOOR、abort 对、8 条手算 cell）。
@@ -52,7 +52,7 @@ uv run python tools/reaction_type_diff.py --selftest    # 9 case + 3 check / 79 
 | `top_dialog_category`（枚举映射：`TopDialogCategory` + `NotificationGroupType`） | narration 逐行 + FLOOR + 八条 abort 对 + 手算 cell | 6 case + 8 check / 96 行 | F264–F267 |
 | `dialog_photo`（照片面，只判不碰 `FileManager` 的 11 个函数） | narration 逐行 + FLOOR + 手算 cell（**无 abort 对**：这半没有 CHECK 路径） | 9 case / 88 行 | F270–F273 |
 | `formatted_date`（日期格式化：两条解析路径 + 三条映射出口） | narration 逐行 + FLOOR + 22 条手算 cell，**无 abort 对**（唯一的 `UNREACHABLE` 不可达） | 7 case / 101 行语料 / 188 行输出 | F282–F285 |
-| `reaction_type`（反应类型：四种编码 + 两条解码 + 三条出口 + 两个 hash） | narration 逐行 + FLOOR + **一组 abort 对**（`#zz` / `#abc` 各撞一条 CHECK，正常 custom 为对照）+ 17 条手算 cell | 9 case + 3 check / 79 行语料 / 140 行输出 | F287–F290 |
+| `reaction_type`（反应类型：四种编码 + 两条解码 + 三条出口 + 两个 hash，含 emoji 分支） | narration 逐行 + FLOOR + **一组 abort 对**（`#zz` / `#abc` 各撞一条 CHECK，正常 custom 为对照）+ 17 条手算 cell + **8 条 `hashlib` 反算 cell**（`emoji_hash` 的八行用 `md5` 前 8 字节大端与 `get_vector_hash` 递推独立重算） | 10 case + 3 check / 88 行语料 / 156 行输出 | F287–F290、F298–F300 |
 
 判据句（每条都是验收）：
 
@@ -114,7 +114,6 @@ uv run python tools/reaction_type_diff.py --selftest    # 9 case + 3 check / 79 
 | `DialogId` 的 storer/parser | `store_long`/`fetch_long` | 同上 |
 | `FormattedDate` 的 `store`/`parse` | 只写 `date_` 与 `date_flags_` 两个 int32，没有独立语义（`.hpp` 里就是两次 `td::store`） | 与 `Usernames` 的 store/parse 一起做 TL storer 对拍 |
 | `get_formatted_date(date, type_ptr)` 的 `default: UNREACHABLE()` | `DateTimeFormattingType` 只有 `Relative`/`Absolute` 两个子类，构造不出第三个 | 上游新增/删除子类时重判 |
-| `ReactionType` 的 `get_hash` / `get_reaction_types_hash` 在真 emoji 上 | 要过 `remove_emoji_selectors` → `is_emoji`（2370 项 packed 表，Rust 侧在 `text_search.rs` 里，未单独成 lane）；语料只把 hash 喂给空串、纯 ASCII 串与 custom | 给 `is_emoji`/`remove_emoji_selectors` 立一条 lane，再打开含 VS16 的 emoji 语料 |
 | `reactionEmoji` 的 `UNREACHABLE()`（未知 `telegram_api::Reaction` 变体） | 生成类只有四个子类，构造不出第五个 | 上游新增 Reaction 变体时重判 |
 | 吃 `Td` 的 topic 方法（topic type object / input peer / input user） | 需要 `Td` 与 user/dialog manager | 造 `Td` 的 seam，或按 ABI 面 indirect 判 |
 | `SavedMessagesTopicId(DialogId, MessageForwardInfo*, DialogId)` | 需要转发信息对象 | 与 topic type object 一起做 |
