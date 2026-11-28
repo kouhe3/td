@@ -26,8 +26,8 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1579 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 协议 / RPC / 存储 / 值类型 / 文本面 | 59 条 lane = 62 个 `tools/*_diff.py` 减 3 个非 lane（`instrument` / `client_lane` / `binlog`）；lane 已按文件名自动发现，新增 `top_dialog_category` 与 `dialog_photo` | `python tools/verify.py --list`、各自的 `--selftest`、F103–F273 |
-| 门禁 | 71 项 = build + fuzz + 七个 `gen_*.py --check` + 62 个自动发现的 `*_diff.py`（存储面 10、静态加密面 1、通知声音面 1、值类型面 5、过滤面 1、枚举映射面 1、照片面 1、对象面 1、几何面 1、文本面 1 等）；`--only <name[,name]>` 单 lane 1–3 s | `uv run python tools/verify.py`（或 `--list` / `--only`） |
+| 协议 / RPC / 存储 / 值类型 / 文本面 | 60 条 lane = 63 个 `tools/*_diff.py` 减 3 个非 lane（`instrument` / `client_lane` / `binlog`）；lane 已按文件名自动发现，新增 `top_dialog_category` 与 `dialog_photo` | `python tools/verify.py --list`、各自的 `--selftest`、F103–F273 |
+| 门禁 | 72 项 = build + fuzz + 七个 `gen_*.py --check` + 63 个自动发现的 `*_diff.py`（存储面 10、静态加密面 1、通知声音面 1、值类型面 5、过滤面 1、枚举映射面 1、照片面 1、对象面 1、几何面 1、文本面 1 等）；`--only <name[,name]>` 单 lane 1–3 s | `uv run python tools/verify.py`（或 `--list` / `--only`） |
 | 定义域 | 120 个 measured 行、6 个 unmeasured（后者均不可判、不可达、blocked 或缺引擎） | `python -c "import pathlib;t=pathlib.Path('docs/coverage-domain.md').read_text(encoding='utf-8').splitlines();print(sum(' measured（' in l for l in t), sum(any(c.strip()=='unmeasured' for c in l.split(chr(124))) for l in t))"` |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
@@ -308,3 +308,4 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | 2026-11-28 | T119（行为不变的重构，不新增判据事实） | 全部 lane, 并行门, 落点表 | 拆 `lib.rs`：8,100 行单文件 → `lib.rs` 36 行 + 7 个面模块（`entity_scan` / `json` / `text_search` / `text_entities` / `text_parse` / `sync_actions` / `client_abi`）。一次性 codemod 只做可见性升级（顶层项、非 trait impl 的方法、`TextEntity` 字段 → `pub(crate)`）与搬移；模块用 `use super::*;` + 根 `pub(crate) use <m>::*;` 维持原来的无限定名解析。判据 = 全量 71 项 `failures=0`、build `warnings=0`（lane 输出仍与 oracle 逐行相同）。P3 段位表进落点表。 |
 | 2026-11-28 | F276 | 门禁, 冻结树 | 拆 `lib.rs` 之后的 71 项快照入库：`docs/gate-54f4abfcf.json`（commit `54f4abfcf`、`worktree_dirty=false`、`failures=0`、build `warnings=0`、255 s）；冻结树表补 round 71 与「快照（71 项，round 71）」两行。 |
 | 2026-11-28 | F500–F503 | T121, ABI SPEC | 并行 slot 1：ABI 密度（N2）。`tools/tdjson_diff.py` 的 MATCH 表 +15 条边界 cell（mime 大小写/多扩展名/无扩展名、extension 参数化与空串、cleanFileName 分隔符与非 ASCII），`MATCH` 1564 → 1579、`failures=0`、实现零改动；RED = 去掉 `mime_lookup` 的 `to_ascii_lowercase()` → 6 条 cell 红（含 3 条老 cell）。ABI SPEC 的 MATCH 数字同步到 1579。 |
+| 2026-11-28 | F554 | 全部 lane, 冻结树 | **第一次真开两路并行**（round 72）：slot 1 ABI 密度（+15 cell，`MATCH` 1579，实现零改动）与 slot 2 `secure_storage_file` lane 同时落地，两者改的文件不相交；门禁 71 → 72（`verify.py` 未改）。快照 `docs/gate-722aaf97d.json`（`failures=0`、`warnings=0`、276 s）；冻结树补 round 72 与快照行。 |
