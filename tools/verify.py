@@ -74,6 +74,7 @@ GATES = [
     ("public_rsa", [PYTHON, "tools/public_rsa_diff.py", "--selftest"]),
     ("public_rsa_cdn", [PYTHON, "tools/public_rsa_cdn_diff.py", "--selftest"]),
     ("buffer_slice", [PYTHON, "tools/buffer_slice_diff.py", "--selftest"]),
+    ("shared_slice", [PYTHON, "tools/shared_slice_diff.py", "--selftest"]),
     ("dc_id", [PYTHON, "tools/dc_id_diff.py", "--selftest"]),
     ("slice", [PYTHON, "tools/slice_diff.py", "--selftest"]),
     ("slice_cmp", [PYTHON, "tools/slice_cmp_diff.py", "--selftest"]),

@@ -13,7 +13,7 @@
 | oracle | `C:/tmp/td-build/libtdjson.dll`，md5 pin 在 `tools/tdjson_diff.py:54`；协议面与纯函数面另用 `C:/tmp/td-probe/*.exe` |
 | 重实现 | 分支 `rust` 的 HEAD；`worktree_dirty=false` 时 commit 才代表被测源码 |
 
-同步（`git merge upstream/master` + `ninja tdjson` + 重编探针 + 更新 md5 pin + 重跑 45 项 + 重新落快照）只在下列任一成立时触发：
+同步（`git merge upstream/master` + `ninja tdjson` + 重编探针 + 更新 md5 pin + 重跑 46 项 + 重新落快照）只在下列任一成立时触发：
 
 1. 上游改动与本文件点名的源文件相交；
 2. 上游改动 `td_api.tl` 的定义行，或 mime / emoji / country 数据表；
@@ -154,6 +154,8 @@
 | `tdutils` 的 base64/base32（标准与 url 编码、解码的五条错误文案、四个 `is_*` 谓词、`base64_filter`、`base32_encode`/`base32_decode`） | measured（F167/F168：203 行；url 不补 `=`、未用位必须为 0、长度检查先于字符检查、base32 的 `Nonzero padding` 都在判据里） | 逐字节 |
 | `tdutils` 的结构性 UTF-8（`check_utf8` 的 DFA、`utf8_length`、首字节谓词、`next_utf8_unsafe`、`append_utf8_character`、`utf8_truncate`/`utf8_substr`、`utf8_utf16_length`/`truncate`/`substr`） | measured（F169/F170：309 行；overlong/代理/>U+10FFFF/截断的 DFA 边界、字节-字符预算混用、`F8..FF` 在 UTF-16 计数里的不一致都在判据里；`utf8_to_lower`/`utf8_get_search_words` 依赖 unicode 表，不在本行） | 逐字节 |
 | `tdutils::Hints`（`add`/`remove`/改名/`set_rating`/`search`/`search_empty`/`has_key`/`key_to_string`/`size`） | measured（F171/F172：67 行，ASCII-only；`(rating 升序, key 升序)` 的排序方向、交集、`limit` 三种形状、改名删旧词都在判据里；unicode 搜索表与转写规则 unmeasured，`fix_words` 的前缀丢弃不可观察） | 逐字节 |
+
+| `tdutils` 的所有权类型（`SharedSlice` 的 clone、`UniqueSharedSlice` 构造函数的偷 / 深拷贝两分支、`SharedSlice(UniqueSharedSlice)`、`UniqueSlice` / `SecureString` 的 copy / clear、`clone_as_buffer_slice` 的独立拷贝） | measured（F174/F175：69 行，14 个状态 × 5 种类型；默认构造与零长分配在公开接口上不可区分，写进 F174） | 逐字节 + 别名（写一处读两处） |
 
 ## 边界之外（永久不在本仪器范围）
 
