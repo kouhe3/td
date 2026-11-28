@@ -90,6 +90,7 @@ GATES = [
     ("hints", [PYTHON, "tools/hints_diff.py", "--selftest"]),
     ("unicode", [PYTHON, "tools/unicode_diff.py", "--selftest"]),
     ("string_builder", [PYTHON, "tools/string_builder_diff.py", "--selftest"]),
+    ("translit", [PYTHON, "tools/translit_diff.py", "--selftest"]),
     ("fuzz", [PYTHON, "tools/tdjson_fuzz.py", "--seeds", "20261126,7,99,2027"]),
     ("client_options", [PYTHON, "tools/gen_client_options.py", "--check"]),
     ("client_lane", [PYTHON, "tools/client_diff.py"]),
