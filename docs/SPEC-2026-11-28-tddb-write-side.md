@@ -66,6 +66,7 @@ uv run python tools/tddb_paths_diff.py --selftest          # 35 行 + 目录树�
 任一变化都要重编探针 + 重跑对应 lane + 重新落快照：
 
 - `tddb/td/db/binlog/Binlog.{h,cpp}`、`BinlogEvent.{h,cpp}`、`BinlogInterface.h`、`BinlogKeyValue.h`、`SeqKeyValue.h`、`DbKey.h`；
+- **Rust 侧**：`rust/src/binlog_format.rs`（三份探针共享的帧格式，改动会同时影响 write / kv / read 三条仪器）；
 - `tdutils/td/utils/crypto.{h,cpp}`（PBKDF2 迭代次数、HMAC 常量、AES-CTR 进位）；
 - `td/telegram/TdDb.{h,cpp}`（`as_db_key`、`check_parameters`、两个路径 static）；
 - `tdutils/td/utils/port/path.cpp`（`mkpath`/`mkdir`/`realpath`）；
