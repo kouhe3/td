@@ -118,6 +118,28 @@ def capture_once(db: Path, out: Path, fresh: bool, getme: bool) -> None:
     print(f"capture {out}: {len(rows)} lines")
 
 
+def is_second_run_shape(rows: list[str]) -> bool:
+    """127 lines / 125 updateOption, checked on the same rule as render()."""
+    options = sum(1 for row in rows if json.loads(row).get("@type") == "updateOption")
+    return len(rows) == 127 and options == 125
+
+
+def capture_pair() -> tuple[list[str], list[str]]:
+    """First run on a fresh database, then a second run that reuses it.
+
+    The oracle occasionally exits before its database is fully persisted, and the
+    second capture then sees the first-run shape (F275). Replay the whole pair once
+    instead of failing the gate; render() still validates both shapes.
+    """
+    first = capture("first", fresh=True)
+    second = capture("second", fresh=False)
+    if not is_second_run_shape(second):
+        print("  retry: the second run saw a first-run shape after a reused database (F275)")
+        first = capture("first", fresh=True)
+        second = capture("second", fresh=False)
+    return first, second
+
+
 def capture(tag: str, fresh: bool, getme: bool = False) -> list[str]:
     """Run one client in a child process so the lane matches what is judged (F077)."""
     out = DB.parent / f"gen-client-{tag}.jsonl"
@@ -245,8 +267,7 @@ def main() -> int:
         capture_once(Path(args.capture[0]), Path(args.capture[1]), args.fresh, args.getme)
         return 0
 
-    first = capture("first", fresh=True)
-    second = capture("second", fresh=False)
+    first, second = capture_pair()
     burst = capture("burst", fresh=True, getme=True)
     content = render(first, second, burst)
 
