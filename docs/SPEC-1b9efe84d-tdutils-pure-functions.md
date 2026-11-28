@@ -18,7 +18,7 @@
 
 ```bash
 cd C:/projects/td
-uv run python tools/verify.py            # 57 项（本文件涉及其中 18 项），约 160–330 s（含 build），failures=0
+uv run python tools/verify.py            # 58 项（本文件涉及其中 18 项），约 160–330 s（含 build），failures=0
 ```
 
 每一行判据都自带命令；主命令是 `uv run python tools/<lane>_diff.py --selftest`。

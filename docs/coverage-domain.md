@@ -120,6 +120,7 @@
 | 项 | 状态 | blocker / 回流条件 |
 |---|---|---|
 | `td::Usernames`（构造分类 + `change_editable_username`/`toggle`/`add_secondary`/`delete_secondary`/`deactivate_all`/`reorder_to` + `check_validness` + `can_*` + `operator<<`） | measured（F205–F207：21 case + 1 check / 146 行语料 / 242 行输出，`PASS cases=21 checks=1`，7.3 s；判据 = narration 逐行 + FLOOR + abort 对 + 8 条手算 cell。两条现状只能靠差分发现：无 editable 时打印仍有前导逗号；`reorder_to` 不复制 disabled 标志 → 整对象作废） | `store`/`parse` 序列化与 `get_usernames_object()` 的 td_api 对象不在范围内（需要 TL storer 与生成对象） |
+| `td::MessageId`（三种构造 + 两个有效性区间 + `get_type` 七分支 + `prev/next` 进位 + 调度 date/server 拆解 + `operator<<` 七形态 + 三个向量转换） | measured（F208–F210：8 case + 4 check / 268 行语料 / 430 行输出，`PASS cases=8 checks=4`，28.8 s；判据 = narration 逐行 + FLOOR + 四条 abort 对 + 10 条手算 cell。判据事实：打印尾巴是低 20 位原值、scheduled 的 next 不跨 server 边界、`get_scheduled_server_message_id` 先 CHECK `is_scheduled_server`） | `get_message_id(telegram_api::Message*)`、两条 order 谓词、storer/parser 不在范围内（需要 TL 对象） |
 
 ## 协议面与 RPC 面
 
