@@ -105,12 +105,13 @@
 | `setTdlibParameters` 的设备 / 语言 / 版本 / 加密 key（5 个变体） | measured（F083：首启仍 129 行且逐行相同，两次独立运行一致） | — |
 | `use_test_dc:false` 的首启 | measured（F080：127 行 = 125 option + 2 状态，随后的登录段另有 60 行） | 登录段本身见「真实登录」行 |
 
-## 存储面（binlog 读侧）
+## 存储面（binlog 与 SQLite KV）
 
 | 项 | 状态 | blocker / 回流条件 |
 |---|---|---|
 | binlog 文件解析（帧头、`format::escaped`、handler 汇总、key trie） | measured（F100–F102：整份输出与 `binlog_dump` 逐行相同；14 个 fixture，10,128–24,576 B，含真实登录生成的库） | — |
-| binlog 写侧（从 KV 生成字节相同的库） | unmeasured | salt / IV 由 `Random::secure_bytes` 生成、不可注入，判不了「同输入同字节」；回流条件 = 找到可固定随机源的重写路径 |
+| binlog 写侧（从 KV 生成的库） | measured（F185/F186：27 case 里 20 个明文 case 文件逐字节相同；F189/F190：加密 7 case 结构自洽 + 双向交叉读；F191/F192：KV 层 21 case 文件逐字节 + 双向交叉读。原先记 unmeasured 的理由「salt / IV 不可注入」只对**加密**形态成立，而它已由交叉读与结构判据绕开） | 加密形态的**逐字节**仍不可判（IV 随机，两次运行只共享 33 字节前缀），见 F189 |
+| `td::SqliteKeyValue`（`set`/`get`/`get_all`/`get_by_prefix`/`get_by_range`/`erase`/`erase_batch`/`erase_by_prefix`/`drop` + `SqliteDb` 的事务计数 + `SqliteStatement` 的 blob 绑定与视图） | measured（F196–F198：11 case + 2 check 例 / 376,832 B，`PASS cases=11 checks=2`，8.3 s；判据 = narration 逐行 + **双向交叉读**（C++ 读 Rust 库、Rust 读 C++ 库）+ FLOOR + abort 对。判据事实：同一批数据经 `getall` 是 **rowid 序**、经 `range`/`prefix` 是 **PK 索引序**（`REPLACE` 把 key 移到 rowid 序末尾）；`get_by_range("", till)` 忽略 `till`；`eraseprefix -` 清空全表；空 `Slice` 绑成 zero-length blob 而非 NULL；`commit` 无 begin 报 `No matching begin for commit` 且嵌套 begin 计两层） | 文件字节（sqlite 3.31 vs 3.53.1）、SQLCipher（`DbKey` 非空）、`explain()`、`trace()`、`last_error` 的 CORRUPT 删库、多元素 `set_all` 的顺序，逐条理由与回流条件见 F196 |
 
 ## 协议面与 RPC 面
 

@@ -1,16 +1,17 @@
-# SPEC（as-built）— `tddb` 存储写侧（binlog + crypto + KV + TdDb 路径）
+# SPEC（as-built）— `tddb` 存储面（binlog + crypto + KV(binlog/sqlite) + TdDb 路径）
 
 > **as-built 规格，不是 to-build。** 它记录「已判过、数字可复现」的现状，供接手方当底图。
-> 台账行为证据来源：`docs/facts.md` F185–F194。
+> 台账行为证据来源：`docs/facts.md` F185–F198。
 
 ## 1. 定义域
 
 | 项 | 值 |
 |---|---|
 | C++ 源 | `tddb/td/db/binlog/{Binlog,BinlogEvent,BinlogInterface}.{h,cpp}`、`tddb/td/db/{BinlogKeyValue.h,SeqKeyValue.h,DbKey.h,KeyValueSyncInterface.h}`、`td/telegram/TdDb.{h,cpp}`、`tdutils/td/utils/crypto.{h,cpp}`、`tdutils/td/utils/port/path.cpp`（`mkpath`/`mkdir`/`realpath`） |
-| 规模 | 被判 11 个文件 / 2,728 行（`tddb` 全目录 4,792 行） |
+| C++ 源（SQLite） | `tddb/td/db/{SqliteKeyValue,SqliteDb,SqliteStatement}.{h,cpp}` + `tddb/td/db/detail/RawSqliteDb.{h,cpp}`，跑在仓库内置的 **SQLCipher 3.31.0** 上（`sqlite/`，构建产物 `C:/tmp/td-build/sqlite/libtdsqlite.a`） |
+| 规模 | 被判 11 个文件 / 2,728 行（`tddb` 全目录 4,792 行）；SQLite 面另加 4 个文件 / 605 行（`SqliteKeyValue` 130 + `SqliteDb` 323 + `SqliteStatement` 205 + `RawSqliteDb` 减少量不计） |
 | oracle | `libtdjson.dll` + `C:/tmp/td-build/tddb/{libtddb.a,binlog_dump.exe}` + `libtdcore.a`（`TdDb` 那条） |
-| 台账 | F185–F194；`tasks/plan.md` T92–T96 |
+| 台账 | F185–F198；`tasks/plan.md` T92–T98 |
 
 ## 2. 可复现现状
 
@@ -21,6 +22,7 @@ uv run python tools/binlog_write_diff.py --selftest        # 写侧：27 case（
 uv run python tools/binlog_write_diff.py --encrypted       # 只跑加密半边，0.9 s
 uv run python tools/crypto_diff.py --selftest              # 457 行，6.7 s
 uv run python tools/tddb_paths_diff.py --selftest          # 35 行 + 目录树，0.2 s
+uv run python tools/sqlite_kv_diff.py --selftest           # SQLite KV：11 case + 2 check，8.3 s
 ```
 
 ## 3. 判据
@@ -33,6 +35,7 @@ uv run python tools/tddb_paths_diff.py --selftest          # 35 行 + 目录树�
 | crypto 原语 | 逐字节 + 独立 `hashlib`/`hmac`/`zlib` 反算 + RFC 7914 / RFC 4231 / NIST F.5.5 | 457 行，`md5=4d39370b`，6.7 s | F187/F188 |
 | KV 层（`BinlogKeyValue` + `SeqKeyValue`） | 明文 binlog 逐字节 + narration + 双向交叉读（四条全跑不短路） | 21 case / 884,208 B（含 4 份副本），`md5=d8c284e1`，1.84 s | F191/F192 |
 | `TdDb` 路径与 key | stdout 逐字节 + **目录树快照** | 35 行，`md5=ad8d60ca`，0.2 s | F193/F194 |
+| SQLite KV（`SqliteKeyValue` + `SqliteDb` 的事务计数 + `SqliteStatement` 的 blob 绑定/视图） | narration 逐行（**行序本身是判据**）+ **双向交叉读**（C++ 读 Rust 库、Rust 读 C++ 库）+ abort 对（`--check`，只比 rc 类别） | 11 case + 2 check 例 / 376,832 B，`md5=715cc4cb`，8.3 s | F196–F198 |
 
 判据事实里最容易被接手方踩到的几条（全部有复现命令）：
 
@@ -48,12 +51,23 @@ uv run python tools/tddb_paths_diff.py --selftest          # 35 行 + 目录树�
 - KV 层：`init` **不过滤 magic**（外来类型只要是 KV 形状就变活条目，之后的 `set` 会 rewrite 那个外来事件的 id）；真正的闸门是 TdDb 的 `switch` 与 `default: LOG(FATAL)`。`magic` 是 **per-init** 的（`init` 先 `close()` → 重置为默认）。
 - KV 层：打开的 `Binlog` 持有整文件写锁，Windows 上第二个句柄读到 0 字节；`sync` 是唯一无观测副作用的 flush。`erase_by_prefix` 按 `WaitFreeHashMap` 遍历序写帧——**多匹配的删除顺序不可复现**，语料限制成每次最多一个匹配（覆盖边界）。
 - `TdDb::check_parameters` 是 **private**（oracle 用 `#define private public`）；`mkpath` 只按 `\\` 切分，所以 `/` 路径整段只发一次 `CreateDirectoryW` 并失败；`realpath` 是纯词法 `GetFullPathNameW`。
+- SQLite KV：**同一个 KV 有两套行序**。`get_all()` 与 `get_by_prefix("")` 都跑 `SELECT k, v FROM kv`（全表扫，**rowid 序**），而 `get_by_range` / `get_by_prefix(p)` 跑 `?1 <= k AND k < ?2`（走 `k BLOB PRIMARY KEY` 索引，**key 序**）。`set` 是 `REPLACE INTO`，即删旧的再插新的，所以**改写一个 key 会把它移到 rowid 序的末尾**：`set a; set b; set a` 之后 `getall` 给 `b, a`，`range a z` 给 `a, b`。把行序当噪声、只比集合，就把这条 lane 里最容易错的实现细节放走了（F198 的变异 ② 正是打这里）。
+- SQLite KV：`get_by_range("", till)` **忽略 `till`**（空的 `from` 直接选全表语句）；`get_by_range(from, "")` 走 `?1 <= k` 的 rare 形式。`get_by_prefix` 会把前缀从返回的 key 上**剥掉**，`get_by_range` 不剥。
+- SQLite KV：`next_prefix` 把最后一个非 `0xFF` 字节加一；**全 `0xFF` 的前缀没有后继**，于是 `get_by_prefix`/`erase_by_prefix` 走 `?1 <= k`——在字节序上这恰好等价于「以该前缀开头」。由此 `erase_by_prefix("")` **删掉整张表**。
+- SQLite KV：空 `Slice` 的 `data()` 是 `""` 而不是 `nullptr`（`tdutils/td/utils/Slice-decl.h:139`），所以 `bind_blob` 永远绑成 **zero-length blob**，绝不是 NULL。`get()` 对「缺失的 key」和「空值」都返回 `""`，`crc32` 都是 0；能分开它们的只有 `get_all()` 里那条 `CHECK(!key.empty())`（它只拒绝**空 key**，不拒绝空值）。
+- SQLite KV：`commit` 没有配对的 `begin` 是 `Status::Error("No matching begin for commit")`；计数器在共享的 `RawSqliteDb` 上，**两次 `begin` 需要两次 `commit`**，只提交一次只是把计数从 2 降到 1（不执行 SQL），第三次 `commit` 才报错。
+- SQLite KV：`close()` 是 `*this = SqliteKeyValue()`（丢连接），关闭后 `footprint` 不应留下 `-journal`/`-wal`/`-shm`；`drop()` 之后对象为空，再次 `init` 会 `CREATE TABLE IF NOT EXISTS` 出一张**空表**；`destroy` 删四个路径（`-shm` 不参与「删不掉就报错」的检查）。
 
 ## 4. 不可判项 + 回流条件
 
 | 项 | 原因 | 回流条件 |
 |---|---|---|
-| SQLite 文件的字节 | 两侧 sqlite 版本不同（`rusqlite` bundled vs C++ 侧），页布局不可比 | 版本对齐后再谈 |
+| SQLite 文件的字节 | 两侧 sqlite 版本跨 22 个次版本（3.31.0 vs 3.53.1），页布局与 `sqlite_master` 文本不可比 | 两侧对齐到同一份 amalgamation；否则用交叉读代替（已做） |
+| SQLCipher 加密路径（`PRAGMA key` / `cipher_compatibility`） | `DbKey` 非空才走，`rusqlite` 的 bundled 不带 sqlcipher | 换 `bundled-sqlcipher`，且接受密文仍不可比 |
+| `RawSqliteDb::last_error` 在 `SQLITE_CORRUPT` 时删库 | 需要造一个损坏库，且删完才有可观察差异 | 造损坏库并只比「文件是否还在」 |
+| `SqliteStatement::explain()` 的 query plan 文本 | 计划文本随 sqlite 版本变 | 版本对齐后 |
+| `trace()` 的 SQL 文本 | 调试接口，不是 KV 合同 | 不判 |
+| 多元素 `set_all` | `FlatHashMap` 遍历序决定写入顺序，进而决定 rowid 序 | 只判单元素；多元素顺序不可复现 |
 | `TdDb::open` 全流程 | 走 actor/Promise，需要 scheduler | 造出脱离 actor 的入口 |
 | `change_key` 的 `old_db_key` 迁移分支 | 未驱动 | 有迁移语料时 |
 | 同一 `Binlog` 对象加密后再 `init` | C++ 侧 `0xC0000005`（文件完好） | 不判；按 `TdDb` 的用法每次 open 新建对象 |
@@ -70,4 +84,6 @@ uv run python tools/tddb_paths_diff.py --selftest          # 35 行 + 目录树�
 - `tdutils/td/utils/crypto.{h,cpp}`（PBKDF2 迭代次数、HMAC 常量、AES-CTR 进位）；
 - `td/telegram/TdDb.{h,cpp}`（`as_db_key`、`check_parameters`、两个路径 static）；
 - `tdutils/td/utils/port/path.cpp`（`mkpath`/`mkdir`/`realpath`）；
+- `tddb/td/db/{SqliteKeyValue.{h,cpp},SqliteStatement.{h,cpp},detail/RawSqliteDb.{h,cpp}}`（SQL 语句、绑定与视图、`next_prefix`、事务计数）；
+- `rust/src/sqlite_kv.rs`（Rust 侧同一套语句）；`rusqlite` 的 bundled sqlite 跨大版本（当前 3.53.1）；
 - oracle 重建（`libtdjson.dll` md5 变）或 `binlog_dump.exe` 重编。
