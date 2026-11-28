@@ -1,22 +1,16 @@
 """Single gate for the Rust rewrite: build, differential harness, generated tables.
 
 命令:
-    python tools/verify.py            # 人读的 PASS/FAIL 汇总
-    python tools/verify.py --json     # 同一结果 + 基座自证（commit / worktree / oracle md5）
+    python tools/verify.py                # 人读的 PASS/FAIL 汇总
+    python tools/verify.py --json         # 同一结果 + 基座自证（commit / worktree / oracle md5）
+    python tools/verify.py --list         # 只打印门禁名，一行一个
+    python tools/verify.py --only a,b     # 只跑指定门禁（单 lane 迭代用；与 --json 同用时是局部快照）
 
 判据:
-    退出码 0 = 全部门禁全绿：`cargo build`（0 warning）、`tools/tdjson_diff.py`
-    （failures=0）、`tools/binlog_diff.py`（binlog 四栏与 `binlog_dump` 逐行相同）、
-    协议/RPC lane（`auth_key`、`msg_layer`、`transport`、`framing`、`msgid`、`rpc`、
-    `rpc_error`、`auth_data`、`svc_msg`、`proxy_secret`、`header`、`session`、`web_proxy`、
-    `misc` 的 `--selftest`）、存储面 lane（`binlog`、`binlog_write`、`crypto`、
-    `binlog_kv`、`tddb_paths`、`sqlite_kv`、`tqueue`、`tqueue_binlog`、`sqlite_safe`、
-    `sqlite_async`）、`td/telegram` 值类型与对象面 lane（`usernames`、`message_id`、
-    `dialog_id`、`topic_id`、`outline`、`td_api_objects`、`media_geometry`、`secure_storage`、`notification_sound`、`photo_size_source`、`message_search_filter`、
-    `top_dialog_category`）、
-    `tools/tdjson_fuzz.py`（随机语料零分歧）、`tools/client_diff.py`（客户端 lane 对齐）、
-    七个 `gen_*.py --check` 生成器（`client_options`、`tl_schema`、`mime_tables`、
-    `emoji_table`、`country_table`、`ton_address`、`api_functions`）与仓库内容逐字节相同。
+    退出码 0 = 全部门禁全绿。门禁 = `build` + `tools/*_diff.py`（**自动发现**：每个脚本
+    默认跑 `--selftest`，`tdjson_diff.py` / `client_diff.py` / `binlog_diff.py` 三个例外
+    写在 `DIFF_OVERRIDES` 里）+ `tdjson_fuzz.py` + 七个 `gen_*.py --check`。加一条 lane
+    只需新增 `tools/<name>_diff.py`，不用改这个文件；名单以 `--list` 为准。
 
 覆盖边界:
     覆盖 `tdjson` C ABI 的 `td_execute` 面（29 个同步 action + 全部 1114 个函数的参数解析，
@@ -44,82 +38,32 @@ ROOT = Path(__file__).resolve().parents[1]
 UCrt = "C:/msys64/ucrt64/bin"
 PYTHON = sys.executable
 
-GATES = [
-    (
+# 门禁 = build + `tools/*_diff.py` 自动发现 + fuzz + 七个生成器。
+# 加一条 lane 只需新增 `tools/<name>_diff.py`（默认带 `--selftest`），不用改这个文件。
+
+BUILD_GATE = (
+    "build",
+    [
+        "cargo",
         "build",
-        [
-            "cargo",
-            "build",
-            "--release",
-            "--target",
-            "x86_64-pc-windows-gnu",
-            "--manifest-path",
-            "rust/Cargo.toml",
-        ],
-    ),
-    ("instrument", [PYTHON, "tools/tdjson_diff.py"]),
-    ("binlog", [PYTHON, "tools/binlog_diff.py", "--all", "--selftest"]),
-    ("binlog_write", [PYTHON, "tools/binlog_write_diff.py", "--selftest"]),
-    ("binlog_kv", [PYTHON, "tools/binlog_kv_diff.py", "--selftest"]),
-    ("tddb_paths", [PYTHON, "tools/tddb_paths_diff.py", "--selftest"]),
-    ("sqlite_kv", [PYTHON, "tools/sqlite_kv_diff.py", "--selftest"]),
-    ("sqlite_safe", [PYTHON, "tools/sqlite_safe_diff.py", "--selftest"]),
-    ("sqlite_async", [PYTHON, "tools/sqlite_async_diff.py", "--selftest"]),
-    ("tqueue", [PYTHON, "tools/tqueue_diff.py", "--selftest"]),
-    ("tqueue_binlog", [PYTHON, "tools/tqueue_binlog_diff.py", "--selftest"]),
-    ("crypto", [PYTHON, "tools/crypto_diff.py", "--selftest"]),
-    ("auth_key", [PYTHON, "tools/auth_key_diff.py", "--selftest"]),
-    ("msg_layer", [PYTHON, "tools/msg_layer_diff.py", "--selftest"]),
-    ("transport", [PYTHON, "tools/transport_diff.py", "--selftest"]),
-    ("framing", [PYTHON, "tools/framing_diff.py", "--selftest"]),
-    ("msgid", [PYTHON, "tools/msgid_diff.py", "--selftest"]),
-    ("rpc", [PYTHON, "tools/rpc_diff.py", "--selftest"]),
-    ("rpc_error", [PYTHON, "tools/rpc_error_diff.py", "--selftest"]),
-    ("auth_data", [PYTHON, "tools/auth_data_diff.py", "--selftest"]),
-    ("svc_msg", [PYTHON, "tools/svc_msg_diff.py", "--selftest"]),
-    ("proxy_secret", [PYTHON, "tools/proxy_secret_diff.py", "--selftest"]),
-    ("header", [PYTHON, "tools/header_diff.py", "--selftest"]),
-    ("session", [PYTHON, "tools/session_diff.py", "--selftest"]),
-    ("web_proxy", [PYTHON, "tools/web_proxy_diff.py", "--selftest"]),
-    ("misc", [PYTHON, "tools/misc_diff.py", "--selftest"]),
-    ("usernames", [PYTHON, "tools/usernames_diff.py", "--selftest"]),
-    ("message_id", [PYTHON, "tools/message_id_diff.py", "--selftest"]),
-    ("dialog_id", [PYTHON, "tools/dialog_id_diff.py", "--selftest"]),
-    ("topic_id", [PYTHON, "tools/topic_id_diff.py", "--selftest"]),
-    ("outline", [PYTHON, "tools/outline_diff.py", "--selftest"]),
-    ("td_api_objects", [PYTHON, "tools/td_api_objects_diff.py", "--selftest"]),
-    ("media_geometry", [PYTHON, "tools/media_geometry_diff.py", "--selftest"]),
-    ("secure_storage", [PYTHON, "tools/secure_storage_diff.py", "--selftest"]),
-    ("notification_sound", [PYTHON, "tools/notification_sound_diff.py", "--selftest"]),
-    ("photo_size_source", [PYTHON, "tools/photo_size_source_diff.py", "--selftest"]),
-    ("message_search_filter", [PYTHON, "tools/message_search_filter_diff.py", "--selftest"]),
-    ("top_dialog_category", [PYTHON, "tools/top_dialog_category_diff.py", "--selftest"]),
-    ("tls_init", [PYTHON, "tools/tls_init_diff.py", "--selftest"]),
-    ("dh_handshake", [PYTHON, "tools/dh_handshake_diff.py", "--selftest"]),
-    ("rsa", [PYTHON, "tools/rsa_diff.py", "--selftest"]),
-    ("public_rsa", [PYTHON, "tools/public_rsa_diff.py", "--selftest"]),
-    ("public_rsa_cdn", [PYTHON, "tools/public_rsa_cdn_diff.py", "--selftest"]),
-    ("buffer_slice", [PYTHON, "tools/buffer_slice_diff.py", "--selftest"]),
-    ("shared_slice", [PYTHON, "tools/shared_slice_diff.py", "--selftest"]),
-    ("dc_id", [PYTHON, "tools/dc_id_diff.py", "--selftest"]),
-    ("slice", [PYTHON, "tools/slice_diff.py", "--selftest"]),
-    ("slice_cmp", [PYTHON, "tools/slice_cmp_diff.py", "--selftest"]),
-    ("slice_prefix", [PYTHON, "tools/slice_prefix_diff.py", "--selftest"]),
-    ("slice_ptr", [PYTHON, "tools/slice_ptr_diff.py", "--selftest"]),
-    ("hash", [PYTHON, "tools/hash_diff.py", "--selftest"]),
-    ("slice_hash", [PYTHON, "tools/slice_hash_diff.py", "--selftest"]),
-    ("path_view", [PYTHON, "tools/path_view_diff.py", "--selftest"]),
-    ("string", [PYTHON, "tools/string_diff.py", "--selftest"]),
-    ("number", [PYTHON, "tools/number_diff.py", "--selftest"]),
-    ("base64", [PYTHON, "tools/base64_diff.py", "--selftest"]),
-    ("utf8", [PYTHON, "tools/utf8_diff.py", "--selftest"]),
-    ("hints", [PYTHON, "tools/hints_diff.py", "--selftest"]),
-    ("unicode", [PYTHON, "tools/unicode_diff.py", "--selftest"]),
-    ("string_builder", [PYTHON, "tools/string_builder_diff.py", "--selftest"]),
-    ("translit", [PYTHON, "tools/translit_diff.py", "--selftest"]),
+        "--release",
+        "--target",
+        "x86_64-pc-windows-gnu",
+        "--manifest-path",
+        "rust/Cargo.toml",
+    ],
+)
+
+# 与 lane 同形、但参数不是「--selftest」的三个 diff 脚本
+DIFF_OVERRIDES = {
+    "tdjson_diff.py": ("instrument", []),
+    "client_diff.py": ("client_lane", []),
+    "binlog_diff.py": ("binlog", ["--all", "--selftest"]),
+}
+
+TAIL_GATES = [
     ("fuzz", [PYTHON, "tools/tdjson_fuzz.py", "--seeds", "20261126,7,99,2027"]),
     ("client_options", [PYTHON, "tools/gen_client_options.py", "--check"]),
-    ("client_lane", [PYTHON, "tools/client_diff.py"]),
     ("tl_schema", [PYTHON, "tools/gen_tl_schema.py", "--check"]),
     ("mime_tables", [PYTHON, "tools/gen_mime_tables.py", "--check"]),
     ("emoji_table", [PYTHON, "tools/gen_emoji_table.py", "--check"]),
@@ -129,12 +73,34 @@ GATES = [
 ]
 
 
+def discover_diffs() -> list[tuple[str, list[str]]]:
+    """`tools/*_diff.py` 全部入列：门禁名取自文件名，默认参数 `--selftest`。"""
+    gates = []
+    for path in sorted((ROOT / "tools").glob("*_diff.py")):
+        name, args = DIFF_OVERRIDES.get(path.name, (path.name[: -len("_diff.py")], ["--selftest"]))
+        gates.append((name, [PYTHON, f"tools/{path.name}", *args]))
+    return gates
+
+
+GATES = [BUILD_GATE, *discover_diffs(), *TAIL_GATES]
+
+
 def run(name: str, command: list[str]) -> dict:
     env = dict(os.environ)
     env["PATH"] = UCrt + ";" + env.get("PATH", "")
     # TDLib 的日志会把请求里的原始字节写进 stderr（corpus 有非法 UTF-8 的 cell），
     # 所以按字节收再宽松解码，别让 gate 自己因为解码炸掉
-    result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True)
+    try:
+        result = subprocess.run(command, cwd=ROOT, env=env, capture_output=True)
+    except OSError as error:
+        # 命令本身不在 PATH 上（典型：shell 里没有 cargo）时给一条 FAIL，别让整个门禁崩在这里
+        return {
+            "gate": name,
+            "command": " ".join(command),
+            "exit_code": 127,
+            "warnings": 0,
+            "tail": [f"{type(error).__name__}: {error}"],
+        }
     output = ((result.stdout or b"") + (result.stderr or b"")).decode("utf-8", "replace")
     warnings = sum(1 for line in output.splitlines() if line.startswith("warning:"))
     return {
@@ -171,10 +137,40 @@ def snapshot_meta() -> dict:
     }
 
 
+def parse_selection(argv: list[str]) -> tuple[list[str], list[str]]:
+    only: list[str] = []
+    flags: list[str] = []
+    index = 0
+    while index < len(argv):
+        if argv[index] == "--only":
+            if index + 1 >= len(argv):
+                raise SystemExit("--only 需要逗号分隔的门禁名")
+            only.extend(name for name in argv[index + 1].split(",") if name)
+            index += 2
+        else:
+            flags.append(argv[index])
+            index += 1
+    return only, flags
+
+
 def main(argv: list[str]) -> int:
-    records = [run(name, command) for name, command in GATES]
+    only, flags = parse_selection(argv)
+    if "--list" in flags:
+        for name, _ in GATES:
+            print(name)
+        return 0
+    selected = GATES
+    if only:
+        known = {name for name, _ in GATES}
+        unknown = [name for name in only if name not in known]
+        if unknown:
+            print(f"unknown gate(s): {', '.join(unknown)}（已知门禁见 --list）")
+            return 2
+        wanted = set(only)
+        selected = [(name, command) for name, command in GATES if name in wanted]
+    records = [run(name, command) for name, command in selected]
     failures = [record for record in records if record["exit_code"] != 0]
-    if "--json" in argv:
+    if "--json" in flags:
         snapshot = snapshot_meta()
         snapshot["gates"] = records
         snapshot["failures"] = len(failures)

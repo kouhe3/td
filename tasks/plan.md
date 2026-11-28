@@ -26,8 +26,8 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1564 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 协议 / RPC / 存储 / 值类型 / 文本面 | 58 条 lane（新增 `top_dialog_category` 6 case + 8 check / 96 行输出；计数 = `tools/verify.py` 的 `GATES` 减 12 项非 lane 项：build / instrument / binlog / fuzz / client_lane / 七个 `gen_*.py --check`）；其余同上 | 各自的 `--selftest`、F103–F267 |
-| 门禁 | 70 项（存储面 10 项；静态加密面 1 项；通知声音面 1 项；值类型面 5 项；过滤面 1 项：`message_search_filter`；枚举映射面 1 项：新增 `top_dialog_category`；对象面 1 项；几何面 1 项；文本面 1 项） | `uv run python tools/verify.py` |
+| 协议 / RPC / 存储 / 值类型 / 文本面 | 58 条 lane = 61 个 `tools/*_diff.py` 减 3 个非 lane（`instrument` / `client_lane` / `binlog`）；lane 已按文件名自动发现，新增 `top_dialog_category` | `python tools/verify.py --list`、各自的 `--selftest`、F103–F267 |
+| 门禁 | 70 项 = build + fuzz + 七个 `gen_*.py --check` + 61 个自动发现的 `*_diff.py`（存储面 10、静态加密面 1、通知声音面 1、值类型面 5、过滤面 1、枚举映射面 1、对象面 1、几何面 1、文本面 1 等）；`--only <name[,name]>` 单 lane 1–3 s | `uv run python tools/verify.py`（或 `--list` / `--only`） |
 | 定义域 | 119 个 measured 行、5 个 unmeasured（后者均不可判、不可达或缺引擎） | `python -c "import pathlib;t=pathlib.Path('docs/coverage-domain.md').read_text(encoding='utf-8').splitlines();print(sum(' measured（' in l for l in t), sum(any(c.strip()=='unmeasured' for c in l.split(chr(124))) for l in t))"`（原 `grep -c '\| measured（'` 在 BRE 里 `\|` 是「或」，会匹配每一行，已换掉） |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
@@ -163,6 +163,7 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | T113 | `photo_size_source` 面：六个工厂与 `get_type`、`operator<<`、`get_file_type`、`get_unique`（compare type 映射 + 12/13 字节布局）、`unique_less`/`unique_equal`、`get_unique_name`、`operator==`、`get_input_peer`、`get_input_sticker_set`；四条 abort 对；判据 = narration 逐行 + FLOOR + 四条 abort 对 + 手算 cell | F254–F257 | done（`photo_size_source_diff.py`：8 case + 4 check / 语料 65 行 / 输出 114 行、`PASS cases=8 checks=4`，1.26 s；20 条手算 cell；三条变异 RED：去掉 `'c'` 折叠 / 少前导 `0x02` / name 打字符。判据事实：8/10 变体可造、默认源 offset -1、type 2 是 13 字节、name 用十进制、Chat 丢 hash、默认源不等于自己；顺带把 `DialogId` 抽成 `telegram_dialog_id.rs`） |
 | T114 | `message_search_filter` 面：`count`、`index`（`f-1`）、`index_mask`（`1 << index`，Empty 为 0）、`call_message_search_filter_index`、`get_input_messages_filter`（17 个合法 + 两个 phone-calls）、`get_message_search_filter`（19 个 td_api 类 + nullptr）、`operator<<`；七条 abort 对；判据 = narration 逐行 + FLOOR + abort 对 + 手算 cell | F259–F262 | done（`message_search_filter_diff.py`：6 case + 7 check / 语料 107 行 / 输出 202 行、`PASS cases=6 checks=7`，1.41 s；16 条手算 cell；三条变异 RED：mask(Empty)=1 / missed 位写反 / callindex(MissedCall)=2） |
 | T115 | `td/telegram` 枚举映射面：`TopDialogCategory` 的 name / 两个 `get_top_dialog_category` / `get_input_top_peer_category`，`NotificationGroupType` 的 db / partial 判定、两个方向与打印；判据 = narration 逐行 + FLOOR + 八条 abort 对 + 手算 cell | F264–F267 | done（`top_dialog_category_diff.py`：6 case + 8 check / 语料 54 行 / 输出 96 行、`PASS cases=6 checks=8`，1.68 s；13 条手算 cell；三条变异 RED：forwardchats 映射 / SecretChat 的 db 位 / ForwardUsers 的 wire id。判据事实：`Size` = 10、td_api 的 `topChatCategoryForwardChats` 折进 `ForwardUsers`(6) 而 wire 侧到 `ForwardChats`(7)、td_api `nullptr` 是 `Size` 而 wire `nullptr` 是 CHECK、ngt 的 db/partial 矩阵与四个对象 id） |
+| T116 | 并行化改造 P2+P4：`GATES` 改为按 `tools/*_diff.py` 自动发现（三个例外进 `DIFF_OVERRIDES`），门禁加 `--list` 与 `--only <name[,name]>`；顺带把「命令不在 PATH」从崩溃改成一条 FAIL | P2, P4（plan 的下一步） | done（`--list` 70 名与 `docs/gate-384321e20.json` 的集合完全相同（顺序改为按文件名排序）；`--only top_dialog_category,misc` → `failures=0` 1–3 s；`--only nope` → rc=2；`--only build` 在无 cargo 的 PATH 上给 `failures=1` 而不崩；全量 136 s、`failures=0`） |
 
 ## 下一步（2026-11-28，round 66 收口后）
 
@@ -182,11 +183,11 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | # | 改造 | 完成判据 |
 |---|---|---|
 | P1 | `rust/src/lib.rs` 按 lane 拆模块 | 老 lane 输出逐字节不变（沿用 15 个共享模块的 codemod 搬移手法） |
-| P2 | `GATES` 改为按 `tools/*_diff.py` 自动发现 | 一次跑完仍是 70 项、`failures=0`，项数与入库的最新快照相同 |
+| P2 | `GATES` 改为按 `tools/*_diff.py` 自动发现 | **已完成（T116）**：`--list` 70 名、集合与 70 项快照相同，全量 `failures=0` |
 | P3 | fact id 段位预分配（子代理只写占位符，编排者统一落账） | 段位表写进 `docs/agents/face-spaghetti.md` 的落点表 |
-| P4 | 门禁 `--only <lane>` / 分片 | 单 lane 可单独跑；`client_lane` 是最慢项（约 30–47 s，见落点表的冻结树节），并行后先分片它 |
+| P4 | 门禁 `--only <lane>` / 分片 | **已完成（T116）**：`--only` 单 lane 1–3 s；分片本身等到真开并行再做（`client_lane` 是最慢项，约 30–47 s） |
 
-**需用户决定**：并行度（2 路 / 4 路）；N1 与 P1–P4 的先后——默认 N1 先行，因为 P1 一次覆盖多条 lane 的模型更安全。
+**已定（2026-11-28）**：并行度 **2 路**；执行顺序 **A（P2+P4）→ D（`DialogPhoto` 混合 lane）→ C（SPEC 体检）→ B（P1 拆 `lib.rs`）**。A 已完成（T116），D 是下一轮。
 
 ## 变更记录
 
@@ -293,3 +294,4 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | 2026-11-28 | F173, F184, F189, F190, F246, F252, F256, F257；`docs/agents/face-spaghetti.md` 冻结树节 | T1–T114, 门禁, 并行门 | gate 行的 `round` 由 46 修正为 66（语义 = 与冻结树表一致的轮次；round 47–66 此前只更新了进度节）；新增「下一步」节：实现路线 N0–N3、并行化改造 P1–P4 与各自完成判据，并把并行门现状记成事实（三个共享写点 + 五件前置只满足隔离命名空间） |
 | 2026-11-28 | F264–F267 | T115, 门禁, coverage-domain, 落点表 | 新增 `top_dialog_category` lane（枚举映射面）：`TopDialogCategory` 的 name / 两个 `get_top_dialog_category` / `get_input_top_peer_category` 与 `NotificationGroupType` 的 db、partial 判定、两个方向、打印；6 case + 8 check / 语料 54 行 / 输出 96 行、`PASS cases=6 checks=8`，1.68 s，13 条手算 cell，八条 abort 对。门禁 69 → 70；`docs/agents/face-spaghetti.md` 的门禁行改成「70 项 = 12 项非 lane + 58 条 lane」并指回 `GATES`（不再逐条重复名单）；`coverage-domain` 的计数命令换成 python 一行（原 `grep -c '\| measured（'` 的 `\|` 在 BRE 里是「或」，会匹配每一行）；顺带转义静态加密面那行里破坏表格的 `\|`。 |
 | 2026-11-28 | F268 | 门禁, 冻结树 | 70 项门禁快照入库：`docs/gate-384321e20.json`（commit `384321e20`、`worktree_dirty=false`、oracle md5 `0398814…`、`failures=0`、build `warnings=0`、171 s）；冻结树表补 round 67 与「快照（70 项）」两行。快照先写临时路径再入库，否则 `worktree_dirty` 会被正在写的文件本身置真。 |
+| 2026-11-28 | F268；P2, P4 | T116, 门禁, 落点表 | 门禁自动化：`GATES` 由「70 行手维护清单」改成「build + `tools/*_diff.py` 自动发现 + fuzz + 七个生成器」，新增 lane 只加一个 `tools/<name>_diff.py`；`--list` / `--only` 落地（单 lane 1–3 s，原来一次全量 136–190 s）；`run()` 把「命令不在 PATH」从 `FileNotFoundError` 崩溃改成一条 `exit_code=127` 的 FAIL。门禁项数、名字集合与 70 项快照一致，只有顺序改为按文件名排序。 |
