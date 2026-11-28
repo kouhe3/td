@@ -12,7 +12,8 @@
     `misc` 的 `--selftest`）、存储面 lane（`binlog`、`binlog_write`、`crypto`、
     `binlog_kv`、`tddb_paths`、`sqlite_kv`、`tqueue`、`tqueue_binlog`、`sqlite_safe`、
     `sqlite_async`）、`td/telegram` 值类型与对象面 lane（`usernames`、`message_id`、
-    `dialog_id`、`topic_id`、`outline`、`td_api_objects`、`media_geometry`、`secure_storage`、`notification_sound`、`photo_size_source`、`message_search_filter`）、
+    `dialog_id`、`topic_id`、`outline`、`td_api_objects`、`media_geometry`、`secure_storage`、`notification_sound`、`photo_size_source`、`message_search_filter`、
+    `top_dialog_category`）、
     `tools/tdjson_fuzz.py`（随机语料零分歧）、`tools/client_diff.py`（客户端 lane 对齐）、
     七个 `gen_*.py --check` 生成器（`client_options`、`tl_schema`、`mime_tables`、
     `emoji_table`、`country_table`、`ton_address`、`api_functions`）与仓库内容逐字节相同。
@@ -92,6 +93,7 @@ GATES = [
     ("notification_sound", [PYTHON, "tools/notification_sound_diff.py", "--selftest"]),
     ("photo_size_source", [PYTHON, "tools/photo_size_source_diff.py", "--selftest"]),
     ("message_search_filter", [PYTHON, "tools/message_search_filter_diff.py", "--selftest"]),
+    ("top_dialog_category", [PYTHON, "tools/top_dialog_category_diff.py", "--selftest"]),
     ("tls_init", [PYTHON, "tools/tls_init_diff.py", "--selftest"]),
     ("dh_handshake", [PYTHON, "tools/dh_handshake_diff.py", "--selftest"]),
     ("rsa", [PYTHON, "tools/rsa_diff.py", "--selftest"]),
