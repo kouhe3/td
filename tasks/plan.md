@@ -26,9 +26,9 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1561 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 协议 / RPC 面 | 34 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 72 op/182 行、web_proxy 26 case、misc 80 case、tls_init 16 扩展 × 8 样本/侧、dh_handshake 32 case、rsa 23 case、public_rsa 9 case、public_rsa_cdn 21 行、buffer_slice 34 行、shared_slice 69 行、dc_id 273 行、slice 119 行 + 17 check、slice_cmp 595 行、slice_prefix 578 行、slice_ptr 106 行 + 5 check、hash 70 行、slice_hash 28 行、path_view 54 行、string 88 行、number 296 行、base64 203 行、utf8 309 行、hints 67 行 | 各自的 `--selftest`、F103–F175 |
-| 门禁 | 46 项（本轮新增 `shared_slice`） | `uv run python tools/verify.py` |
-| 定义域 | 93 个 measured 行、6 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c '\| measured（' docs/coverage-domain.md` \| `grep -c '\| unmeasured \|' docs/coverage-domain.md` |
+| 协议 / RPC 面 | 36 条 lane：auth_key 14 字段、msg_layer 4、transport 6、framing 3 case、msgid 6 值 + 3 不变式、rpc 96 B、rpc_error 24 B、auth_data 3,026 步、svc_msg 41 case/344 B、proxy_secret 128 case、header 85 case × 2 头、session 72 op/182 行、web_proxy 26 case、misc 80 case、tls_init 16 扩展 × 8 样本/侧、dh_handshake 32 case、rsa 23 case、public_rsa 9 case、public_rsa_cdn 21 行、buffer_slice 34 行、shared_slice 69 行、dc_id 273 行、slice 119 行 + 17 check、slice_cmp 595 行、slice_prefix 578 行、slice_ptr 106 行 + 5 check、hash 70 行、slice_hash 28 行、path_view 54 行、string 88 行、number 296 行、base64 203 行、utf8 309 行、hints 67 行、unicode 1,127,703 行、string_builder 355 行 + 7 check | 各自的 `--selftest`、F103–F179 |
+| 门禁 | 48 项（本轮新增 `unicode` / `string_builder`） | `uv run python tools/verify.py` |
+| 定义域 | 95 个 measured 行、6 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c '\| measured（' docs/coverage-domain.md` \| `grep -c '\| unmeasured \|' docs/coverage-domain.md` |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
 
@@ -133,6 +133,9 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | T84 | 换到 `utf8.h` 的结构性部分：`check_utf8` 的 DFA 边界（overlong / 代理 / >U+10FFFF / 截断）、`utf8_length`、`append_utf8_character` 的分段与溢出、`next_utf8_unsafe`、`utf8_truncate`/`utf8_substr`（字节-字符混用）、`utf8_utf16_length`/`utf8_utf16_truncate`/`utf8_utf16_substr`（代理对与 `F8..FF` 的不一致） | F169, F170 | done（`utf8_diff.py`：309 行、`PASS`，0.3 s，34 条手算 cell；三次变异 RED：overlong 放宽、截断早一个字符、UTF-16 长度不算代理对） |
 | T85 | 换到 `Hints`：`fix_words` 的前缀去重、`add`/`remove`/改名、`set_rating`、`search` 的交集与 `(rating 升序, key 升序)` 排序、`limit < 0` 的早退、`search_empty`、`has_key`/`key_to_string`/`size`；语料限 ASCII（unicode/translit 表不在范围内） | F171, F172 | done（`hints_diff.py`：67 行、`PASS`，0.3 s，18 条手算 cell；三次变异 RED：排序反向、不删旧词、负 limit 返回 0） |
 
+| T88 | 收掉 unicode 表：`get_unicode_simple_category` / `prepare_search_character` / `unicode_to_lower` / `remove_diacritics` 全码点扫描 + 区间端点，外加 `utf8_to_lower` 与 `utf8_get_search_words` 两个组合函数；表由生成器从 `unicode.cpp` 落到 `rust/src/unicode_tables.rs`，`lib.rs` 的内联表改为引用 | F176, F177 | done（`unicode_diff.py`：1,114,112 码点全扫 / 1,127,703 行输出、`PASS`，2.6 s，26 条手算 cell；生成器 `--check` 绿；`lib.rs` −857/+9 行、`tdjson` MATCH 1561 不变；三次变异 RED：负值映射 +1、`to_lower` 边界、`remove_diacritics` 端点） |
+| T89 | 换到输出面：`StringBuilder` 的整数六宽度、字符/布尔/Slice/数组/pair/vector、`FixedDouble` 的 classic-locale 定点格式化、`%p`、缓冲增长与定长截断 + error 标志；双精度按位型喂入 | F178, F179 | done（`string_builder_diff.py`：389 行脚本 / 355 行输出 + 7 个 abort 例、`PASS`，1.5 s，145 行独立复算；三次变异 RED：INT64_MIN 进位、fixed→exp、截断少一字节；`%p` 小写与负 precision=6 是本轮两条反直觉事实） |
+
 ## 变更记录
 
 | 日期 | 依据 | 受影响 | 决定 |
@@ -214,3 +217,4 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | 2026-11-27 | F171, F172 | T85, 门禁 | 新增 hints lane：`Hints` 的前缀匹配、交集、`(rating 升序, key 升序)`、limit 形状与生命周期，67 行 + 18 条手算 cell；语料限 ASCII（unicode/translit 表 unmeasured），`fix_words` 的前缀丢弃被证明不可观察；门禁 44 → 45 |
 | 2026-11-27 | F173 | T86, 门禁 | 判定基座记账：上游 18 提交与点名源文件的交集只有不可观察的 `Td.cpp`，基座仍 `1b9efe84d`，本轮不同步；`verify.py --json` 增 `commit` / `worktree_dirty` / `cpp_oracle_md5`，`coverage-domain.md` 立同步闸门；门禁仍 45 |
 | 2026-11-28 | F174, F175 | T87, 门禁 | 新增 shared_slice lane：`SharedSlice` / `UniqueSharedSlice` / `UniqueSlice` / `SecureString` 的 clone 共享、构造函数的偷/深拷贝两分支、无 COW、`clone_as_buffer_slice` 的独立拷贝，73 行脚本 / 69 行输出；默认构造与零长分配在公开接口上不可区分；门禁 45 → 46 |
+| 2026-11-28 | F176–F179 | T88, T89, 门禁 | 新增 unicode 与 string_builder 两条 lane：前者 1,114,112 码点全扫（1,127,703 行）+ `utf8_to_lower`/`utf8_get_search_words`，表改由 `tools/gen_unicode_tables.py` 生成、`lib.rs` −857 行内联表删除（`tdjson` MATCH 1561 不变）；后者 355 行 + 7 个 abort 例，`%p` 小写、负 precision=6、非可增长 builder 越 `end` 不报错；门禁 46 → 48 |

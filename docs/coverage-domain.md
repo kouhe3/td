@@ -13,7 +13,7 @@
 | oracle | `C:/tmp/td-build/libtdjson.dll`，md5 pin 在 `tools/tdjson_diff.py:54`；协议面与纯函数面另用 `C:/tmp/td-probe/*.exe` |
 | 重实现 | 分支 `rust` 的 HEAD；`worktree_dirty=false` 时 commit 才代表被测源码 |
 
-同步（`git merge upstream/master` + `ninja tdjson` + 重编探针 + 更新 md5 pin + 重跑 46 项 + 重新落快照）只在下列任一成立时触发：
+同步（`git merge upstream/master` + `ninja tdjson` + 重编探针 + 更新 md5 pin + 重跑 48 项 + 重新落快照）只在下列任一成立时触发：
 
 1. 上游改动与本文件点名的源文件相交；
 2. 上游改动 `td_api.tl` 的定义行，或 mime / emoji / country 数据表；
@@ -152,10 +152,13 @@
 | `tdutils` 的字符串助手（`to_lower`/`to_upper`、`trim`、`lpad`/`lpad0`/`rpad`、`oneline`、`replace_with_spaces`、`implode`、`split`/`full_split`、字节谓词） | measured（F163/F164：88 行，输入输出全 hex；`is_space` 不含 `\f`、`oneline` 的 CRLF 合并与行首空格丢弃、`full_split` 的 `max_parts` 都是判据核心；`to_integer` 家族不在本行） | 逐字节 |
 | `tdutils` 的整数解析（`to_integer` 四宽度、`to_integer_safe`、`hex_to_integer(_safe)`、`hex_decode`/`hex_encode`） | measured（F165/F166：296 行；有符号回绕/取反/夹到 MIN、safe 的逐字节往返、hex 的三条错误文案与 `MAX/16` 溢出检查都在判据里） | 逐字节 |
 | `tdutils` 的 base64/base32（标准与 url 编码、解码的五条错误文案、四个 `is_*` 谓词、`base64_filter`、`base32_encode`/`base32_decode`） | measured（F167/F168：203 行；url 不补 `=`、未用位必须为 0、长度检查先于字符检查、base32 的 `Nonzero padding` 都在判据里） | 逐字节 |
-| `tdutils` 的结构性 UTF-8（`check_utf8` 的 DFA、`utf8_length`、首字节谓词、`next_utf8_unsafe`、`append_utf8_character`、`utf8_truncate`/`utf8_substr`、`utf8_utf16_length`/`truncate`/`substr`） | measured（F169/F170：309 行；overlong/代理/>U+10FFFF/截断的 DFA 边界、字节-字符预算混用、`F8..FF` 在 UTF-16 计数里的不一致都在判据里；`utf8_to_lower`/`utf8_get_search_words` 依赖 unicode 表，不在本行） | 逐字节 |
-| `tdutils::Hints`（`add`/`remove`/改名/`set_rating`/`search`/`search_empty`/`has_key`/`key_to_string`/`size`） | measured（F171/F172：67 行，ASCII-only；`(rating 升序, key 升序)` 的排序方向、交集、`limit` 三种形状、改名删旧词都在判据里；unicode 搜索表与转写规则 unmeasured，`fix_words` 的前缀丢弃不可观察） | 逐字节 |
+| `tdutils` 的结构性 UTF-8（`check_utf8` 的 DFA、`utf8_length`、首字节谓词、`next_utf8_unsafe`、`append_utf8_character`、`utf8_truncate`/`utf8_substr`、`utf8_utf16_length`/`truncate`/`substr`） | measured（F169/F170：309 行；overlong/代理/>U+10FFFF/截断的 DFA 边界、字节-字符预算混用、`F8..FF` 在 UTF-16 计数里的不一致都在判据里；`utf8_to_lower`/`utf8_get_search_words` 现在由下方的 unicode 行判（F176），不在本行） | 逐字节 |
+| `tdutils::Hints`（`add`/`remove`/改名/`set_rating`/`search`/`search_empty`/`has_key`/`key_to_string`/`size`） | measured（F171/F172：67 行，ASCII-only；`(rating 升序, key 升序)` 的排序方向、交集、`limit` 三种形状、改名删旧词都在判据里；unicode 搜索表已由 F176 覆盖，`translit.cpp` 的转写规则仍 unmeasured，`fix_words` 的前缀丢弃不可观察） | 逐字节 |
+| `tdutils` 的 unicode 表与复合函数（`get_unicode_simple_category`、`prepare_search_character`、`unicode_to_lower`、`remove_diacritics` 的全码点扫描，`utf8_to_lower`、`utf8_get_search_words`） | measured（F176/F177：1,114,112 码点全扫 + 四张表区间端点 1653/1563/192/3490 个 + 21 `utfl` / 28 `words` 载荷 = 1,127,703 行输出，2.6 s，26 条手算 cell；`cat` 跳表只定义到 0x11FFFF、`> 0x10FFFF` 先返回 0、标点→空格 32、全角在 `remove_diacritics` 才变窄都在判据里；`utfl`/`words` 的截断尾字节越界（oracle 0xC0000409）是范围限制） | 逐字节 |
 
 | `tdutils` 的所有权类型（`SharedSlice` 的 clone、`UniqueSharedSlice` 构造函数的偷 / 深拷贝两分支、`SharedSlice(UniqueSharedSlice)`、`UniqueSlice` / `SecureString` 的 copy / clear、`clone_as_buffer_slice` 的独立拷贝） | measured（F174/F175：69 行，14 个状态 × 5 种类型；默认构造与零长分配在公开接口上不可区分，写进 F174） | 逐字节 + 别名（写一处读两处） |
+
+| `tdutils` 的 `StringBuilder`（整数六宽度含 MIN 进位、`char`/`signed char`/`unsigned char`/`bool`/`Slice`/字面量、`pair`/`vector`/`vector<bool>`、`FixedDouble` 的 classic-locale 定点格式化、`%p`、`push_back`/`append_char`/`pop_back`/`clear`/`size`/`as_cslice`、增长与定长截断 + error 标志） | measured（F178/F179：389 行脚本 / 355 行输出 + 7 个 abort 例，1.5 s；`%p` 是 16 位小写、负 NaN 不带符号、负 precision 等价 6 位、非可增长 builder 上整数与 `%p` 越 `end` 不报错都在判据里；Rust `{:.p}` 与 `std::ostream` 在本语料逐字节全等，非有限值与负 precision 是仅有的两处显式改写） | 逐字节 |
 
 ## 边界之外（永久不在本仪器范围）
 
