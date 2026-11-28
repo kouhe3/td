@@ -40,6 +40,7 @@ uv run python tools/topic_id_diff.py --selftest     # 5 case（4 + 1 abort）/ 3
 | `dialog_id` | narration 逐行 + FLOOR + 四条 abort 对 + 手算 cell | 7 case + 4 check / 302 行 | F212–F214 |
 | `topic_id` | narration 逐行 + FLOOR + 一条 abort + 手算 cell | 5 case（4 + 1 abort）/ 56 行 | F221–F223 |
 | `td_api_objects`（`get_usernames_object` / `get_message_id` 两段） | narration 逐行（JSON 逐字节）+ FLOOR + abort 对 + 手算 cell | 5 case + 1 check / 100 行（与 text-transforms 的 `get_outline_object` 共用一条 lane） | F234–F237 |
+| `message_search_filter`（搜索过滤器） | narration 逐行 + FLOOR + 七条 abort 对 + 手算 cell | 6 case + 7 check / 202 行 | F259–F262 |
 | `photo_size_source`（文件来源） | narration 逐行 + FLOOR + 四条 abort 对 + 手算 cell | 8 case + 4 check / 114 行 | F254–F257 |
 | `notification_sound`（通知声音） | narration 逐行（原始字节）+ FLOOR + 两条 abort 对 + 手算 cell | 9 case + 2 check / 134 行 | F249–F252 |
 | `media_geometry`（`Dimensions` + `MediaAreaCoordinates`） | narration 逐行（64 位位型 + 六位小数 + `areaPosition` JSON）+ FLOOR + 两条 abort 对 + 手算 cell | 3 case + 2 check / 102 行 | F239–F242 |
@@ -93,6 +94,7 @@ uv run python tools/topic_id_diff.py --selftest     # 5 case（4 + 1 abort）/ 3
 | 几何相邻值类型（`PhotoSizeSource` / `PhotoSizeType` / `Dimensions` 之外的媒体几何） | 需要更多 TL 对象与 `FileType` 装配 | 与对象面 lane 合流后再判 |
 | `NotificationSound` 的 `store`/`parse` | 只接受 `LogEventStorer*`/`LogEventParser`，构造函数调 `set_context(G())`，`G()` 在非 actor 里 LOG_CHECK | 造出 `Global` 上下文或上游放开 CHECK |
 | `PhotoSizeSource` 的 `store`/`parse` | 本快照里只有声明，没有定义（用即链接失败），没有可判的字节格式 | 上游补上定义后再判 |
+| `MessageSearchFilter` 的 `get_message_search_filter` `UNREACHABLE` 分支 | 没有未知 `td_api::SearchMessagesFilter` 类可构造 | 上游新增/删除类时重判 |
 | `PhotoSizeSource` 的 `Legacy` 与 `StickerSetThumbnail` 变体 | 没有工厂构造路径，`Variant` offset 0/4 不可达 | 上游提供构造入口 |
 | `peerNotifySettings` 的平台分支 | 编译期 `TD_ANDROID`/`TD_DARWIN_*` | 只判本机构建的 `other_sound_` 分支 |
 | `Td` 依赖的调用方（`UserManager` 装配、`check_username` 流程） | 需要 `Td` 与网络/状态机 | 造出 `Td` 的 seam 或按 ABI 面 indirect 判 |

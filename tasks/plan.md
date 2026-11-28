@@ -10,7 +10,7 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 - 不在范围内：`tddb` / `td/mtproto` / `tdactor` / `tdutils`（合计 6.4 万行）——它们在该边界之下，互操作要匹配 C++ ABI，不可行（记 `unmeasured`，见 `docs/coverage-domain.md`）。
 - 不碰上游 C++ 源码；Rust 侧工程在本仓库 `rust/`（T6 已从 `C:/tmp/td-rs-probe` 移入），本仓库同时放台账、仪器、计划与实现。
 
-## 进度（2026-11-28，round 65）
+## 进度（2026-11-28，round 66）
 
 两个口径分开看，不要混成一句百分比。
 
@@ -26,15 +26,15 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1564 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 协议 / RPC / 存储 / 值类型 / 文本面 | 57 条 lane（新增 `photo_size_source` 8 case + 4 check / 114 行输出）；其余同上 | 各自的 `--selftest`、F103–F257 |
-| 门禁 | 68 项（存储面 10 项；静态加密面 1 项；通知声音面 1 项；值类型面 5 项：新增 `photo_size_source`；对象面 1 项；几何面 1 项；文本面 1 项） | `uv run python tools/verify.py` |
-| 定义域 | 117 个 measured 行、5 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c '\| measured（' docs/coverage-domain.md` \| `grep -c '\| unmeasured \|' docs/coverage-domain.md` |
+| 协议 / RPC / 存储 / 值类型 / 文本面 | 58 条 lane（新增 `message_search_filter` 6 case + 7 check / 202 行输出）；其余同上 | 各自的 `--selftest`、F103–F262 |
+| 门禁 | 69 项（存储面 10 项；静态加密面 1 项；通知声音面 1 项；值类型面 5 项；过滤面 1 项：新增 `message_search_filter`；对象面 1 项；几何面 1 项；文本面 1 项） | `uv run python tools/verify.py` |
+| 定义域 | 118 个 measured 行、5 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c '\| measured（' docs/coverage-domain.md` \| `grep -c '\| unmeasured \|' docs/coverage-domain.md` |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
 
 | 项 | 数字 | 复现 |
 |---|---|---|
-| 手写 Rust | 8,100 行（另有 7 个手写 lane 模块 `binlog_format.rs` / `tqueue.rs` / `sqlite_kv.rs` / `script_tokens.rs` / `telegram_usernames.rs` / `telegram_message_id.rs` / `telegram_outline.rs` / `telegram_dialog_id.rs` 与 57 个 bin 探针） | `wc -l rust/src/lib.rs` |
+| 手写 Rust | 8,100 行（另有 7 个手写 lane 模块 `binlog_format.rs` / `tqueue.rs` / `sqlite_kv.rs` / `script_tokens.rs` / `telegram_usernames.rs` / `telegram_message_id.rs` / `telegram_outline.rs` / `telegram_dialog_id.rs` 与 58 个 bin 探针） | `wc -l rust/src/lib.rs` |
 | 生成 / 数据表 | 13,318 行 | `wc -l rust/src/{api_functions,client_options,tl_schema,emoji_table,mime_tables,country_table}.rs` |
 | 上游 C++（不含 `auto/`） | 380,965 行 | `find td -name '*.cpp' -o -name '*.h' \| grep -v /auto/ \| xargs wc -l \| tail -1` |
 
@@ -161,7 +161,7 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | T111 | `secure_storage` 面：`ValueHash` / `calc_value_hash`（含 `DataView` 的 128 KiB 分块）/ `calc_aes_cbc_state_sha512|pbkdf2` / `Secret`（checksum、`get_hash`、`clone`）/ `Secret::encrypt` 与 `EncryptedSecret::decrypt` 两种算法 / `gen_random_prefix` 结构 / `Encryptor`·`Decryptor` 状态机 / `encrypt_value`·`decrypt_value` 双向交叉读与篡改后的 `Hash mismatch`；判据 = narration 逐行 + FLOOR + 交叉读 + 手算 cell | F244–F247 | done（`secure_storage_diff.py`：5 case / 语料 60 行 / 输出 94 行、`PASS cases=5 lines=94`，0.72 s；15 条手算 cell；三条变异 RED：`to_skip_` 不复位 / `get_hash` 大端 / 前缀公式 16） |
 | T112 | `notification_sound` 面：`operator<<` 四形态、`is_notification_sound_default`（null 与 Local 都为真）、`are_equivalent` / `are_different_equivalent`、`get_notification_sound_ringtone_id`、`get_legacy_notification_sound`、`get_notification_sound(bool,int64)`、TL 对象映射（含 Ringtone(0/-1) → None）、`get_input_notification_sound`、`dup_notification_sound`；外加 `store`/`parse` 各一条 abort 对（离线不可达）；判据 = narration 逐行 + FLOOR + 两条 abort 对 + 手算 cell | F249–F252 | done（`notification_sound_diff.py`：9 case + 2 check / 语料 76 行 / 输出 134 行、`PASS cases=9 checks=2`，0.72 s；32 条手算 cell；三条变异 RED：Local 不算 default / null 的 id 改 0 / TL Ringtone(0) 不转 NoSound。判据事实：打印是原始字节（`\0` 截断是探针 bug，差分抓出）、Local 即 default、null 与 Local 的 id 都是 -1、`ring:0` 在语料里是 None） |
 | T113 | `photo_size_source` 面：六个工厂与 `get_type`、`operator<<`、`get_file_type`、`get_unique`（compare type 映射 + 12/13 字节布局）、`unique_less`/`unique_equal`、`get_unique_name`、`operator==`、`get_input_peer`、`get_input_sticker_set`；四条 abort 对；判据 = narration 逐行 + FLOOR + 四条 abort 对 + 手算 cell | F254–F257 | done（`photo_size_source_diff.py`：8 case + 4 check / 语料 65 行 / 输出 114 行、`PASS cases=8 checks=4`，1.26 s；20 条手算 cell；三条变异 RED：去掉 `'c'` 折叠 / 少前导 `0x02` / name 打字符。判据事实：8/10 变体可造、默认源 offset -1、type 2 是 13 字节、name 用十进制、Chat 丢 hash、默认源不等于自己；顺带把 `DialogId` 抽成 `telegram_dialog_id.rs`） |
-| T114 | `message_search_filter` 面：`count`、`index`（`f-1`）、`index_mask`（`1 << index`，Empty 为 0）、`call_message_search_filter_index`、`get_input_messages_filter`（17 个合法 + 两个 phone-calls）、`get_message_search_filter`（19 个 td_api 类 + nullptr）、`operator<<`；六条 abort 对；判据 = narration 逐行 + FLOOR + abort 对 + 手算 cell | F259, F260 | 待证（预注册已落） |
+| T114 | `message_search_filter` 面：`count`、`index`（`f-1`）、`index_mask`（`1 << index`，Empty 为 0）、`call_message_search_filter_index`、`get_input_messages_filter`（17 个合法 + 两个 phone-calls）、`get_message_search_filter`（19 个 td_api 类 + nullptr）、`operator<<`；七条 abort 对；判据 = narration 逐行 + FLOOR + abort 对 + 手算 cell | F259–F262 | done（`message_search_filter_diff.py`：6 case + 7 check / 语料 107 行 / 输出 202 行、`PASS cases=6 checks=7`，1.41 s；16 条手算 cell；三条变异 RED：mask(Empty)=1 / missed 位写反 / callindex(MissedCall)=2） |
 
 ## 变更记录
 
@@ -263,3 +263,4 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | 2026-11-28 | F244–F248 | T111, 门禁, coverage-domain | 新增 `secure_storage` lane（静态加密面）：sha256 两条路径（含 128 KiB 分块）、两条 `AesCbcState` 派生、`Secret` 校验和与 `get_hash`、两种算法的 `encrypt`/`decrypt`、前缀结构、`Encryptor`/`Decryptor` 状态机、`encrypt_value`/`decrypt_value` 双向交叉读与篡改后的 `Hash mismatch`；判据 = narration 逐行 + FLOOR + 交叉读 + 15 条手算 cell。Rust 侧手写 AES-256-CBC（依赖里只有 `aes` 块密码）。门禁 65 → 66 |
 | 2026-11-28 | F249–F253 | T112, 门禁, coverage-domain | 新增 `notification_sound` lane（通知声音面）：打印四形态（原始字节）、`is_notification_sound_default`（null 与 Local 都为真）、两个等价函数、ringtone id、两条工厂、TL 对象映射（Ringtone(0/-1) → NoSound）、input 映射、dup；`store`/`parse` 因 `G()` 的 LOG_CHECK 离线不可达，记成两条 abort 对。判据 = narration 逐行 + FLOOR + 两条 abort 对 + 32 条手算 cell。门禁 66 → 67 |
 | 2026-11-28 | F254–F258 | T113, 门禁, coverage-domain | 新增 `photo_size_source` lane（值类型面第五项）：六个工厂与变体 offset、打印、`get_file_type`、`get_unique`（compare type 折叠 + 12/13 字节）、`unique_less`/`unique_equal`、`get_unique_name`（十进制 type / `uint32` version）、`operator==`、`get_input_peer`（Chat 丢 hash）、`get_input_sticker_set`；四条 abort 对（FullLegacy、StickerSetThumbnailLegacy、超宽 thumbnail type、默认源）；顺带把 `DialogId` 抽成共享模块（老 lane 302 行不变）。门禁 67 → 68 |
+| 2026-11-28 | F259–F262 | T114, 门禁, coverage-domain | 新增 `message_search_filter` lane（过滤面）：`count`（20）、`index`（`f-1`）、`mask`（`1 << index`，Empty 为 0，顶到 524288）、`call_message_search_filter_index`、`get_input_messages_filter`（15 个单 id + 两个 phone-calls + Pinned/Poll）、`get_message_search_filter`（19 个 td_api 类 + nullptr）、`operator<<`（20 个名字）；七条 abort 对。门禁 68 → 69 |
