@@ -10,7 +10,7 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 - 不在范围内：`tddb` / `td/mtproto` / `tdactor` / `tdutils`（合计 6.4 万行）——它们在该边界之下，互操作要匹配 C++ ABI，不可行（记 `unmeasured`，见 `docs/coverage-domain.md`）。
 - 不碰上游 C++ 源码；Rust 侧工程在本仓库 `rust/`（T6 已从 `C:/tmp/td-rs-probe` 移入），本仓库同时放台账、仪器、计划与实现。
 
-## 进度（2026-11-28，round 52）
+## 进度（2026-11-28，round 61）
 
 两个口径分开看，不要混成一句百分比。
 
@@ -26,15 +26,15 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | 异步请求路径 | 三支分流（本地解析错误 / 同步 action / 进 Td），16 条请求逐条相同 | `tools/client_diff.py` 的 async 段、F096–F097 |
 | 客户端 lane | 3/4 对齐：首启、第二次运行、未授权状态机；真实登录只有 oracle 侧记录（F080） | `tools/client_diff.py`、`docs/coverage-domain.md` |
 | 判据 cell 总数 | 1564 | `uv run python -c "import sys;sys.path.insert(0,'tools');import tdjson_diff as t;print(len(t.MATCH))"` |
-| 协议 / RPC / 存储 / 值类型 / 文本面 | 52 条 lane（新增 `sqlite_async` 6 case（4 + 2 abort）/70 行）；其余同上 | 各自的 `--selftest`、F103–F231 |
-| 门禁 | 63 项（存储面 10 项：新增 `sqlite_async`；值类型面 4 项；文本面 1 项） | `uv run python tools/verify.py` |
-| 定义域 | 112 个 measured 行、5 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c '\| measured（' docs/coverage-domain.md` \| `grep -c '\| unmeasured \|' docs/coverage-domain.md` |
+| 协议 / RPC / 存储 / 值类型 / 文本面 | 53 条 lane（新增 `td_api_objects` 5 case + 1 check / 100 行输出）；其余同上 | 各自的 `--selftest`、F103–F237 |
+| 门禁 | 64 项（存储面 10 项；值类型面 4 项；对象面 1 项：新增 `td_api_objects`；文本面 1 项） | `uv run python tools/verify.py` |
+| 定义域 | 113 个 measured 行、5 个 unmeasured（后者均不可判、不可达或缺引擎） | `grep -c '\| measured（' docs/coverage-domain.md` \| `grep -c '\| unmeasured \|' docs/coverage-domain.md` |
 
 **② 作为「TDLib 的 Rust 重写」——远未开始**
 
 | 项 | 数字 | 复现 |
 |---|---|---|
-| 手写 Rust | 8,100 行（另有 3 个手写 lane 模块 `binlog_format.rs` / `tqueue.rs` / `sqlite_kv.rs` 与 45 个 bin 探针） | `wc -l rust/src/lib.rs` |
+| 手写 Rust | 8,100 行（另有 7 个手写 lane 模块 `binlog_format.rs` / `tqueue.rs` / `sqlite_kv.rs` / `script_tokens.rs` / `telegram_usernames.rs` / `telegram_message_id.rs` / `telegram_outline.rs` 与 53 个 bin 探针） | `wc -l rust/src/lib.rs` |
 | 生成 / 数据表 | 13,318 行 | `wc -l rust/src/{api_functions,client_options,tl_schema,emoji_table,mime_tables,country_table}.rs` |
 | 上游 C++（不含 `auto/`） | 380,965 行 | `find td -name '*.cpp' -o -name '*.h' \| grep -v /auto/ \| xargs wc -l \| tail -1` |
 
@@ -156,7 +156,7 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | T106 | `td/telegram/ForumTopicId` + `SavedMessagesTopicId` 的纯值语义：`is_valid`/`get`/`==`/`operator<<`、`general()`、与 `MessageId` 的双向转换、两个向量转换；`SavedMessagesTopicId` 的 `get_unique_id`/`is_author_hidden`/三种打印形态；判据 = narration 逐行 + abort 对（非 server 的 `MessageId` 转 topic） | F221, F222, F223 | done（`topic_id_diff.py`：5 case（4 + 1 abort）/ 语料 34 行 / 输出 56 行、`PASS cases=5 aborts=1`，0.4 s；12 条手算 cell；三条变异 RED：is_valid 放宽 / server id 右移 19 / 隐藏作者常量 +1。判据事实：`general()==1`、topic 与 server id 的往返、`id==0` 允许而非 server 的其它值 abort、saved 的三种打印形态） |
 | T107 | `td/telegram/Outline.cpp::get_outline_svg_path`：紧凑编码展开、`M/L/H/V/C/S/Z`（含反射控制点与隐式重复）、`int` 截断缩放、`z` 回闭补 `L`、未知命令 → 空串；判据 = 输出逐字节 + FLOOR + 手算 cell | F225, F226, F227 | done（`outline_diff.py`：6 case / 语料 33 行 / 输出 54 行、`PASS cases=6`，0.2 s；9 条手算 cell；三条变异 RED：z 总补 L / 四舍五入 / S 不反射。判据事实：函数自补 `M`/`z`、`z` 仅在偏离起点时补 `L`、`int` 截断、`S` 反射、隐式重复、未知命令空串） |
 | T108 | `SqliteKeyValueAsync` 的串行驱动语义：一次一个操作、promise 回来再发下一个；buffer/flush 对 `set`/`erase` 的可观察效果、`get` 先查 buffer、`erase_by_prefix`/`set_all`/`close` 强制 flush、空 key 的 CHECK；判据 = narration 逐行 + FLOOR + 两条 abort 对 | F229, F230, F231 | done（`sqlite_async_diff.py`：6 case（4 + 2 abort）/ 语料 39 行 / 输出 70 行、`PASS cases=6 aborts=2`，1.8 s；11 条手算 cell；三条变异 RED：erase 不删 / prefix 精确匹配 / 首写胜出。判据事实：promise 在 10 ms flush 后兑现、close 后只能经 kv-safe 读、空 key abort） |
-| T109 | `td_api` 生成对象面：JSON 打印规则（`@type` 首字段、`int64` 打字符串、`double` 六位小数、`bytes` base64、转义/代理对、`[]`/`null`）+ 三个装配函数（`Usernames::get_usernames_object`、`get_outline_object`、`MessageId::get_message_id(telegram_api::Message*, bool)`）；判据 = narration 逐行 + FLOOR + 非法 UTF-8 的 abort 对 + 手算 cell | F234, F235 | 待证（预注册已落） |
+| T109 | `td_api` 生成对象面：JSON 打印规则（`@type` 首字段、`int64` 打字符串、`double` 六位小数、`bytes` base64、转义/代理对、`[]`/`null`、null 字段省略）+ 三个装配函数（`Usernames::get_usernames_object`、`get_outline_object`、`MessageId::get_message_id(telegram_api::Message*, bool)`）；判据 = narration 逐行 + FLOOR + 非法 UTF-8 的 abort 对 + 手算 cell | F234–F237 | done（`td_api_objects_diff.py`：5 case + 1 check / 语料 39 行 / 输出 100 行、`PASS cases=5 checks=1`，0.4 s；13 条手算 cell；三条变异 RED：`int64` 打数字 / 空子路径不丢 / `secondary_username` 恒空。判据事实：`int64` 是 JSON 字符串、`double` 六位小数且 `nan`/`inf` 原样、`bytes` base64、null 对象字段整条省略而 vector 内 null 打 `null`、`M 0 0 z` 不产 `closedVectorPath`、`messageEmpty`+scheduled 无效。Rust 侧把 `Usernames` / `MessageId` / outline 解码器抽成共享模块，`usernames` 242 行、`message_id` 430 行、`outline` 54 行三条老 lane 逐字节不变） |
 
 ## 变更记录
 
@@ -253,3 +253,4 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | 2026-11-28 | F221–F223 | T106, 门禁, coverage-domain | 新增 `topic_id` lane（值类型面第四项）：`ForumTopicId` 与 `SavedMessagesTopicId` 的纯值语义，含与 `MessageId` 的往返（topic id 就是 top message 的 server id）与 saved 的三种打印形态；非 server 的 `MessageId` 转 topic 是 abort，`id==0` 例外。门禁 60 → 61 |
 | 2026-11-28 | F225–F227 | T107, 门禁, coverage-domain | 新增 `outline` lane（第一个文本变换面）：`get_outline_svg_path` 的紧凑编码展开与 `M/L/H/V/C/S/Z` 归一化，输出逐字节判据；**函数自补 `M`/`z`**、`z` 仅在偏离起点时补 `L`、`int` 截断缩放、`S` 反射控制点、未知命令空串。新增 SPEC `docs/SPEC-1b9efe84d-telegram-text-transforms.md`。门禁 61 → 62 |
 | 2026-11-28 | F229–F231 | T108, 门禁, coverage-domain | 新增 `sqlite_async` lane（存储面第十项）：`SqliteKeyValueAsync` 的**串行驱动**（一次一个 op、等 promise）判掉 buffer/flush 的可观察效果；promise 在 10 ms flush 后兑现、`erase_by_prefix`/`set_all`/`close` 强制 flush、空 key abort。延迟 flush 的时序、多元素 `set_all` 与 promise 合批留在 SPEC §4。门禁 62 → 63 |
+| 2026-11-28 | F234–F237 | T109, 门禁, coverage-domain | 新增 `td_api_objects` lane（生成对象面）：`td_api` 的 JSON 打印规则（`int64` 打字符串、`double` 六位小数、`bytes` base64、null 字段省略、vector 内 null 打 `null`、非法 UTF-8 abort）与三个装配函数（`get_usernames_object` / `get_outline_object` / `get_message_id`）；判据 = narration 逐行 + FLOOR + 一条 abort 对 + 13 条手算 cell。`td_api::to_json` 不在静态库里，探针直接链接 `tdjson_private` 的十个 `td_api_json_*.obj`（F234）。Rust 侧把 `Usernames`/`MessageId`/outline 解码器抽成共享模块（一个解析器 + 两个渲染器），三条老 lane 输出不变。门禁 63 → 64；两份 SPEC 的三条回流项结清 |

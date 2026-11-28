@@ -30,6 +30,7 @@ uv run python tools/outline_diff.py --selftest    # 6 case / 33 行语料 / 54 �
 | lane | 判据形态 | 规模（实测） | fact |
 |---|---|---|---|
 | `outline` | 输出逐字节 + FLOOR + 手算 cell | 6 case / 54 行 | F225–F227 |
+| `outline` 的对象面（`get_outline_object`） | JSON 逐字节 + FLOOR + abort 对 | 5 case（与值类型面共用 `td_api_objects` lane）/ 100 行 | F234–F237 |
 
 判据句：`uv run python tools/outline_diff.py --selftest` → `PASS cases=6 lines=54`。
 
@@ -47,7 +48,6 @@ uv run python tools/outline_diff.py --selftest    # 6 case / 33 行语料 / 54 �
 
 | 项 | 原因 | 回流条件 |
 |---|---|---|
-| `get_outline_object`（`td_api::outline` 对象） | 生成类的 `to_string`/`store` 属生成代码面，且探针要构造 `td_api` 对象 | 与 value-type SPEC 的 td_api 面一起做 |
 | 紧凑编码的 `>= 64` / `>= 128` 简写 | 探针只用查表字节（`192+index`）编码；简写形式没有语料生成器 | 写一个「按 JNI 规则压缩」的生成器，把简写形态也纳入语料 |
 | 非有限 zoom / 超大坐标 | `int` 强转在 C++ 是 UB，Rust 是饱和 | 不判；语料限制在可表示范围 |
 

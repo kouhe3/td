@@ -121,8 +121,8 @@
 
 | 项 | 状态 | blocker / 回流条件 |
 |---|---|---|
-| `td::Usernames`（构造分类 + `change_editable_username`/`toggle`/`add_secondary`/`delete_secondary`/`deactivate_all`/`reorder_to` + `check_validness` + `can_*` + `operator<<`） | measured（F205–F207 + F211：21 case + 1 check / 146 行语料 / 242 行输出，`PASS cases=21 checks=1`，0.9 s；判据 = narration 逐行 + FLOOR + abort 对 + 8 条手算 cell。两条现状只能靠差分发现：无 editable 时打印仍有前导逗号；`reorder_to` 不复制 disabled 标志 → 整对象作废） | `store`/`parse` 序列化与 `get_usernames_object()` 的 td_api 对象不在范围内（需要 TL storer 与生成对象） |
-| `td::MessageId`（三种构造 + 两个有效性区间 + `get_type` 七分支 + `prev/next` 进位 + 调度 date/server 拆解 + `operator<<` 七形态 + 三个向量转换） | measured（F208–F210 + F211：8 case + 4 check / 268 行语料 / 430 行输出，`PASS cases=8 checks=4`，1.1 s；判据 = narration 逐行 + FLOOR + 四条 abort 对 + 10 条手算 cell。判据事实：打印尾巴是低 20 位原值、scheduled 的 next 不跨 server 边界、`get_scheduled_server_message_id` 先 CHECK `is_scheduled_server`） | `get_message_id(telegram_api::Message*)`、两条 order 谓词、storer/parser 不在范围内（需要 TL 对象） |
+| `td::Usernames`（构造分类 + `change_editable_username`/`toggle`/`add_secondary`/`delete_secondary`/`deactivate_all`/`reorder_to` + `check_validness` + `can_*` + `operator<<`） | measured（F205–F207 + F211：21 case + 1 check / 146 行语料 / 242 行输出，`PASS cases=21 checks=1`，0.9 s；判据 = narration 逐行 + FLOOR + abort 对 + 8 条手算 cell。两条现状只能靠差分发现：无 editable 时打印仍有前导逗号；`reorder_to` 不复制 disabled 标志 → 整对象作废） | `store`/`parse` 序列化不在范围内；`get_usernames_object()` 的 td_api 对象已由 `td_api_objects` lane 判（F236） |
+| `td::MessageId`（三种构造 + 两个有效性区间 + `get_type` 七分支 + `prev/next` 进位 + 调度 date/server 拆解 + `operator<<` 七形态 + 三个向量转换） | measured（F208–F210 + F211：8 case + 4 check / 268 行语料 / 430 行输出，`PASS cases=8 checks=4`，1.1 s；判据 = narration 逐行 + FLOOR + 四条 abort 对 + 10 条手算 cell。判据事实：打印尾巴是低 20 位原值、scheduled 的 next 不跨 server 边界、`get_scheduled_server_message_id` 先 CHECK `is_scheduled_server`） | 两条 order 谓词、storer/parser 不在范围内；`get_message_id(telegram_api::Message*)` 已由 `td_api_objects` lane 判（F236） |
 | `td::DialogId`（六个构造 + 五段负区间与 User 正区间 + 四个 CHECK 取值 + 五个 `get_dialog_ids` 重载 + `remove_secret_chat_dialog_ids` + `operator<<`） | measured（F212–F214：7 case + 4 check / 199 行语料 / 302 行输出，`PASS cases=7 checks=4`，0.9 s；判据 = narration 逐行 + FLOOR + 四条 abort 对 + 11 条手算 cell。判据事实：区间端点开闭是核心——`-2×10^12` 不是 secret chat，`-2002147483649` 反而是 Channel；构造器不 CHECK） | `get_message_dialog_id`、`Peer`/`DialogPeer` 构造、storer/parser 不在范围内（需要 TL 对象） |
 | `td::ForumTopicId` + `td::SavedMessagesTopicId`（纯值部分：`is_valid`/`get`/`==`/`operator<<`、`general()`、与 `MessageId` 往返、`get_unique_id`/`is_author_hidden`、三种打印） | measured（F221–F223：5 case（4 + 1 abort）/ 34 行语料 / 56 行输出，`PASS cases=5 aborts=1`，0.4 s；判据 = narration 逐行 + FLOOR + 一条 abort + 12 条手算 cell。判据事实：topic id 就是 server id、`id==0` 允许而非 server 其它值 abort、隐藏作者常量 `DialogId(2666000)`） | 吃 `Td` 的方法（topic type object / input peer）、`MessageForwardInfo` 构造、storer/parser 不在范围内 |
 
@@ -130,7 +130,8 @@
 
 | 项 | 状态 | blocker / 回流条件 |
 |---|---|---|
-| `get_outline_svg_path`（紧凑编码展开 + `M/L/H/V/C/S/Z` 归一化 + `int` 截断缩放 + `z` 回闭） | measured（F225–F227：6 case / 33 行语料 / 54 行输出，`PASS cases=6`，0.2 s；输出逐字节 + FLOOR + 9 条手算 cell。判据事实：函数自补 `M`/`z`、`z` 仅在偏离起点时补 `L`、`int` 截断、`S` 反射、未知命令空串） | `get_outline_object`（td_api 对象）与紧凑编码的 `>=64`/`>=128` 简写不在范围内 |
+| `get_outline_svg_path`（紧凑编码展开 + `M/L/H/V/C/S/Z` 归一化 + `int` 截断缩放 + `z` 回闭） | measured（F225–F227：6 case / 33 行语料 / 54 行输出，`PASS cases=6`，0.2 s；输出逐字节 + FLOOR + 9 条手算 cell。判据事实：函数自补 `M`/`z`、`z` 仅在偏离起点时补 `L`、`int` 截断、`S` 反射、未知命令空串） | 紧凑编码的 `>=64`/`>=128` 简写不在范围内；`get_outline_object`（td_api 对象）已由 `td_api_objects` lane 判（F236） |
+| 生成对象面：`td_api` 的 JSON 打印（`td_api_json_*` 的生成 `to_json`）与三个装配函数 `Usernames::get_usernames_object()`、`get_outline_object(path, zoom, source)`、`MessageId::get_message_id(const telegram_api::Message*, bool)` | measured（F234–F237：5 case + 1 check / 39 行语料 / 100 行输出，`PASS cases=5 checks=1`，0.4 s；判据 = narration 逐行（`json=` 逐字节）+ FLOOR + 非法 UTF-8 的 abort 对 + 13 条手算 cell。判据事实：`int64` 打成 JSON 字符串、`double` 六位小数（`nan`/`inf` 原样）、`bytes` base64、null 的 `object_ptr` 字段整条省略、vector 里的 null 打 `null`、空 vector 打 `[]` | TL `store`（`TlStorerToString`）与其余 ~1100 个生成打印器不在范围内 |
 
 ## 协议面与 RPC 面
 

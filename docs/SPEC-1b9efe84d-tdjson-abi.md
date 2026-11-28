@@ -3,7 +3,7 @@
 > **版本**：基座 commit `1b9efe84d`（master，判定基座）× 同一份 oracle `libtdjson.dll` md5 `0398814038978aaeef7f8d6ac62bb8ff`。文件名里的 hash 就是版本：基座或 oracle 漂移 ⇒ 按新 hash 另起 `docs/SPEC-<新hash>-<area>.md`。
 >
 > **as-built 规格，不是 to-build。** 边界由 `docs/adr/0001-json-abi-as-the-rewrite-boundary.md` 钉死：一个进程里同时加载两个 dll，同一 JSON 请求，逐字节比较输出。
-> 台账行：F001–F143；`tasks/plan.md` T1–T70。
+> 台账行：F001–F143、F184、F234–F237；`tasks/plan.md` T1–T70、T109。
 > **注意**：`MATCH 1564` 只说明这些样本有效，不说明交付——上游每天更新，仓库只有快照态。
 
 ## 1. 定义域
@@ -42,6 +42,7 @@ uv run python tools/gen_api_functions.py --check            # 6 个生成表门�
 | 客户端：遗留 C ABI | 逐行 | 143 行 | F090 |
 | 客户端：异步路径 | 三支分流 | 16 条请求 | F096–F098 |
 | 生成表一致性 | 逐字节（`--check`） | 6 个生成器（`tl_schema`/`api_functions`/`mime`/`emoji`/`country`/`ton_address`） | F019/F020/F091 |
+| 生成对象的 JSON 打印 + 三个装配函数 | 逐行（`json=` 逐字节），另一个进程里判 abort | 5 case + 1 check / 39 行语料 / 100 行输出，`PASS cases=5 checks=1`；`int64` 是字符串、`double` 六位、`bytes` base64、null 字段省略、`paths=[]` | F234–F237 |
 
 ## 4. 不可判项 + 回流条件
 
@@ -55,13 +56,15 @@ uv run python tools/gen_api_functions.py --check            # 6 个生成表门�
 | `addLogMessage` level ≤ 0 | oracle abort | 不判 |
 | 含非法 UTF-8 的语言包值 | `td::JsonBuilder` 是 CHECK | 上游改 |
 | C ABI 之下的 `tddb`/`td/mtproto` 对象 API | 需 C++ ABI | 不判（改由各自 lane 单独判） |
+| 其余 ~1100 个生成打印器与 TL `store`（`TlStorerToString`） | 生成代码面，本轮只判 `usernames`/`outline`/`point`/`closedVectorPath`/`vectorPathCommand*`/`chatPosition`/`error`/`data`/`ok` 这一族 | 新对象进语料即扩；`store` 需要 `TlStorer` 对拍 lane |
 
 ## 5. 失效条件
 
-任一变化都要重编 oracle、更新 `tools/tdjson_diff.py:54` 的 md5 pin、重跑 58 项并重新落快照：
+任一变化都要重编 oracle、更新 `tools/tdjson_diff.py:54` 的 md5 pin、重跑 64 项并重新落快照：
 
 - **基座漂移**：判定基座不是 `1b9efe84d`（或 oracle md5 变）⇒ 本文件整体作废，按新 hash 另起一份；
 - `td_api.tl` 的定义行（会先让 `gen_tl_schema`/`gen_api_functions` 自己变红）；
 - mime / emoji / country / ton 数据表；
 - `td/telegram/{SynchronousRequests,MessageEntity,misc,OptionManager,ThemeManager,DialogFilter,NotificationManager,QuickReplyManager,CountryInfoManager,TonWalletManager,Td}.cpp|h`；
-- oracle 重建（md5 变）或 Rust 换 target/linker。
+- oracle 重建（md5 变）或 Rust 换 target/linker；
+- `td/generate/auto/td/telegram/td_api_json*.cpp`（构建产物）或 `td/telegram/{Usernames,Outline,MessageId}.cpp`——对象面 lane 的探针直接链接 `tdjson_private` 的 `.obj`。

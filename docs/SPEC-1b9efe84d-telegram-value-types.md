@@ -39,6 +39,7 @@ uv run python tools/topic_id_diff.py --selftest     # 5 case（4 + 1 abort）/ 3
 | `message_id` | narration 逐行 + FLOOR + 四条 abort 对 + 手算 cell | 8 case + 4 check / 430 行 | F208–F210 |
 | `dialog_id` | narration 逐行 + FLOOR + 四条 abort 对 + 手算 cell | 7 case + 4 check / 302 行 | F212–F214 |
 | `topic_id` | narration 逐行 + FLOOR + 一条 abort + 手算 cell | 5 case（4 + 1 abort）/ 56 行 | F221–F223 |
+| `td_api_objects`（`get_usernames_object` / `get_message_id` 两段） | narration 逐行（JSON 逐字节）+ FLOOR + abort 对 + 手算 cell | 5 case + 1 check / 100 行（与 text-transforms 的 `get_outline_object` 共用一条 lane） | F234–F237 |
 
 判据句（每条都是验收）：
 
@@ -86,10 +87,9 @@ uv run python tools/topic_id_diff.py --selftest     # 5 case（4 + 1 abort）/ 3
 | 项 | 原因 | 回流条件 |
 |---|---|---|
 | `store`/`parse` 序列化 | 需要 TL storer 与版本化字段布局，本 lane 只判值语义 | 接 `TlStorer` 的对拍 lane（与 `BinlogKeyValue` 的 store 同型） |
-| `get_usernames_object()` | 产出的是生成类 `td_api::usernames`，其 `to_string`/`store` 属生成代码面 | 要做 ABI 层对象判据时另立 lane（可借 `tdjson_diff` 的 `to_string` 面） |
 | `Td` 依赖的调用方（`UserManager` 装配、`check_username` 流程） | 需要 `Td` 与网络/状态机 | 造出 `Td` 的 seam 或按 ABI 面 indirect 判 |
 | 并发/跨线程可见性 | `Usernames` 是值类型，调用方负责同步 | 不需要（纯值语义） |
-| `get_message_id(telegram_api::Message*)` 与两条 order 谓词 | 需要 TL `message`/`messageService`/`messageEmpty` 对象与 `to_string` 输出 | 接 `telegram_api` 对象的构造 lane（可复用 `tdjson_diff` 的 dump 面） |
+| `MessageId` 的两条 order 谓词（`is_message_id_order_ascending`/`descending`） | 需要一串 `telegram_api::Message`，判的是「哪一条先违约」的日志而不是返回值 | 造多违约语料并把日志文本纳入判据 |
 | `MessageId` 的 storer/parser 模板 | 序列化只有 `store_long`/`fetch_long`，但要跨版本布局 | 与 `Usernames` 的 store/parse 一起做 |
 | `get_message_dialog_id` 与 `Peer`/`DialogPeer` 构造 | 需要 TL 对象 | 与 `MessageId` 的 TL 面同一条 lane |
 | `DialogId` 的 storer/parser | `store_long`/`fetch_long` | 同上 |
