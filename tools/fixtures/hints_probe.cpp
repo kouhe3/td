@@ -1,4 +1,5 @@
-// Oracle for tdutils Hints (Hints.h + Hints.cpp), ASCII-only word surface.
+// Oracle for tdutils Hints (Hints.h + Hints.cpp), including the unicode search
+// words and the transliteration maps of translit.cpp.
 //
 //   hints_probe <script.txt>
 //
@@ -11,11 +12,15 @@
 //   has <key>               `has key=… r=0|1`
 //   name <key>              `name key=… name=…`
 //   size                    `size n=…`
+//   words <text>            `words in=… out=…` — utf8_get_search_words, one
+//                           hex word per entry, "-" when there is none
 //
 // Results are sorted by (rating ascending, key ascending) — the *lowest* rating
 // comes first — and `total` is the count before the limit is applied.
-// `utf8_get_search_words` and the transliteration tables are not replicated:
-// the corpus stays within [a-z0-9] and single spaces.
+// `add` indexes the words of a name into one map and their transliterations
+// into a second one; `search` looks the query up in both. `words` exposes
+// `utf8_get_search_words` before `fix_words` drops prefix words, so full-width,
+// Greek and diacritic folding can be observed without a matching name.
 //
 // Build (from a configured C:/tmp/td-build):
 //   g++ -std=c++17 -O2 -fno-exceptions -fno-rtti -I <repo> -I <repo>/tdutils \
@@ -28,6 +33,7 @@
 #include "td/utils/Hints.h"
 
 #include "td/utils/Slice.h"
+#include "td/utils/utf8.h"
 
 #include <cstdio>
 #include <cstdlib>
@@ -149,6 +155,19 @@ int run_script(const char *path) {
       std::printf("name key=%lld name=%s\n", static_cast<long long>(key), hex_or_dash(as_slice(name)).c_str());
     } else if (op == "size") {
       std::printf("size n=%llu\n", static_cast<unsigned long long>(hints.size()));
+    } else if (op == "words") {
+      std::string hex;
+      tokens >> hex;
+      auto text = unhex(hex);
+      auto words = td::utf8_get_search_words(as_slice(text));
+      std::string out;
+      for (auto &word : words) {
+        if (!out.empty()) {
+          out += ',';
+        }
+        out += hex_or_dash(as_slice(word));
+      }
+      std::printf("words in=%s out=%s\n", hex_or_dash(as_slice(text)).c_str(), out.empty() ? "-" : out.c_str());
     } else {
       std::printf("unknown %s\n", op.c_str());
     }

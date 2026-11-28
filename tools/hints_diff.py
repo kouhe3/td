@@ -1,4 +1,4 @@
-"""Compare tdutils Hints with TDLib, ASCII-only word surface.
+"""Compare tdutils Hints with TDLib, unicode words and transliteration maps.
 
     uv run python tools/hints_diff.py
     uv run python tools/hints_diff.py --selftest
@@ -9,8 +9,15 @@ larger than the match count, negative) and the empty query. Results are printed
 as `total` (before the limit) plus the key list sorted by (rating ascending, key
 ascending) — the *lowest* rating comes first.
 
-The unicode search tables and the transliteration rules are out of scope, so
-names and queries stay within [a-z0-9] and single spaces.
+The unicode phase exercises `utf8_get_search_words` (full-width ASCII, Greek
+tonos, Cyrillic case, diacritics) and the two maps of `Hints`: every word of a
+name is indexed verbatim, and `fix_words(get_word_transliterations(word, false))`
+is indexed into the transliteration map. A query looks up the transliteration
+map, then the transliteration of the query with `allow_partial = true` against
+the word map, then dedups the union. So `shc` only finds `щука` through the
+partial rule `shch` and `schuka` only through the transliteration map, because
+the reverse rule turns `sch` into `ш`, not `щ`. A rename at the end proves that
+both maps are cleaned up.
 """
 
 from __future__ import annotations
@@ -100,6 +107,62 @@ def script() -> str:
         "size",
         f"search {hx('alice')} 10 all",
     ]
+    lines.append("# utf8_get_search_words before fix_words: folding and splitting")
+    for text in ["ПРИВЕТ", "ＰＲＩＶＥＴ", "ΣΟΦΊΑ", "ΑΘΗΝΑ", "αθήνα", "ий", "ё", "привет-мир!", "İstanbul", "naïve",
+                 "ÄÖÜ", ""]:
+        lines.append(f"words {hx(text)}")
+    lines.append("# a Cyrillic name, its Latin twin, and the rules that are not symmetric")
+    for key, name in [
+        (10, "привет"),
+        (11, "привет мир"),
+        (12, "privet"),
+        (13, "й"),
+        (14, "ё"),
+        (15, "кс"),
+        (16, "ий"),
+        (17, "Иван"),
+        (18, "ivan"),
+        (19, "ＰＲＩＶＥＴ"),
+        (20, "ΣΟΦΙΑ"),
+        (21, "αθήνα"),
+        (22, "привет-мир!"),
+        (23, "Ёлка"),
+        (24, "щука"),
+        (25, "ый"),
+    ]:
+        lines.append(f"add {key} {hx(name)}")
+    lines += ["size", f"add 10 {hx('привет')}", "size"]
+    for query in ["привет", "privet", "priv", "ПРИВЕТ", "ＰＲＩＶＥＴ", "ｉｖａｎ", "и", "й", "ё", "е", "e", "y",
+                  "к", "кс", "ks", "x", "shc", "schuka", "щука", "иван", "ivan", "ИВАН", "iv", "ыи", "yi", "mir",
+                  "мир", "ΣΟΦΙΑ", "σοφια", "αθήνα", "αθηνα", "ΑΘΗΝΑ"]:
+        lines.append(f"search {hx(query)} 10 all")
+    for limit in (0, 2, 100, -1):
+        lines.append(f"search {hx('привет')} {limit} all")
+    lines += [
+        "rate 11 2",
+        "rate 13 5",
+        "rate 22 -1",
+        f"search {hx('привет')} 10 all",
+        f"search {hx('привет')} 2 all",
+        f"search {hx('y')} 10 all",
+        "# a rename must clear the old word and its transliteration from both maps",
+        f"add 26 {hx('привет')}",
+        "size",
+        f"search {hx('privet')} 10 all",
+        "name 26",
+        f"add 26 {hx('пока')}",
+        "size",
+        "name 26",
+        f"search {hx('privet')} 0 all",
+        f"search {hx('пока')} 10 all",
+        f"search {hx('poka')} 10 all",
+        f"search {hx('привет')} 10 all",
+        "remove 26",
+        "size",
+        f"search {hx('poka')} 10 all",
+        f"search {hx('пока')} 10 all",
+        "has 26",
+    ]
     return "\n".join(lines) + "\n"
 
 
@@ -176,6 +239,42 @@ def main() -> int:
             (f"search q={hx('bob')} limit=10 total=2 keys=4,5", "the rename removed the old word"),
             ("add key=9 size=2", "a name with a duplicated word is accepted"),
             (f"search q={hx('alice')} limit=10 total=1 keys=9", "the duplicated word is indexed once"),
+            (f"words in={hx('ПРИВЕТ')} out={hx('привет')}", "Cyrillic case is folded by the search words"),
+            (f"words in={hx('ＰＲＩＶＥＴ')} out={hx('privet')}", "full-width ASCII is folded to ASCII"),
+            (f"words in={hx('ΣΟΦΊΑ')} out={hx('σοφια')}", "the Greek tonos is removed"),
+            (f"words in={hx('ий')} out={hx('ии')}", "й is folded to и before any transliteration"),
+            (f"words in={hx('ё')} out={hx('е')}", "ё is folded to е before any transliteration"),
+            (f"words in={hx('привет-мир!')} out={hx('привет')},{hx('мир')}",
+             "punctuation splits a name into two search words"),
+            (f"search q={hx('ПРИВЕТ')} limit=10 total=5 keys=10,11,12,19,22",
+             "a Cyrillic query reaches the Latin names through the transliteration map"),
+            (f"search q={hx('privet')} limit=10 total=5 keys=10,11,12,19,22",
+             "a Latin query reaches the Cyrillic names"),
+            (f"search q={hx('schuka')} limit=10 total=1 keys=24",
+             "only the transliteration map finds щука, the reverse rule gives шкука"),
+            (f"search q={hx('shc')} limit=10 total=1 keys=24",
+             "the partial rule shch -> щ is the only path from shc to щука"),
+            (f"search q={hx('и')} limit=10 total=4 keys=13,16,17,18",
+             "the prefix word finds й, ий, Иван and the Latin ivan"),
+            (f"search q={hx('ё')} limit=10 total=2 keys=14,23",
+             "ё is searched as е, so it meets е and the transliteration of елка"),
+            (f"search q={hx('σοφια')} limit=10 total=1 keys=20", "Greek stays Greek, only case and accents fold"),
+            (f"search q={hx('αθηνα')} limit=10 total=1 keys=21", "the tonos of αθήνα is gone for the query too"),
+            (f"search q={hx('привет')} limit=0 total=5 keys=-", "limit 0 keeps the total on the unicode path"),
+            (f"search q={hx('привет')} limit=-1 total=18 keys=-", "a negative limit returns the size of the whole Hints"),
+            (f"search q={hx('привет')} limit=10 total=5 keys=22,10,12,19,11",
+             "the rating of 22 is -1, so it sorts before the unrated keys, and 11 rated 2 comes last"),
+            (f"search q={hx('y')} limit=10 total=6 keys=14,16,17,23,25,13",
+             "the transliteration map answers yi for ый, and 13 rated 5 sorts last"),
+            ("add key=26 size=19", "a second name for key 26"),
+            (f"search q={hx('privet')} limit=10 total=6 keys=22,10,12,19,26,11",
+             "the new Cyrillic name lands in the transliteration map, ordered by the ratings set above"),
+            (f"search q={hx('privet')} limit=0 total=5 keys=-",
+             "the rename removed the privet transliteration of key 26"),
+            (f"search q={hx('пока')} limit=10 total=1 keys=26", "the new word of the renamed key"),
+            (f"search q={hx('poka')} limit=10 total=1 keys=26", "the new transliteration of the renamed key"),
+            (f"search q={hx('poka')} limit=10 total=0 keys=-", "remove clears the transliteration map as well"),
+            ("size n=18", "the key count after removing 26"),
         ]
         for expected, failure in checks:
             if expected not in cpp_out:
