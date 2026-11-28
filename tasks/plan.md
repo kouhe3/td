@@ -34,7 +34,7 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 
 | 项 | 数字 | 复现 |
 |---|---|---|
-| 手写 Rust | 8,100 行（另有 7 个手写 lane 模块 `binlog_format.rs` / `tqueue.rs` / `sqlite_kv.rs` / `script_tokens.rs` / `telegram_usernames.rs` / `telegram_message_id.rs` / `telegram_outline.rs` / `telegram_dialog_id.rs` 与 58 个 bin 探针） | `wc -l rust/src/lib.rs` |
+| 手写 Rust | 8,179 行 = `lib.rs` 36 行（只剩 `mod` 声明与 `pub(crate) use` 再导出）+ 7 个面模块 `entity_scan` 1,151 / `json` 429 / `text_search` 690 / `text_entities` 2,034 / `text_parse` 2,127 / `sync_actions` 1,160 / `client_abi` 552；另有 8 个手写 lane 模块（`binlog_format` / `tqueue` / `sqlite_kv` / `script_tokens` / `telegram_usernames` / `telegram_message_id` / `telegram_outline` / `telegram_dialog_id`）与 59 个 bin 探针 | `wc -l rust/src/*.rs` |
 | 生成 / 数据表 | 13,318 行 | `wc -l rust/src/{api_functions,client_options,tl_schema,emoji_table,mime_tables,country_table}.rs` |
 | 上游 C++（不含 `auto/`） | 380,965 行 | `find td -name '*.cpp' -o -name '*.h' \| grep -v /auto/ \| xargs wc -l \| tail -1` |
 
@@ -166,6 +166,7 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | T116 | 并行化改造 P2+P4：`GATES` 改为按 `tools/*_diff.py` 自动发现（三个例外进 `DIFF_OVERRIDES`），门禁加 `--list` 与 `--only <name[,name]>`；顺带把「命令不在 PATH」从崩溃改成一条 FAIL | P2, P4（plan 的下一步） | done（`--list` 70 名与 `docs/gate-384321e20.json` 的集合完全相同（顺序改为按文件名排序）；`--only top_dialog_category,misc` → `failures=0` 1–3 s；`--only nope` → rc=2；`--only build` 在无 cargo 的 PATH 上给 `failures=1` 而不崩；全量 136 s、`failures=0`） |
 | T117 | `dialog_photo` 混合 lane：判不碰 `FileManager` 的一半（`get_profile_photo_id` / `as_fake_dialog_photo` / `dialog_photo_get_file_ids` / 两个 `need_update_*` / `need_update_dialog_photo_minithumbnail` / 两个 `operator<<` / 四个相等 / `convert_photo_to_profile_photo`），8 个 `FileManager*` 函数记 `blocked` + 回流条件；判据 = narration 逐行 + FLOOR + 手算 cell | F270–F273 | done（`dialog_photo_diff.py`：9 case / 语料 53 行 / 输出 88 行、`PASS cases=9 checks=0`，0.70 s；18 条手算 cell；**无 abort 对**——这半没有 CHECK/UNREACHABLE 路径；三条变异 RED：`need_update` 加 minithumbnail / 不塌空结构 / `mneed` 改 `!=`。判据事实：`need_update` 不比 `mini` 而 `==` 比、`as_fake` 缺一侧即塌空、`mneed` 取 `max(w,h)`、`convert` 需同时有 `'a'`+`'c'`。blocked 半边 8 个 `FileManager*` 函数见 F270，`static_assert(is_final)` 作回流触发点） |
 | T118 | SPEC 漂移体检（计划里的 C）：五份 `docs/SPEC-1b9efe84d-*.md` 对着 `docs/facts.md` F001–F274 与 T1–T117 逐条核，补漏、删重、修数字 | 计划 C | done（value-types：补 `top_dialog_category` / `dialog_photo` 两条 lane 行 + 一条 `blocked` 行（`FileManager`）+ §5 三条失效条件；storage：台账范围 F185–F204 → F185–F247、§1 补 `SecureStorage` 源行、§5 补一条；ABI：生成器数 6 → 7（漏 `client_options`）、台账补 F238。**回退过**：新建的 `SPEC-…-telegram-encryption.md` 与 storage §3 重复，已删。纯文档轮，无新 lane、门禁仍 71、不落快照） |
+| T119 | 并行化改造 P1+P3（计划里的 B）：把 `rust/src/lib.rs`（8,100 行）按面拆成 7 个模块；P3 给并行 lane 预分配 fact id 段位 | 计划 B, P1, P3 | done（`lib.rs` 8,100 → **36** 行（`mod` + `pub(crate) use`），新模块 `entity_scan` 1,151 / `json` 429 / `text_search` 690 / `text_entities` 2,034 / `text_parse` 2,127 / `sync_actions` 1,160 / `client_abi` 552，总量 8,179 行；一次性 codemod 只改**可见性**（顶层项 → `pub(crate)`、非 trait `impl` 的方法 → `pub(crate)`、`TextEntity` 字段 → `pub(crate)`）与位置，未改实现。判据 = **全量 71 项 `failures=0`、build `warnings=0`**（每条 lane 的输出都要与 C++ oracle 逐行相同，所以「拆完仍全绿」就等于老 lane 输出不变）；P3 段位表写进落点表：并行 slot 1 `F500–F549`、slot 2 `F550–F599`、编排者主段 `F275–F499`） |
 
 ## 下一步（2026-11-28，round 66 收口后）
 
@@ -184,12 +185,12 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 
 | # | 改造 | 完成判据 |
 |---|---|---|
-| P1 | `rust/src/lib.rs` 按 lane 拆模块 | 老 lane 输出逐字节不变（沿用 15 个共享模块的 codemod 搬移手法） |
+| P1 | `rust/src/lib.rs` 按 lane 拆模块 | **已完成（T119）**：8,100 → 36 行 + 7 个面模块，全量 71 项 `failures=0`、`warnings=0` |
 | P2 | `GATES` 改为按 `tools/*_diff.py` 自动发现 | **已完成（T116）**：`--list` 70 名、集合与 70 项快照相同，全量 `failures=0` |
-| P3 | fact id 段位预分配（子代理只写占位符，编排者统一落账） | 段位表写进 `docs/agents/face-spaghetti.md` 的落点表 |
+| P3 | fact id 段位预分配（子代理只写占位符，编排者统一落账） | **已完成（T119）**：段位表在 `docs/agents/face-spaghetti.md` 落点表（slot 1 `F500–F549`、slot 2 `F550–F599`、主段 `F275–F499`） |
 | P4 | 门禁 `--only <lane>` / 分片 | **已完成（T116）**：`--only` 单 lane 1–3 s；分片本身等到真开并行再做（`client_lane` 是最慢项，约 30–47 s） |
 
-**已定（2026-11-28）**：并行度 **2 路**；执行顺序 **A（P2+P4）→ D（`DialogPhoto` 混合 lane）→ C（SPEC 体检）→ B（P1 拆 `lib.rs`）**。A 已完成（T116），D 是下一轮。
+**已定（2026-11-28）**：并行度 **2 路**；执行顺序 **A（P2+P4）→ D（`DialogPhoto` 混合 lane）→ C（SPEC 体检）→ B（P1+P3）**，**四步全部完成**（T116 / T117 / T118 / T119）。并行门五件里的「每 lane 隔离命名空间」原已满足，`GATES` 自动发现解决中心表冲突，fact 段位表解决撞号，`lib.rs` 已可两路并行编辑。
 
 ## 变更记录
 
@@ -301,3 +302,4 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | 2026-11-28 | F270–F273 | T117, 门禁, coverage-domain, 落点表 | 新增 `dialog_photo` 混合 lane（照片面）：判不碰 `FileManager` 的 11 个函数，9 case / 语料 53 行 / 输出 88 行、`PASS cases=9 checks=0`，0.70 s，18 条手算 cell；**另半边 8 个 `FileManager*` 函数第一次以 `blocked` 作为交付**——`FileManager` 是 `final`，构造器在 `FileManager.cpp:1312` 走 `G()->use_file_database()`、无 `Td` 即 `LOG_CHECK` abort（实测），回流条件写进 F270 与 coverage-domain，`static_assert(std::is_final_v<FileManager>)` 作重判触发点。门禁 70 → 71（`dialog_photo_diff.py` 被自动发现收进，`verify.py` 一行都没改）。 |
 | 2026-11-28 | F274 | 门禁, 冻结树 | round 69 的 71 项快照入库：`docs/gate-e549e99bf.json`（commit `e549e99bf`、`worktree_dirty=false`、`failures=0`、build `warnings=0`、156 s）；冻结树表补 round 69 与「快照（71 项，round 69）」两行。 |
 | 2026-11-28 | T118（纯文档，不占 fact） | 五份 SPEC, 冻结树 | SPEC 漂移体检（round 70）：value-types 补 `top_dialog_category` / `dialog_photo` 两条 lane 行与一条 `blocked` 行，storage 补台账范围（F185–F204 → F185–F247）与 `SecureStorage` 源行，ABI 修生成器数（6 → 7，补 `client_options`）与台账行（补 F238）。曾误建 `SPEC-…-telegram-encryption.md`，因与 storage §3 重复已删除——一域一份，重复即漂移。按 skill §0「纯文档」不预注册、不占 fact、不落新快照。 |
+| 2026-11-28 | T119（行为不变的重构，不新增判据事实） | 全部 lane, 并行门, 落点表 | 拆 `lib.rs`：8,100 行单文件 → `lib.rs` 36 行 + 7 个面模块（`entity_scan` / `json` / `text_search` / `text_entities` / `text_parse` / `sync_actions` / `client_abi`）。一次性 codemod 只做可见性升级（顶层项、非 trait impl 的方法、`TextEntity` 字段 → `pub(crate)`）与搬移；模块用 `use super::*;` + 根 `pub(crate) use <m>::*;` 维持原来的无限定名解析。判据 = 全量 71 项 `failures=0`、build `warnings=0`（lane 输出仍与 oracle 逐行相同）。P3 段位表进落点表。 |

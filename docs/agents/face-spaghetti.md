@@ -16,7 +16,8 @@
 |---|---|---|
 | **as-built SPEC** | `docs/SPEC-<基座hash>-<area>.md`（hash = 判定基座 commit 前 9 位，**不是日期**；基座漂移 ⇒ 新 hash 新文件、旧文件置「过期」）：五段式（定义域 / 可复现现状 / 判据 / 不可判项+回流条件 / 失效条件），每条判据带可复现命令与实测数字；**是屎山阶段的出口产物**，供 spec-driven 流程（to-build SPEC）接手，不混入「目标」内容 | — |
 | 台账 | `docs/facts.md` | `FACTS_FILE` |
-| 计划 / todo | `tasks/plan.md`（门禁行 + 任务表 T1–T114 + 变更记录）；`tasks/todo.md` 不存在，短期队列用 plan 的进度节 | `PLAN_GLOBS` |
+| fact id 段位（2 路并行用） | 子代理**不自行发号**：报告里写 `F?` + claim 摘要，编排者在收口时分配；真需要自己落盘时按段位取号——并行 slot 1 = `F500–F549`、slot 2 = `F550–F599`，编排者串行轮次用 `F275–F499`（当前主段）。同一段内取最小未用 id；跨段不会撞号。段内行一经写入不再跨段搬移（id 只增不减），只在行内注明原段位 | `grep -c 'F5[0-9][0-9]' docs/facts.md`（应为 0，除非当轮真的开了并行） |
+| 计划 / todo | `tasks/plan.md`（门禁行 + 任务表 T1–T119 + 变更记录）；`tasks/todo.md` 不存在，短期队列用 plan 的进度节 | `PLAN_GLOBS` |
 | 判据定义域表 | `docs/coverage-domain.md` | — |
 | 进度 / surface 表 | `tasks/plan.md` 的「进度」节：两个口径分开写（可判表面 / TDLib 本体），主分母饱和后切 lane cell（round 16） | — |
 | 领域语言 | 未建（`/domain-modeling` 按需） | — |
