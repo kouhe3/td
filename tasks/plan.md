@@ -1,6 +1,6 @@
 # Plan — RIIR（JSON/C ABI 边界差分实现）
 
-gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=76 | status=running | date=2026-11-28
+gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038978aaeef7f8d6ac62bb8ff | criteria=uv run python tools/verify.py | round=77 | status=running | date=2026-11-28
 
 ## 范围
 
@@ -174,6 +174,7 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | T124 | N1：`td::FormattedDate` 纯值面——两条 `get_formatted_date`（字符串格式 vs td_api 对象）、构造器、`get_date_time_formatting_type_object`、两条 telegram_api 对象（`messageEntityFormattedDate` / `textDate`）、`operator==` 与打印 | F282–F285 | done（`formatted_date_diff.py`：7 case / 语料 101 行 / 输出 188 行、`PASS cases=7 lines=188`，0.30 s，`corpus md5=2886548b`；22 条手算 cell。判据事实：`"dD"` 与 `"Dd"` 都是 24 而构造器只给 8、只有 td_api 重载拒绝 `date<=0`、`"rt"` 非法、`typeobj 33` 是 `rel`（1 位压过 32）、参数解析用 `strtoll` + 截断。**无 abort 对**：唯一的 `UNREACHABLE` 在 `get_formatted_date(date,type_ptr)` 的 `default:`，`DateTimeFormattingType` 只有两个子类。RED：去掉 `date<=0` 检查 → `DIFF api_types line 12`；`'D'` 映射错 → `DIFF formats line 9`） |
 | T125 | N1 续：`td::ReactionType` 纯值面——四种编码（空 / emoji / `#`+base64 / `$`）、三条构造（telegram_api / td_api / `paid()`）、三层出口、`get_hash`、`get_reaction_types_hash`、`<` 全序、`==`、打印；custom 的非法 base64 作 abort 对 | F287–F290 | done（`reaction_type_diff.py`：9 case + 3 check / 语料 79 行 / 输出 140 行、`PASS cases=9 checks=3 lines=140`，1.5 s，`corpus md5=4b5643c5`；17 条手算 cell。判据事实：四种编码、`$ < "" < "#…" < emoji` 的非字典序、空串两个 td_api 出口是 nullptr、`#`/`$` 防伪 + `check_utf8`、`get_hash` 的两条 md5 锚、paid 前置插入、`get_reaction_types_hash` 的符号扩展。**abort 对**：`#zz` 撞 base64 CHECK、`#abc` 撞 8 字节 CHECK、正常 custom 为 0。顺带把 `md5` 抽成 `rust/src/md5.rs`，`secure_storage_file` 的 `checks=102` 不变。RED：去掉 paid 特判 → `DIFF paid line 6`；`to_le`→`to_be` → `DIFF custom line 1`） |
 | T126 | `emoji.h` 面：七个纯函数（判定 / 结构 / 四个变换），并把 `rust/src/emoji.rs` 抽成共享模块供 `text_search::is_emoji` 复用——预注册预测「ZWJ 串上两侧不等价」 | F292–F296 | done（`emoji_diff.py`：5 case / 语料 2434 行（2370 全表 + 64 边界）/ 输出 4858 行、`PASS cases=5 lines=4858`，0.3 s，`corpus md5=9ab95b25`；19 条手算 cell。**勘误 F292**：旧 `binary_search` 的最早分歧不是 ZWJ 而是 `👍\uFE0F`（表里没有「基础 + 末尾 VS16」的通用形态，靠 `is_emoji_element` 剥 selector）；ZWJ 与 Fitzpatrick 的结论不变。三条变异：旧语义 → 三行红；删剥 selector → 红；删「两个连续 VS16」护栏 → **全绿**（该护栏在当前表下等价，记 F296）。`rust/src/emoji.rs` 共享后 `tdjson_diff` 仍 `failures=0`） |
+| T127 | 结清 F288 的 unmeasured：把 `rust/src/emoji.rs` 接回 `ReactionType::remove_emoji_selectors`，打开 `get_hash`/`get_reaction_types_hash` 的 emoji 分支；语料加 VS16 / Fitzpatrick / ZWJ 三种 emoji 的 hash 与 vechash | F298 | 进行中（预注册已落） |
 
 ## 下一步（2026-11-28，round 66 收口后）
 
@@ -325,3 +326,4 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | 2026-11-28 | —（预注册，无实现） | T126, 台账, 门禁 | 预注册 `emoji.h` lane：F292（七个纯函数可判；**预测 Rust `text_search::is_emoji` 的 `binary_search` 在 ZWJ 串上不与 C++ 等价**，修饰符两侧一致）+ F293（判定/结构/逐字节三种形态 + 回流条件「修正后必须重跑 `tdjson_diff`」）。plan gate 行 `round` 75 → 76。 |
 | 2026-11-28 | F292–F296 | T126, 门禁, coverage-domain, SPEC, 落点表 | round 76：`emoji.h` 面。探针 `tools/fixtures/emoji_probe.cpp`（六条命令，只链 `libtdutils.a`），Rust `rust/src/emoji.rs`（共享模块）+ `rust/src/bin/emoji_probe.rs`，仪器 `tools/emoji_diff.py`（`PASS cases=5 lines=4858`，2434 行语料）。`text_search::is_emoji` 改用共享模块后 `tdjson_diff` 仍 `failures=0`。门禁 74 → 75（自动发现，`verify.py` 未改）。F292 的一处预测被实测推翻并勘误（见 F294）。 |
 | 2026-11-28 | F297 | 全部 lane, 冻结树 | round 76 的 75 项快照入库：`docs/gate-4b3cd0df7.json`（commit `4b3cd0df7`、`worktree_dirty=false`、`failures=0`、build `warnings=0`、258 s）；冻结树补 round 76 与快照行。 |
+| 2026-11-28 | —（预注册，无实现） | T127, 台账, 门禁 | 预注册「`ReactionType` 的 emoji hash」：F298（`remove_emoji_selectors` 接回共享模块；预测 `hash(👍+VS16) == hash(👍)`，Fitzpatrick 与 ZWJ 各自独立；selftest 用 `hashlib` 反算）。plan gate 行 `round` 76 → 77。 |
