@@ -135,6 +135,8 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 
 | T88 | 收掉 unicode 表：`get_unicode_simple_category` / `prepare_search_character` / `unicode_to_lower` / `remove_diacritics` 全码点扫描 + 区间端点，外加 `utf8_to_lower` 与 `utf8_get_search_words` 两个组合函数；表由生成器从 `unicode.cpp` 落到 `rust/src/unicode_tables.rs`，`lib.rs` 的内联表改为引用 | F176, F177 | done（`unicode_diff.py`：1,114,112 码点全扫 / 1,127,703 行输出、`PASS`，2.6 s，26 条手算 cell；生成器 `--check` 绿；`lib.rs` −857/+9 行、`tdjson` MATCH 1561 不变；三次变异 RED：负值映射 +1、`to_lower` 边界、`remove_diacritics` 端点） |
 | T89 | 换到输出面：`StringBuilder` 的整数六宽度、字符/布尔/Slice/数组/pair/vector、`FixedDouble` 的 classic-locale 定点格式化、`%p`、缓冲增长与定长截断 + error 标志；双精度按位型喂入 | F178, F179 | done（`string_builder_diff.py`：389 行脚本 / 355 行输出 + 7 个 abort 例、`PASS`，1.5 s，145 行独立复算；三次变异 RED：INT64_MIN 进位、fixed→exp、截断少一字节；`%p` 小写与负 precision=6 是本轮两条反直觉事实） |
+| T90 | 换到转写面：`get_word_transliterations` 的 en↔ru 四张表、复杂规则的表序首匹配、`allow_partial` 的前缀枚举、`td::unique` 的排序去重；语料覆盖 26 个拉丁字母、17 条复杂规则、重叠前缀与 33 个俄文字母 | F180, F181 | 待证 |
+| T91 | 解锁 Hints 的非 ASCII 面：把 `get_word_transliterations(false)` 进 `translit_word_to_keys_`、`search_word` 的两表查询与 `allow_partial=true` 的查询侧转写放进同一个 `hints` 状态机；语料加西里尔/希腊/全角/附标名字与查询 | F182, F183 | 待证 |
 
 ## 变更记录
 
