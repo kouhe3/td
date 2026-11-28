@@ -59,6 +59,7 @@ GATES = [
     ("tddb_paths", [PYTHON, "tools/tddb_paths_diff.py", "--selftest"]),
     ("sqlite_kv", [PYTHON, "tools/sqlite_kv_diff.py", "--selftest"]),
     ("tqueue", [PYTHON, "tools/tqueue_diff.py", "--selftest"]),
+    ("tqueue_binlog", [PYTHON, "tools/tqueue_binlog_diff.py", "--selftest"]),
     ("crypto", [PYTHON, "tools/crypto_diff.py", "--selftest"]),
     ("auth_key", [PYTHON, "tools/auth_key_diff.py", "--selftest"]),
     ("msg_layer", [PYTHON, "tools/msg_layer_diff.py", "--selftest"]),

@@ -57,8 +57,8 @@ use sha2::{Digest, Sha256};
 mod binlog_format;
 
 use binlog_format::{
-    create_raw, from_hex, store_tl_string, take_tl_string, u32_at, u64_at, FLAG_REWRITE,
-    HEADER_SIZE, LAZY_FLUSH_THRESHOLD, MIN_SIZE, REINDEX_LEVELS, SERVICE_EMPTY, TAIL_SIZE,
+    from_hex, make_event, store_tl_string, take_tl_string, walk_frames, Frame, Processor, FLAG_REWRITE,
+    LAZY_FLUSH_THRESHOLD, REINDEX_LEVELS, SERVICE_EMPTY,
 };
 
 const HEX_PREVIEW: usize = 32;
@@ -78,128 +78,6 @@ fn to_hex(data: &[u8], limit: usize) -> String {
         out = "-".to_owned();
     }
     out
-}
-
-/// A frame plus the parsed fields, exactly as `BinlogEvent` holds them.
-#[derive(Clone)]
-struct Frame {
-    id: u64,
-    event_type: i32,
-    flags: i32,
-    data: Vec<u8>,
-    raw: Vec<u8>,
-}
-
-fn make_event(id: u64, event_type: i32, flags: i32, data: &[u8]) -> Frame {
-    Frame {
-        id,
-        event_type,
-        flags,
-        data: data.to_vec(),
-        raw: create_raw(id, event_type, flags, data),
-    }
-}
-
-/// Frame walk of a plaintext binlog; stops at the first incomplete frame.
-fn walk_frames(bytes: &[u8]) -> Vec<Frame> {
-    let mut events = Vec::new();
-    let mut offset = 0;
-    while offset + 4 <= bytes.len() {
-        let size = u32_at(bytes, offset) as usize;
-        if size < MIN_SIZE || offset + size > bytes.len() {
-            break;
-        }
-        events.push(Frame {
-            id: u64_at(bytes, offset + 4),
-            event_type: u32_at(bytes, offset + 12) as i32,
-            flags: u32_at(bytes, offset + 16) as i32,
-            data: bytes[offset + HEADER_SIZE..offset + size - TAIL_SIZE].to_vec(),
-            raw: bytes[offset..offset + size].to_vec(),
-        });
-        offset += size;
-    }
-    events
-}
-
-struct Entry {
-    /// `event_id * 2 + was_deleted`, the processor's ordering key
-    fixed: u64,
-    event: Frame,
-    deleted: bool,
-}
-
-/// `detail::BinlogEventsProcessor`: the live set the replay keeps, plus the
-/// counters that decide when the writer reindexes.
-#[derive(Default)]
-struct Processor {
-    entries: Vec<Entry>,
-    total_events: usize,
-    empty_events: usize,
-    last_event_id: u64,
-    total_raw: usize,
-}
-
-impl Processor {
-    fn back(&self) -> Option<u64> {
-        self.entries.last().map(|entry| entry.fixed)
-    }
-
-    /// `BinlogEventsProcessor::do_event`.
-    fn add(&mut self, event: Frame) -> Result<(), String> {
-        let fixed = event.id.wrapping_mul(2);
-        let is_rewrite = event.flags & FLAG_REWRITE != 0;
-        if is_rewrite && self.back().is_some_and(|back| back >= fixed) {
-            let position = self
-                .entries
-                .iter()
-                .position(|entry| entry.fixed == fixed)
-                .ok_or_else(|| format!("Ignore rewrite log event id={} type={}", event.id, event.event_type))?;
-            self.total_raw -= self.entries[position].event.raw.len();
-            if event.event_type == SERVICE_EMPTY {
-                self.entries[position].fixed = fixed + 1;
-                self.entries[position].deleted = true;
-                self.empty_events += 1;
-            } else {
-                // the folded copy loses the flag, but `raw` keeps the written bytes
-                let mut folded = event;
-                folded.flags &= !FLAG_REWRITE;
-                self.total_raw += folded.raw.len();
-                self.entries[position] = Entry {
-                    fixed,
-                    event: folded,
-                    deleted: false,
-                };
-            }
-        } else if event.event_type < 0 {
-            // service frames are written but never replayed
-        } else {
-            if self.back().is_some_and(|back| back >= fixed) {
-                return Err(format!("out of order event id={}", event.id));
-            }
-            self.last_event_id = event.id;
-            self.total_raw += event.raw.len();
-            self.total_events += 1;
-            self.entries.push(Entry {
-                fixed,
-                event,
-                deleted: false,
-            });
-        }
-        if self.total_events > 10 && self.empty_events * 4 > self.total_events * 3 {
-            self.compactify();
-        }
-        Ok(())
-    }
-
-    fn compactify(&mut self) {
-        self.entries.retain(|entry| !entry.deleted);
-        self.total_events = self.entries.len();
-        self.empty_events = 0;
-    }
-
-    fn live(&self) -> impl Iterator<Item = &Frame> {
-        self.entries.iter().filter(|entry| !entry.deleted).map(|entry| &entry.event)
-    }
 }
 
 /// The plaintext binlog writer the KV sits on (`Binlog` minus encryption).

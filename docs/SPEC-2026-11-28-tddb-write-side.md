@@ -1,7 +1,7 @@
 # SPEC（as-built）— `tddb` 存储面（binlog + crypto + KV(binlog/sqlite) + TQueue + TdDb 路径）
 
 > **as-built 规格，不是 to-build。** 它记录「已判过、数字可复现」的现状，供接手方当底图。
-> 台账行为证据来源：`docs/facts.md` F185–F201。
+> 台账行为证据来源：`docs/facts.md` F185–F204。
 
 ## 1. 定义域
 
@@ -9,10 +9,10 @@
 |---|---|
 | C++ 源 | `tddb/td/db/binlog/{Binlog,BinlogEvent,BinlogInterface}.{h,cpp}`、`tddb/td/db/{BinlogKeyValue.h,SeqKeyValue.h,DbKey.h,KeyValueSyncInterface.h}`、`td/telegram/TdDb.{h,cpp}`、`tdutils/td/utils/crypto.{h,cpp}`、`tdutils/td/utils/port/path.cpp`（`mkpath`/`mkdir`/`realpath`） |
 | C++ 源（SQLite） | `tddb/td/db/{SqliteKeyValue,SqliteDb,SqliteStatement}.{h,cpp}` + `tddb/td/db/detail/RawSqliteDb.{h,cpp}`，跑在仓库内置的 **SQLCipher 3.31.0** 上（`sqlite/`，构建产物 `C:/tmp/td-build/sqlite/libtdsqlite.a`） |
-| C++ 源（TQueue） | `tddb/td/db/TQueue.{h,cpp}`（`TQueueImpl` + `TQueueMemoryStorage`；`TQueueBinlog` 与 `close(Promise)` 不在范围内） |
+| C++ 源（TQueue） | `tddb/td/db/TQueue.{h,cpp}`（`TQueueImpl` + `TQueueMemoryStorage` + `TQueueBinlog<Binlog>` 模板的显式实例化；只有 `close(Promise)` 不在范围内） |
 | 规模 | 被判 11 个文件 / 2,728 行（`tddb` 全目录 4,792 行）；SQLite 面另加 4 个文件 / 605 行（`SqliteKeyValue` 130 + `SqliteDb` 323 + `SqliteStatement` 205 + `RawSqliteDb` 减少量不计） |
 | oracle | `libtdjson.dll` + `C:/tmp/td-build/tddb/{libtddb.a,binlog_dump.exe}` + `libtdcore.a`（`TdDb` 那条） |
-| 台账 | F185–F201；`tasks/plan.md` T92–T99 |
+| 台账 | F185–F204；`tasks/plan.md` T92–T100 |
 
 ## 2. 可复现现状
 
@@ -25,6 +25,7 @@ uv run python tools/crypto_diff.py --selftest              # 457 行，6.7 s
 uv run python tools/tddb_paths_diff.py --selftest          # 35 行 + 目录树，0.2 s
 uv run python tools/sqlite_kv_diff.py --selftest           # SQLite KV：11 case + 2 check，8.3 s
 uv run python tools/tqueue_diff.py --selftest              # TQueue：12 case + 2 check，7.0 s
+uv run python tools/tqueue_binlog_diff.py --selftest       # TQueueBinlog：10 case，4,016 B，1.2 s
 ```
 
 ## 3. 判据
@@ -39,6 +40,7 @@ uv run python tools/tqueue_diff.py --selftest              # TQueue：12 case + 
 | `TdDb` 路径与 key | stdout 逐字节 + **目录树快照** | 35 行，`md5=ad8d60ca`，0.2 s | F193/F194 |
 | SQLite KV（`SqliteKeyValue` + `SqliteDb` 的事务计数 + `SqliteStatement` 的 blob 绑定/视图） | narration 逐行（**行序本身是判据**）+ **双向交叉读**（C++ 读 Rust 库、Rust 读 C++ 库）+ abort 对（`--check`，只比 rc 类别） | 11 case + 2 check 例 / 376,832 B，`md5=715cc4cb`，8.3 s | F196–F198 |
 | TQueue（`TQueueImpl` + `TQueueMemoryStorage` + `EventId`） | narration 逐行 + FLOOR + abort 对（`do_push` 的空 `EventId`）+ **`replay` 重建**（storage 重放到新队列，head/tail/size 必须一致） | 12 case + 2 check 例 / 语料 109 行 / 输出 198 行，`md5=87e3f3e6`，7.0 s | F199–F201 |
+| TQueueBinlog（`push`→`add`/`rewrite`、`pop`→`erase`、`pop_batch`→`erase_batch`、`replay`） | **binlog 文件逐字节** + narration + **双向交叉 replay** + FLOOR；selftest 用**独立的 Python 帧解析**反算 type/flags/size/body（不复用任何一侧的 walker） | 10 case / 4,016 B，`md5=15f996ad`，1.2 s | F202–F204 |
 
 判据事实里最容易被接手方踩到的几条（全部有复现命令）：
 
@@ -67,6 +69,10 @@ uv run python tools/tqueue_diff.py --selftest              # TQueue：12 case + 
 - TQueue：`push` 的检查顺序是 empty-data → 太大 → queue 0 → 满 → 总长 → already-expired，所以一个「又大又过期」的请求报的是 `Data is too big`。
 - TQueue：`EventId::from_int32(0)` **成功**（0 有效但 `empty()`），`MAX_ID = 2000000000` 及以上报 `Invalid ID`；`next()`/`advance()` 先算再校验，`next(1999999999)` 因此失败。
 - TQueue：GC 只在**队列的调度时间严格早于 `unix_time_now`** 时触发，而那个时间是该队列第一次 push 时的 `expires_at`——之后 push 的短命事件不会提前它。
+- TQueueBinlog：帧体是 `TQueueLogEvent` = `queue_id:i64 ‖ event_id:i32 ‖ expires_at:i32 ‖ data:TL-string ‖ [extra:i64 仅当 != 0]`，`magic = 2314 + (extra != 0)`。帧长 = **32（头 28 + crc 4）+ body**，所以 `extra = 7` 的帧 60 字节、`extra = 0` 的 52 字节；`binlog_dump` 打印的 `size:28` 是 **body** 长度。
+- TQueueBinlog：`clear`/`pop` **只清 data、不清 extra**，所以一个 2315 的事件被清空后 rewrite 帧仍然是 **2315**，body 里 `extra` 仍是原值。「按当前 extra 决定 magic」这句话仍然成立，但语料要按「extra 保留」来写。
+- TQueueBinlog：`erase` 是 32 字节的 `type = -2`、`flags = 1`、空 data 帧，`id` 指向**被删事件的 `log_event_id`**；`erase_batch` 先用 `next_event_id(0)`（计数器不动）再逐条 `erase`。
+- TQueueBinlog：`replay` 拿到的是 `BinlogEventsProcessor` 的 **live 集**，不是磁盘上的帧——6 个帧里只有 1 个能进队列。Rust 侧若直接 `walk_frames` 后逐帧 `do_push`，会把 erase 帧当成 `Wrong magic`。
 
 ## 4. 不可判项 + 回流条件
 
@@ -102,4 +108,5 @@ uv run python tools/tqueue_diff.py --selftest              # TQueue：12 case + 
 - `tddb/td/db/{SqliteKeyValue.{h,cpp},SqliteStatement.{h,cpp},detail/RawSqliteDb.{h,cpp}}`（SQL 语句、绑定与视图、`next_prefix`、事务计数）；
 - `rust/src/sqlite_kv.rs`（Rust 侧同一套语句）；`rusqlite` 的 bundled sqlite 跨大版本（当前 3.53.1）；
 - `tddb/td/db/TQueue.{h,cpp}`（`get_size` 的空尾规则、`pop` 的 rewrite 分支、两个 sanity 窗口、六个 `MAX_*` 常量）；`rust/src/tqueue.rs`（Rust 侧同一套队列语义）；
+- `TQueueLogEvent::store/parse` 的字段顺序、`BINLOG_EVENT_TYPE`（2314）、`rust/src/binlog_format.rs` 的 `Frame`/`walk_frames`/`Processor`；
 - oracle 重建（`libtdjson.dll` md5 变）或 `binlog_dump.exe` 重编。
