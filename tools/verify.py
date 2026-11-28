@@ -12,7 +12,7 @@
     `misc` 的 `--selftest`）、存储面 lane（`binlog`、`binlog_write`、`crypto`、
     `binlog_kv`、`tddb_paths`、`sqlite_kv`、`tqueue`、`tqueue_binlog`、`sqlite_safe`、
     `sqlite_async`）、`td/telegram` 值类型与对象面 lane（`usernames`、`message_id`、
-    `dialog_id`、`topic_id`、`outline`、`td_api_objects`）、
+    `dialog_id`、`topic_id`、`outline`、`td_api_objects`、`media_geometry`）、
     `tools/tdjson_fuzz.py`（随机语料零分歧）、`tools/client_diff.py`（客户端 lane 对齐）、
     七个 `gen_*.py --check` 生成器（`client_options`、`tl_schema`、`mime_tables`、
     `emoji_table`、`country_table`、`ton_address`、`api_functions`）与仓库内容逐字节相同。
@@ -87,6 +87,7 @@ GATES = [
     ("topic_id", [PYTHON, "tools/topic_id_diff.py", "--selftest"]),
     ("outline", [PYTHON, "tools/outline_diff.py", "--selftest"]),
     ("td_api_objects", [PYTHON, "tools/td_api_objects_diff.py", "--selftest"]),
+    ("media_geometry", [PYTHON, "tools/media_geometry_diff.py", "--selftest"]),
     ("tls_init", [PYTHON, "tools/tls_init_diff.py", "--selftest"]),
     ("dh_handshake", [PYTHON, "tools/dh_handshake_diff.py", "--selftest"]),
     ("rsa", [PYTHON, "tools/rsa_diff.py", "--selftest"]),

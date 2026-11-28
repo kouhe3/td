@@ -40,6 +40,7 @@ uv run python tools/topic_id_diff.py --selftest     # 5 case（4 + 1 abort）/ 3
 | `dialog_id` | narration 逐行 + FLOOR + 四条 abort 对 + 手算 cell | 7 case + 4 check / 302 行 | F212–F214 |
 | `topic_id` | narration 逐行 + FLOOR + 一条 abort + 手算 cell | 5 case（4 + 1 abort）/ 56 行 | F221–F223 |
 | `td_api_objects`（`get_usernames_object` / `get_message_id` 两段） | narration 逐行（JSON 逐字节）+ FLOOR + abort 对 + 手算 cell | 5 case + 1 check / 100 行（与 text-transforms 的 `get_outline_object` 共用一条 lane） | F234–F237 |
+| `media_geometry`（`Dimensions` + `MediaAreaCoordinates`） | narration 逐行（64 位位型 + 六位小数 + `areaPosition` JSON）+ FLOOR + 两条 abort 对 + 手算 cell | 3 case + 2 check / 102 行 | F239–F242 |
 
 判据句（每条都是验收）：
 
@@ -87,6 +88,7 @@ uv run python tools/topic_id_diff.py --selftest     # 5 case（4 + 1 abort）/ 3
 | 项 | 原因 | 回流条件 |
 |---|---|---|
 | `store`/`parse` 序列化 | 需要 TL storer 与版本化字段布局，本 lane 只判值语义 | 接 `TlStorer` 的对拍 lane（与 `BinlogKeyValue` 的 store 同型） |
+| 几何相邻值类型（`PhotoSizeSource` / `PhotoSizeType` / `Dimensions` 之外的媒体几何） | 需要更多 TL 对象与 `FileType` 装配 | 与对象面 lane 合流后再判 |
 | `Td` 依赖的调用方（`UserManager` 装配、`check_username` 流程） | 需要 `Td` 与网络/状态机 | 造出 `Td` 的 seam 或按 ABI 面 indirect 判 |
 | 并发/跨线程可见性 | `Usernames` 是值类型，调用方负责同步 | 不需要（纯值语义） |
 | `MessageId` 的两条 order 谓词（`is_message_id_order_ascending`/`descending`） | 需要一串 `telegram_api::Message`，判的是「哪一条先违约」的日志而不是返回值 | 造多违约语料并把日志文本纳入判据 |

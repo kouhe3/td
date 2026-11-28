@@ -132,6 +132,7 @@
 |---|---|---|
 | `get_outline_svg_path`（紧凑编码展开 + `M/L/H/V/C/S/Z` 归一化 + `int` 截断缩放 + `z` 回闭） | measured（F225–F227：6 case / 33 行语料 / 54 行输出，`PASS cases=6`，0.2 s；输出逐字节 + FLOOR + 9 条手算 cell。判据事实：函数自补 `M`/`z`、`z` 仅在偏离起点时补 `L`、`int` 截断、`S` 反射、未知命令空串） | 紧凑编码的 `>=64`/`>=128` 简写不在范围内；`get_outline_object`（td_api 对象）已由 `td_api_objects` lane 判（F236） |
 | 生成对象面：`td_api` 的 JSON 打印（`td_api_json_*` 的生成 `to_json`）与三个装配函数 `Usernames::get_usernames_object()`、`get_outline_object(path, zoom, source)`、`MessageId::get_message_id(const telegram_api::Message*, bool)` | measured（F234–F237：5 case + 1 check / 39 行语料 / 100 行输出，`PASS cases=5 checks=1`，0.4 s；判据 = narration 逐行（`json=` 逐字节）+ FLOOR + 非法 UTF-8 的 abort 对 + 13 条手算 cell。判据事实：`int64` 打成 JSON 字符串、`double` 六位小数（`nan`/`inf` 原样）、`bytes` base64、null 的 `object_ptr` 字段整条省略、vector 里的 null 打 `null`、空 vector 打 `[]` | TL `store`（`TlStorerToString`）与其余 ~1100 个生成打印器不在范围内 |
+| 媒体几何面：`get_dimensions` / `get_dimensions_pixel_count` / `Dimensions` 的 `==` 与 `<<`；`MediaAreaCoordinates` 的两个构造器、`init` 的夹取与归零、`is_valid`、`get_area_position_object`、`get_input_media_area_coordinates`、`==`/`!=`、`<<` | measured（F239–F242：3 case + 2 check / 32 行语料 / 102 行输出，`PASS cases=3 checks=2`，0.55 s；判据 = narration 逐行（64 位位型 + 六位小数 + `areaPosition` JSON）+ FLOOR + 两条 abort 对 + 12 条手算 cell。判据事实：单边越界整对清零、非有限值先归 0、rotation 夹到 `[-360, 360]` 后负数加 360、TL 构造器丢 `flags` 而 getter 从 `radius > 0` 重算、`==` 是逐字段 `|Δ| < 1e-6` | `store`/`parse` 与 `PhotoSizeSource` 一类几何相邻值类型不在范围内 |
 
 ## 协议面与 RPC 面
 
