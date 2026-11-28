@@ -43,6 +43,7 @@ uv run python tools/sqlite_async_diff.py --selftest        # 异步层串行驱�
 | binlog 写侧·加密 | **结构 + 双向交叉读**（C++ `binlog_dump` 读 Rust 文件、Rust `binlog_head` 读 C++ 文件）+ Python 重算 `key`/`key_hash` | 7 case / 201,168 B，0.9 s | F189/F190 |
 | crypto 原语 | 逐字节 + 独立 `hashlib`/`hmac`/`zlib` 反算 + RFC 7914 / RFC 4231 / NIST F.5.5 | 457 行，`md5=4d39370b`，6.7 s | F187/F188 |
 | KV 层（`BinlogKeyValue` + `SeqKeyValue`） | 明文 binlog 逐字节 + narration + 双向交叉读（四条全跑不短路） | 21 case / 884,208 B（含 4 份副本），`md5=d8c284e1`，1.84 s | F191/F192 |
+| 静态加密面（`td/telegram/SecureStorage`） | narration 逐行 + **双向交叉读** + 篡改后的 `Hash mismatch` | 5 case / 60 行语料 / 94 行输出，`PASS cases=5`，0.72 s | F244–F247 |
 | `TdDb` 路径与 key | stdout 逐字节 + **目录树快照** | 35 行，`md5=ad8d60ca`，0.2 s | F193/F194 |
 | SQLite KV（`SqliteKeyValue` + `SqliteDb` 的事务计数 + `SqliteStatement` 的 blob 绑定/视图） | narration 逐行（**行序本身是判据**）+ **双向交叉读**（C++ 读 Rust 库、Rust 读 C++ 库）+ abort 对（`--check`，只比 rc 类别） | 11 case + 2 check 例 / 376,832 B，`md5=715cc4cb`，8.3 s | F196–F198 |
 | TQueue（`TQueueImpl` + `TQueueMemoryStorage` + `EventId`） | narration 逐行 + FLOOR + abort 对（`do_push` 的空 `EventId`）+ **`replay` 重建**（storage 重放到新队列，head/tail/size 必须一致） | 12 case + 2 check 例 / 语料 109 行 / 输出 198 行，`md5=87e3f3e6`，7.0 s | F199–F201 |
@@ -87,6 +88,8 @@ uv run python tools/sqlite_async_diff.py --selftest        # 异步层串行驱�
 | 项 | 原因 | 回流条件 |
 |---|---|---|
 | SQLite 文件的字节 | 两侧 sqlite 版本跨 22 个次版本（3.31.0 vs 3.53.1），页布局与 `sqlite_master` 文本不可比 | 两侧对齐到同一份 amalgamation；否则用交叉读代替（已做） |
+| 随机前缀的内容与 `Secret::create_new` 的随机性 | `Random::secure_bytes` 走 OS，两次运行必不同 | 只判结构（长度公式 + 首字节 = 长度 + 16 对齐）；内容不可判 |
+| `encrypt_file` / `decrypt_file` | 文件路径、`FileFd` 的 OS 错误文案与平台相关 | 只判内存路径（`encrypt_value`/`decrypt_value`）；文件变体接 `FileDataView` 后另判 |
 | SQLCipher 加密路径（`PRAGMA key` / `cipher_compatibility`） | `DbKey` 非空才走，`rusqlite` 的 bundled 不带 sqlcipher | 换 `bundled-sqlcipher`，且接受密文仍不可比 |
 | `RawSqliteDb::last_error` 在 `SQLITE_CORRUPT` 时删库 | 需要造一个损坏库，且删完才有可观察差异 | 造损坏库并只比「文件是否还在」 |
 | `SqliteStatement::explain()` 的 query plan 文本 | 计划文本随 sqlite 版本变 | 版本对齐后 |
