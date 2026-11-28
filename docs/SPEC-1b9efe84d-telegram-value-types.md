@@ -15,6 +15,7 @@
 | C++ 源（`DialogId`） | `td/telegram/DialogId.{h,cpp}`（211 行）+ `UserId.h` / `ChatId.h` / `ChannelId.h` / `SecretChatId.h` 的 MAX/MIN 常量：六个构造、五段负区间、四个取值、五个 `get_dialog_ids` 重载、`operator<<` |
 | C++ 源（topic ids） | `td/telegram/ForumTopicId.h`（98 行）+ `td/telegram/SavedMessagesTopicId.{h,cpp}`（纯值部分）：`is_valid`/`get`/`==`/`operator<<`、`general()`、与 `MessageId` 的往返、`get_unique_id`/`is_author_hidden`、三种打印 |
 | 传入结构 | `telegram_api::username`（生成类，判据只读 `username_`/`active_`/`editable_`/`deletable_`/`expired_` 五个字段） |
+| C++ 源（`FormattedDate`） | `td/telegram/FormattedDate.{h,cpp,hpp}`（193 + 40 + 24 行）：两条 `get_formatted_date`（`date_format` 字符串 / `td_api::DateTimeFormattingType`）、七 bool 构造器、`get_date_time_formatting_type_object`、`get_input_message_entity_formatted_date`、`get_input_text_date`、`operator==` 与 `operator<<`；`date_flags` 是六位掩码（Relative 1 / ShortTime 2 / LongTime 4 / ShortDate 8 / LongDate 16 / DayOfWeek 32） |
 | 依赖 | `tdutils` 的 `check_utf8` 与 `StringBuilder`（vector 打 `{a, b}`）；**不碰** `Td`、actor、scheduler |
 | 语言/构建 | C++（oracle：`C:/tmp/td-build/libtdcore.a` + `libtdapi.a`）对 Rust（`rust/src/bin/usernames_probe.rs`） |
 | oracle 探针 | `C:/tmp/td-probe/usernames_probe.exe`，源码 `tools/fixtures/usernames_probe.cpp`，完整 g++ 命令行在文件头 |
@@ -28,6 +29,7 @@ uv run python tools/usernames_diff.py --selftest    # 21 case + 1 check / 146 �
 uv run python tools/message_id_diff.py --selftest   # 8 case + 4 check / 268 行语料 / 430 行输出，1.1 s
 uv run python tools/dialog_id_diff.py --selftest    # 7 case + 4 check / 199 行语料 / 302 行输出，0.9 s
 uv run python tools/topic_id_diff.py --selftest     # 5 case（4 + 1 abort）/ 34 行语料 / 56 行输出，0.4 s
+uv run python tools/formatted_date_diff.py --selftest  # 7 case / 101 行语料 / 188 行输出，0.30 s
 ```
 
 实测（2026-11-28）：`PASS cases=21 checks=1 lines=242`，`corpus md5=c0cb8ba7e1d426f9cac0550c443a8a43`；冷构建后首跑 16.6 s。四条判据全跑不短路（narration 逐行、FLOOR、abort 对、8 条手算 cell）。
@@ -47,6 +49,7 @@ uv run python tools/topic_id_diff.py --selftest     # 5 case（4 + 1 abort）/ 3
 | `media_geometry`（`Dimensions` + `MediaAreaCoordinates`） | narration 逐行（64 位位型 + 六位小数 + `areaPosition` JSON）+ FLOOR + 两条 abort 对 + 手算 cell | 3 case + 2 check / 102 行 | F239–F242 |
 | `top_dialog_category`（枚举映射：`TopDialogCategory` + `NotificationGroupType`） | narration 逐行 + FLOOR + 八条 abort 对 + 手算 cell | 6 case + 8 check / 96 行 | F264–F267 |
 | `dialog_photo`（照片面，只判不碰 `FileManager` 的 11 个函数） | narration 逐行 + FLOOR + 手算 cell（**无 abort 对**：这半没有 CHECK 路径） | 9 case / 88 行 | F270–F273 |
+| `formatted_date`（日期格式化：两条解析路径 + 三条映射出口） | narration 逐行 + FLOOR + 22 条手算 cell，**无 abort 对**（唯一的 `UNREACHABLE` 不可达） | 7 case / 101 行语料 / 188 行输出 | F282–F285 |
 
 判据句（每条都是验收）：
 
@@ -106,6 +109,8 @@ uv run python tools/topic_id_diff.py --selftest     # 5 case（4 + 1 abort）/ 3
 | `MessageId` 的 storer/parser 模板 | 序列化只有 `store_long`/`fetch_long`，但要跨版本布局 | 与 `Usernames` 的 store/parse 一起做 |
 | `get_message_dialog_id` 与 `Peer`/`DialogPeer` 构造 | 需要 TL 对象 | 与 `MessageId` 的 TL 面同一条 lane |
 | `DialogId` 的 storer/parser | `store_long`/`fetch_long` | 同上 |
+| `FormattedDate` 的 `store`/`parse` | 只写 `date_` 与 `date_flags_` 两个 int32，没有独立语义（`.hpp` 里就是两次 `td::store`） | 与 `Usernames` 的 store/parse 一起做 TL storer 对拍 |
+| `get_formatted_date(date, type_ptr)` 的 `default: UNREACHABLE()` | `DateTimeFormattingType` 只有 `Relative`/`Absolute` 两个子类，构造不出第三个 | 上游新增/删除子类时重判 |
 | 吃 `Td` 的 topic 方法（topic type object / input peer / input user） | 需要 `Td` 与 user/dialog manager | 造 `Td` 的 seam，或按 ABI 面 indirect 判 |
 | `SavedMessagesTopicId(DialogId, MessageForwardInfo*, DialogId)` | 需要转发信息对象 | 与 topic type object 一起做 |
 | `DialogPhoto` 的 8 个 `FileManager*` 函数（`get_profile_photo` / `get_dialog_photo` / `as_dialog_photo` / `as_profile_photo` / `is_same_dialog_photo` / 三个 `*_object`） | **blocked**：`FileManager` 是 `final : public Actor` 挡派生；构造器在 `FileManager.cpp:1312` 走 `G()->use_file_database()`，无 `Td` 即 `LOG_CHECK` abort（实测 stderr `[Global.h:916][&context != nullptr && context->get_id() == Global::ID]`），内部 `Context` 虚接口无法单独使用 | 上游去掉构造器里的 `G()` 依赖，或提供可注入的 `FileManager` 接口；探针里的 `static_assert(std::is_final_v<td::FileManager>)` 会在去掉 `final` 时让重编失败 |
@@ -125,3 +130,4 @@ uv run python tools/topic_id_diff.py --selftest     # 5 case（4 + 1 abort）/ 3
 - `td/telegram/TopDialogCategory.{h,cpp}` / `NotificationGroupType.{h,cpp}`（映射表或 `Size` 常量）；
 - `td/telegram/DialogPhoto.{h,cpp}` 的纯函数，或 `td/telegram/PhotoSize.cpp` 的 `get_minithumbnail_size` / `need_update_dialog_photo_minithumbnail`；
 - `td/telegram/files/FileManager.h` 的 `final` 修饰（去掉即让 `dialog_photo` 的 blocked 半边重新可判）或 `FileManager.cpp` 构造器里的 `G()` 依赖。
+- `td/telegram/FormattedDate.{h,cpp}`（六个 `DateFlags` 常量、两条解析路径的 `if/else` 差异、`get_date_time_formatting_type_object` 的五分支）或 `telegram_api.tl` 的 `messageEntityFormattedDate` / `textDate` 字段序。

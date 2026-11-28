@@ -141,6 +141,12 @@
 | 照片面（`DialogPhoto` 不碰 `FileManager` 的一半）：`get_profile_photo_id`、`as_fake_dialog_photo`、`dialog_photo_get_file_ids`、`need_update_dialog_photo`、`need_update_profile_photo`、`need_update_dialog_photo_minithumbnail`、两个 `operator<<`、四个 `operator==`/`!=`、`convert_photo_to_profile_photo` | measured（F270–F273：9 case / 53 行语料 / 88 行输出，`PASS cases=9 checks=0`，0.70 s；判据 = narration 逐行 + FLOOR + 18 条手算 cell，**无 abort 对**（这半没有 CHECK/UNREACHABLE 路径）。判据事实：`need_update_dialog_photo` 不比 `minithumbnail` 而 `operator==` 比；`as_fake_dialog_photo` 缺 `'a'`/`'c'` 时塌成空结构；`mneed` 比解码尺寸且取 `max(w,h)`；`convert` 必须同时有 `'a'` 与 `'c'`） | — |
 | 照片面（`FileManager*` 那 8 个函数）：`get_profile_photo`、`get_dialog_photo`、`as_dialog_photo`、`as_profile_photo`、`is_same_dialog_photo`、`get_profile_photo_object`、`get_chat_photo_info_object`、`get_chat_photo_object` | unmeasured | **blocked**（F270）：`FileManager` 是 `final : public Actor`（`files/FileManager.h:397`）挡派生，构造器在 `FileManager.cpp:1312` 走 `G()->use_file_database()`、无 `Td` 即 `LOG_CHECK` abort（实测 stderr `[Global.h:916][&context != nullptr && context->get_id() == Global::ID]`），内部 `Context` 虚接口因此无法单独拿来用。回流条件：上游去掉构造器里的 `G()` 依赖或提供可注入接口；`static_assert(std::is_final_v<FileManager>)` 已写进探针，去掉 `final` 会重编失败并触发重判 |
 
+## 日期格式化面（`td::FormattedDate` 的 flags 位掩码）
+
+| 面 | 状态 | 判据 / 剩余缺口 |
+|---|---|---|
+| `td::FormattedDate`（两条 `get_formatted_date`、七 bool 构造器、`get_date_time_formatting_type_object`、`get_input_message_entity_formatted_date`、`get_input_text_date`、`==`/打印） | measured（F282–F285：7 case / 语料 101 行 / 输出 188 行，`PASS cases=7 lines=188`，0.30 s；判据 = narration 逐行 + FLOOR + 22 条手算 cell，**无 abort 对**。判据事实：`"dD"`/`"Dd"` 都是 24 而构造器只给 8、只有 td_api 重载拒绝 `date<=0`、`"rt"` 非法、空串合法、`typeobj 33` 是 `rel`、`typeobj 0` 是 nullptr） | `store`/`parse`（两个 int32，无独立语义）与 `get_formatted_date(date,type_ptr)` 的 `UNREACHABLE` 分支（两个子类，构造不出第三个） |
+
 ## 协议面与 RPC 面
 
 | 项 | 状态 | 判据形态 |
