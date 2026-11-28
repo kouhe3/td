@@ -140,6 +140,8 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | T92 | binlog 写侧第一形态（未加密）：`Binlog::init(…, DbKey::empty())` + `add`/`rewrite`/`erase`/`lazy_sync`/`close` 的帧、id、flags、`extra`、crc32，判据 = 文件逐字节相同 | F185, F186 | done（`binlog_write_diff.py`：1,670 行脚本 / 27 case（20 明文 + 7 加密）/ 345,272 字节、`PASS`，1.9 s；三次变异 RED：帧尾错位、crc32 只盖 header、rewrite 写自己的序号）；判据顺带证明裸 `td::Binlog` 可离线驱动，且 **>50 KiB + 5:1 死比会自动 reindex**（文件不是 append-only） |
 | T93 | 密码学原语：`pbkdf2_sha256`（2 / 60002 次迭代）、`hmac_sha256`、`AesCtrState`（跨块续流）、`crc32`，判据 = 逐字节 | F187, F188 | done（`crypto_diff.py`：458 行脚本 / 457 行输出、`PASS`，6.7 s，457 个值由 hashlib/hmac/zlib 另算 + RFC 7914 / RFC 4231 / NIST F.5.5 向量；三次变异 RED：迭代 +1、HMAC key 截断、计数器不进位）；判据附带三条 API 事实：dkLen CHECK 成 32、`iterations > 0` CHECK、`AesCtrState` 只收 32B key/16B iv |
 | T94 | binlog 写侧第二形态（加密）：首帧 `AesCtrEncryption` 的 salt/iv/`key_hash` 自洽 + 其余帧 AES-256-CTR；判据 = C++ `binlog_dump` 读 Rust 文件、Rust `binlog_head` 读 C++ 文件的 event 流相同 | F189, F190 | done（`binlog_write_diff.py --encrypted`：7 case / 201,168 字节、`PASS`，0.9 s；每 case 五条判据：帧序列、C++ 交叉读、Rust 交叉读、长度自洽、Python 从 salt 重算 key/key_hash；三次变异 RED：key_hash 常量、keystream 每次 flush 重启、header 也加密）。**更正**：预注册的「两次运行只在 salt/iv 上不同」不成立（IV 随机 → 全密文变），实测共享 33 字节前缀、分歧落在 salt 内 |
+| T95 | KV 层：`BinlogKeyValue<Binlog>` 的 `set`/`erase`/`erase_batch`/访问器/`external_init_*`/三档 magic + `SeqKeyValue` 序号语义，判据 = 明文 binlog 逐字节 + 双向交叉读（任一侧写、另一侧重放出同一 map） | F191, F192 | 待证 |
+| T96 | `TdDb` 的路径与 key 派生：`as_db_key`、`get_binlog_path`、`get_sqlite_path`、`check_parameters`（默认值、连带置位、尾斜杠、realpath、失败文案），判据 = 逐字节 | F193, F194 | 待证 |
 
 ## 变更记录
 
