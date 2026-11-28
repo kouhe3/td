@@ -137,6 +137,9 @@ gate: passed | mode=直接做 | base=1b9efe84d | oracle=libtdjson.dll@0398814038
 | T89 | 换到输出面：`StringBuilder` 的整数六宽度、字符/布尔/Slice/数组/pair/vector、`FixedDouble` 的 classic-locale 定点格式化、`%p`、缓冲增长与定长截断 + error 标志；双精度按位型喂入 | F178, F179 | done（`string_builder_diff.py`：389 行脚本 / 355 行输出 + 7 个 abort 例、`PASS`，1.5 s，145 行独立复算；三次变异 RED：INT64_MIN 进位、fixed→exp、截断少一字节；`%p` 小写与负 precision=6 是本轮两条反直觉事实） |
 | T90 | 换到转写面：`get_word_transliterations` 的 en↔ru 四张表、复杂规则的表序首匹配、`allow_partial` 的前缀枚举、`td::unique` 的排序去重；语料覆盖 26 个拉丁字母、17 条复杂规则、重叠前缀与 33 个俄文字母 | F180, F181 | done（`translit_diff.py`：18,442 载荷 × 2 flag / 124,186 行、`PASS`，4.9 s，19 条手算 cell；三次变异 RED：`sh`/`shch` 表序、partial 追加时机、排序反向）；顺带在 ABI 面加 3 条 `searchStringsByPrefix` cell（F184，MATCH 1561 → 1564） |
 | T91 | 解锁 Hints 的非 ASCII 面：把 `get_word_transliterations(false)` 进 `translit_word_to_keys_`、`search_word` 的两表查询与 `allow_partial=true` 的查询侧转写放进同一个 `hints` 状态机；语料加西里尔/希腊/全角/附标名字与查询 | F182, F183 | done（`hints_diff.py`：68 → 160 行脚本 / 156 行输出、`PASS`，0.24 s，手算 cell 18 → 43；扩展先 RED；三次变异 RED：查询侧 `allow_partial=false`、去掉转写表查询、改名不删旧转写） |
+| T92 | binlog 写侧第一形态（未加密）：`Binlog::init(…, DbKey::empty())` + `add`/`rewrite`/`erase`/`lazy_sync`/`close` 的帧、id、flags、`extra`、crc32，判据 = 文件逐字节相同 | F185, F186 | 待证 |
+| T93 | 密码学原语：`pbkdf2_sha256`（2 / 60002 次迭代）、`hmac_sha256`、`AesCtrState`（跨块续流）、`crc32`，判据 = 逐字节 | F187, F188 | 待证 |
+| T94 | binlog 写侧第二形态（加密）：首帧 `AesCtrEncryption` 的 salt/iv/`key_hash` 自洽 + 其余帧 AES-256-CTR；判据 = C++ `binlog_dump` 读 Rust 文件、Rust `binlog_head` 读 C++ 文件的 event 流相同 | F189, F190 | 待证 |
 
 ## 变更记录
 
