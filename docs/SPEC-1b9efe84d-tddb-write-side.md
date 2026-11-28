@@ -12,6 +12,7 @@
 | C++ 源 | `tddb/td/db/binlog/{Binlog,BinlogEvent,BinlogInterface}.{h,cpp}`、`tddb/td/db/{BinlogKeyValue.h,SeqKeyValue.h,DbKey.h,KeyValueSyncInterface.h}`、`td/telegram/TdDb.{h,cpp}`、`tdutils/td/utils/crypto.{h,cpp}`、`tdutils/td/utils/port/path.cpp`（`mkpath`/`mkdir`/`realpath`） |
 | C++ 源（SQLite） | `tddb/td/db/{SqliteKeyValue,SqliteDb,SqliteStatement}.{h,cpp}` + `tddb/td/db/detail/RawSqliteDb.{h,cpp}`，跑在仓库内置的 **SQLCipher 3.31.0** 上（`sqlite/`，构建产物 `C:/tmp/td-build/sqlite/libtdsqlite.a`） |
 | C++ 源（TQueue） | `tddb/td/db/TQueue.{h,cpp}`（`TQueueImpl` + `TQueueMemoryStorage` + `TQueueBinlog<Binlog>` 模板的显式实例化；只有 `close(Promise)` 不在范围内） |
+| C++ 源（连接安全层） | `tddb/td/db/{SqliteConnectionSafe.{h,cpp},SqliteKeyValueSafe.h}`：`LazySchedulerLocalStorage` 上的懒连接、`close_state_` 计数、`close_and_destroy`；驱动需要 scheduler actor（F216） |
 | 规模 | 被判 11 个文件 / 2,728 行（`tddb` 全目录 4,792 行）；SQLite 面另加 4 个文件 / 605 行（`SqliteKeyValue` 130 + `SqliteDb` 323 + `SqliteStatement` 205 + `RawSqliteDb` 减少量不计） |
 | oracle | `libtdjson.dll` + `C:/tmp/td-build/tddb/{libtddb.a,binlog_dump.exe}` + `libtdcore.a`（`TdDb` 那条） |
 | 台账 | F185–F204；`tasks/plan.md` T92–T100 |
@@ -28,6 +29,7 @@ uv run python tools/tddb_paths_diff.py --selftest          # 35 行 + 目录树�
 uv run python tools/sqlite_kv_diff.py --selftest           # SQLite KV：11 case + 2 check，8.3 s
 uv run python tools/tqueue_diff.py --selftest              # TQueue：12 case + 2 check，7.0 s
 uv run python tools/tqueue_binlog_diff.py --selftest       # TQueueBinlog：10 case，4,016 B，1.2 s
+uv run python tools/sqlite_safe_diff.py --selftest         # 连接安全层：8 case（6 + 2 abort）/ 122 行，1.9 s
 ```
 
 ## 3. 判据
@@ -43,6 +45,7 @@ uv run python tools/tqueue_binlog_diff.py --selftest       # TQueueBinlog：10 c
 | SQLite KV（`SqliteKeyValue` + `SqliteDb` 的事务计数 + `SqliteStatement` 的 blob 绑定/视图） | narration 逐行（**行序本身是判据**）+ **双向交叉读**（C++ 读 Rust 库、Rust 读 C++ 库）+ abort 对（`--check`，只比 rc 类别） | 11 case + 2 check 例 / 376,832 B，`md5=715cc4cb`，8.3 s | F196–F198 |
 | TQueue（`TQueueImpl` + `TQueueMemoryStorage` + `EventId`） | narration 逐行 + FLOOR + abort 对（`do_push` 的空 `EventId`）+ **`replay` 重建**（storage 重放到新队列，head/tail/size 必须一致） | 12 case + 2 check 例 / 语料 109 行 / 输出 198 行，`md5=87e3f3e6`，7.0 s | F199–F201 |
 | TQueueBinlog（`push`→`add`/`rewrite`、`pop`→`erase`、`pop_batch`→`erase_batch`、`replay`） | **binlog 文件逐字节** + narration + **双向交叉 replay** + FLOOR；selftest 用**独立的 Python 帧解析**反算 type/flags/size/body（不复用任何一侧的 walker） | 10 case / 4,016 B，`md5=15f996ad`，1.2 s | F202–F204 |
+| `SqliteConnectionSafe` / `SqliteKeyValueSafe` | narration 逐行 + **文件存在性** + abort（致命文案里的 `state N` token）+ FLOOR | 8 case（6 + 2 abort）/ 122 行，1.9 s | F217–F219 |
 
 判据事实里最容易被接手方踩到的几条（全部有复现命令）：
 
@@ -96,6 +99,8 @@ uv run python tools/tqueue_binlog_diff.py --selftest       # TQueueBinlog：10 c
 | `change_key` 的 `old_db_key` 迁移分支 | 未驱动 | 有迁移语料时 |
 | 同一 `Binlog` 对象加密后再 `init` | C++ 侧 `0xC0000005`（文件完好） | 不判；按 `TdDb` 的用法每次 open 新建对象 |
 | `erase_by_prefix` 的**多匹配**删除顺序 | 帧按 `WaitFreeHashMap` 遍历序写，移植哈希表才能复现 | 语料每次最多一个匹配；多键顺序由 `erase_batch` 覆盖 |
+| `SqliteKeyValueAsync` 的 promise 顺序 | 三个 promise 的完成顺序是 get→set→erase，不是提交顺序（F216），要串行驱动才能判 | 写一个「一次一个操作、promise 回来再发下一个」的驱动（F216④ 的自唤醒） |
+| 连接安全层的 per-thread 槽位 | `SchedulerLocalStorage` 每线程一份，探针只起 1 个 scheduler 线程，只用得到 0 号 | 起 ≥2 个 scheduler 线程并在两个 actor 里各取一次连接 |
 | ≥ MAX_PATH 的路径、非 ASCII 路径 | `GetFullPathNameW` 260 单元缓冲未定义 / 未测 | 上游改缓冲或加语料 |
 | Windows 错误文案的本地化 | `FormatMessage` 跟 locale 走 | 两侧同 locale 时可比（当前即如此） |
 
@@ -113,4 +118,5 @@ uv run python tools/tqueue_binlog_diff.py --selftest       # TQueueBinlog：10 c
 - `rust/src/sqlite_kv.rs`（Rust 侧同一套语句）；`rusqlite` 的 bundled sqlite 跨大版本（当前 3.53.1）；
 - `tddb/td/db/TQueue.{h,cpp}`（`get_size` 的空尾规则、`pop` 的 rewrite 分支、两个 sanity 窗口、六个 `MAX_*` 常量）；`rust/src/tqueue.rs`（Rust 侧同一套队列语义）；
 - `TQueueLogEvent::store/parse` 的字段顺序、`BINLOG_EVENT_TYPE`（2314）、`rust/src/binlog_format.rs` 的 `Frame`/`walk_frames`/`Processor`；
+- `tddb/td/db/{SqliteConnectionSafe.{h,cpp},SqliteKeyValueSafe.h}` 或 `LazySchedulerLocalStorage` 的语义；
 - oracle 重建（`libtdjson.dll` md5 变）或 `binlog_dump.exe` 重编。
